@@ -1,0 +1,117 @@
+# BLIN — ENTITÉS MÉTIER + TABLEAU DE BORD (DDA DYNAMIQUE)
+
+## 1. PRINCIPE SUPRÊME
+**Ne plus créer d'écrans ni de menus.** L'application tient en :
+- **Tableau de bord** (`/`) — commande naturelle → gestion d'une entité (liste + formulaires modaux).
+- **Paramètres** (`/parametres`) — registre JSON des entités métier.
+
+Les **entités** sont déclarées dans `{app_data}/entities/registry.json` :
+```json
+{
+  "ecosysteme": "Gestion Scolaire v1.0",
+  "slogan": "Établissements, classes et notes",
+  "entities": [
+    {
+      "nom": "users",
+      "label": "Utilisateur",
+      "description": "...",
+      "attributs": [
+        { "nom": "email", "type": "email", "required": true },
+        { "nom": "role", "type": "enum[admin,prof,eleve,parent]", "required": true },
+        { "nom": "photo_profil", "type": "photo", "required": false },
+        { "nom": "info", "type": "entity", "ref": "users" }
+      ]
+    }
+  ]
+}
+```
+
+Modèle complet : `src/constante/json/gestion-scolaire.registry.example.json`
+
+Types d'attribut : `string`, `number`, `integer`, `float`, `boolean`, `date`, `datetime`, `time`, `email`, **`photo`** (image upload), **`enum[a,b,c]`** ou `enum` + `enum_options`, **`entity`** (`ref`), **`stock`** (quantité inventaire — active module Stock), **`compteur`** (libellé + date jjmmaaaa + n° auto, lecture seule). Les champs `id`/`uuid` du JSON sont ignorés (ID système DDA). **Ne pas** déclarer l'entité `stock` dans le registre JSON : elle est injectée auto si au moins un attribut `stock` existe. **Identité écosystème** : `ecosysteme` + `slogan` + logo fichier → remplacent Blin partout (sidebar, accueil, titre/favicon navigateur, icône fenêtre Tauri, exports, mobile distant). Fichiers : `entities/logo.base64`, `entities/ecosystem-icon.png` (pour `npm run tauri:icons`). `logo_url` = import JSON uniquement.
+
+À chaque enregistrement du registre (trigger automatique) :
+1. **Entités liées** : si un attribut `entity` référence une entité absente, création auto d'un stub (`relations::ensure_referenced_entities`).
+2. **SQLite** : `CREATE TABLE ent_{nom}` + `ALTER ADD/DROP COLUMN` selon les attributs.
+3. **DDA généré** : `{app_data}/dda/generated/{nom}.json` — si liaisons : liste = libellé + lien **Détail** ; fiche = modal panneaux rétractables (parent + entités liées) ; formulaire create = `select` des cibles libres (`entity_relation_options`, exclusivité sur l'entité parente uniquement).
+4. **Privilèges** : `{nom}:voir`, `{nom}:creer`, `{nom}:modifier`, `{nom}:supprimer` (INSERT OR IGNORE via triggers uniquement — pas de création manuelle dans l’UI Admin).
+4. **RAG Loggy** : `MASTER_entities_schema.txt`, `MASTER_entities_tools.txt`, `{nom}_entity_schema.txt` + `ai_reindex` automatique.
+5. **Suggestions barre de commande** (trigger, jamais en dur dans le front) : `entities/dashboard_suggestions.json` + `MASTER_entity_dashboard_suggestions.txt` — une phrase « Gérer {label} » par entité avec `ai_suggestions: true` **uniquement** si le formulaire contient une liaison `entity` vers une entité en `ai_suggestions: false` (recalcul à `entity_registry_save` / `normalize_registry`) ; affichage filtré par `{nom}:voir` via `entity_list_manageable`.
+
+## 2. CHARTE GRAPHIQUE
+- **Sidebar** : fond noir `#000`, rétractable. Pilules teal `#4DB6AC`. Entrées système : Tableau de bord, **Tâches** (modal), **Stock** (modal si module actif), Paramètres.
+- **Zone principale** : fond `#0a0a0a`, cartes `#1e1e1e` (`card-panel`).
+- **Titre** : dégradé rouge→bleu (`screen-title-gradient`).
+- **Tableau de bord** : barre « Que souhaitez-vous faire ? » uniquement (pas de fenêtre IA flottante).
+
+## 3. STRUCTURE DES DOSSIERS
+
+| Chemin | Rôle |
+|--------|------|
+| `{app_data}/entities/registry.json` | **Source de vérité** des entités |
+| `{app_data}/dda/generated/*.json` | Config DDA auto (liste + forms) — ne pas éditer à la main |
+| `src/items/` | **Seules briques UI** autorisées (Table, Modal, Input, EntityPanel, StatChart…) |
+| `src/engine/DataScreen.tsx` | Moteur liste + CRUD (consomme config DDA générée) |
+| `src/engine/EntityWorkspace.tsx` | Zone tableau de bord pour une entité active |
+| `src/items/EntityPanel.tsx` | Éditeur entités dans Paramètres |
+| `src-tauri/src/entity/` | Sync schéma, knowledge RAG, match intent |
+| `src/pages/system/` | Écrans **système** figés : Dashboard, Paramètres |
+
+**Interdit** : nouveau fichier dans `src/constante/json/` pour un écran métier ; nouvelle route/menu par entité.
+
+## 4. TABLEAU DE BORD
+- `CommandBar` : saisie libre (« ecole », « gérer clients »…) + suggestions rattachées. Résolution via `entity_match_intent` (module `entity/intent.rs`, sans LLM) puis `EntityWorkspace`.
+- **Pas** de panneau chat Loggy flottant ; configuration IA locale reste dans Paramètres.
+
+## 5. PARAMÈTRES
+- Panneau **Entités** (`items/EntityPanel`) : liste, ajout, attributs typés, vue JSON brute.
+- `entity_registry_save` → sync tables + RAG (automatique, pas de bouton « réindexer » manuel obligatoire).
+
+## 6. STATISTIQUES (`src/items/`)
+Inspiré LoggPatient — **recharts** encapsulé dans les items :
+- `StatKpiCard` — indicateur synthèse
+- `StatChart` — bar | line | area | pie
+- `StatChartGrid` — grille responsive
+- Données : commande `entity_stats` (group_by attribut, metric count|sum)
+
+## 7. IA LOGGY
+- Ne modifie **pas** le registre entités (système). Guide l'utilisateur vers Paramètres pour déclarer une entité.
+- CRUD données : `dda_*` avec `screen_key` = `nom` entité exact.
+- RAG enrichi **automatiquement** à chaque `entity_registry_save` (pas de texte dur par entité dans le code Rust).
+- Prompt système : priorité entités + tableau de bord, pas de création d'écran JSON manuel.
+
+## 8. COMMANDES TAURI
+**Auth** : `auth_login`, `auth_logout`, `auth_current_user`
+
+**Entités** : `entity_registry_get`, `entity_registry_save`, `entity_logo_from_url`, `entity_list_manageable`, `entity_match_intent`, `entity_get_screen_config`, `entity_relation_options`, `entity_relation_detail`, `entity_stats`, `entity_stock_status`, `entity_stock_destock`, `entity_stock_scan_destock`
+
+**DDA** (données entités générées) : `dda_list`, `dda_get`, `dda_create`, `dda_update`, `dda_delete`, …
+
+**IA** : `ai_status`, `ai_chat`, `ai_reindex`, …
+
+## 9. ÉCRANS SYSTÈME (IA INTERDITE)
+| Écran | Route |
+|-------|-------|
+| Tableau de bord | `/` |
+| Paramètres | `/parametres` |
+
+Clés protégées DDA : `dashboard`, `parametres`, `admin`, `utilisateurs`.
+
+## 10. DIRECTIVES CURSOR
+- Relire ce fichier avant chaque tâche.
+- **Uniquement** composants dans `src/items/` (+ `engine/` pour assemblage DataScreen / EntityWorkspace).
+- Pas de HTML/CSS dans les JSON ; TypeScript strict ; UI en français.
+- Ne pas ajouter de routes ni d'entrées menu par entité.
+
+## 11. RÔLE IA EXTERNE — KNOWLEDGE LOGGY (RAG FTS5)
+Tu es l'architecte IA expert du projet Blin (Knowledge Loggy). RAG **lexical SQLite FTS5** (pas de vecteurs), chunks **700 car.** max, **3 chunks** injectés dans `ai_chat`, deux pipelines : `ai_chat` (outils + expérience + RAG) et `ai_dashboard_answer` (léger / web, **sans RAG**). Doc détaillée : `docs/KNOWLEDGE-LOGGY-CODE.md`.
+
+**Missions avec le développeur :**
+1. **Générateur de requêtes** : proposer la requête FTS5 (`Mot1 OR Mot2 OR MASTER_entities_schema`) pour retrouver l'aide dans l'app.
+2. **Blocs 700 car.** : tout contenu pour `{app_data}/dda/knowledge/*.txt` en blocs auto-contenus < 700 car., riches en mots-clés techniques.
+3. **Garde-fou code** : suggestions Rust (`agent.rs`, `rag.rs`, `fts_rewrite.rs`, `experience.rs`) respectent DDA ; pas de sémantique vectorielle.
+
+**Réécriture FTS automatique (code)** : avant `rag.search`, `fts_rewrite::rewrite_user_query_for_fts` appelle llama-server avec prompt court (voir `src-tauri/src/ai/fts_rewrite.rs`).
+
+**Format de fin de réponse (problème résolu / nouvelle entité) :**
+🔍 **Blin Search Hint** : `[Mot-clé1] OR [Mot-clé2] OR MASTER_[nom]`

@@ -1,0 +1,203 @@
+use rusqlite::params;
+
+use super::attr_types::is_reserved_attribute;
+use super::compteur::{self, is_compteur_attr};
+use super::registry::{EntityAttribute, EntityDef};
+use crate::db::Database;
+
+pub fn table_name(entity_nom: &str) -> String {
+    let safe: String = entity_nom
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("ent_{safe}")
+}
+
+fn sqlite_type(attr_type: &str) -> &'static str {
+    match attr_type {
+        "number" | "integer" | "float" | "stock" => "REAL",
+        "boolean" | "bool" => "INTEGER",
+        "photo" | "image" => "TEXT",
+        _ => "TEXT",
+    }
+}
+
+pub fn table_has_column(db: &Database, table: &str, column: &str) -> Result<bool, String> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?;
+    for name in rows.flatten() {
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn list_columns(db: &Database, table: &str) -> Result<Vec<String>, String> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?;
+    Ok(rows.flatten().collect())
+}
+
+pub fn sync_entity_table(
+    db: &Database,
+    ent: &EntityDef,
+    previous: Option<&EntityDef>,
+) -> Result<(), String> {
+    let table = table_name(&ent.nom);
+    db.conn
+        .execute(
+            &format!(
+                "CREATE TABLE IF NOT EXISTS {table} (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT ''
+                )"
+            ),
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut desired: Vec<String> = vec!["id".into(), "created_at".into()];
+    for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
+        if is_compteur_attr(attr) {
+            for col in compteur::all_sql_columns(attr) {
+                if !desired.contains(&col) {
+                    desired.push(col);
+                }
+            }
+        } else {
+            let col = attr_column(attr);
+            if !desired.contains(&col) {
+                desired.push(col);
+            }
+        }
+    }
+
+    for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
+        if is_compteur_attr(attr) {
+            let cols = [
+                (compteur::column_libelle(attr), "TEXT"),
+                (compteur::column_jjmmaaaa(attr), "TEXT"),
+                (compteur::column_numero(attr), "INTEGER"),
+            ];
+            for (col, col_type) in cols {
+                if table_has_column(db, &table, &col)? {
+                    continue;
+                }
+                db.conn
+                    .execute(
+                        &format!("ALTER TABLE {table} ADD COLUMN {col} {col_type}"),
+                        [],
+                    )
+                    .map_err(|e| format!("ALTER {table}.{col} : {e}"))?;
+            }
+            continue;
+        }
+        let col = attr_column(attr);
+        if table_has_column(db, &table, &col)? {
+            continue;
+        }
+        let col_type = sqlite_type(&attr.attr_type);
+        let not_null = if attr.required && col_type == "TEXT" {
+            " NOT NULL DEFAULT ''"
+        } else {
+            ""
+        };
+        db.conn
+            .execute(
+                &format!("ALTER TABLE {table} ADD COLUMN {col} {col_type}{not_null}"),
+                [],
+            )
+            .map_err(|e| format!("ALTER {table}.{col} : {e}"))?;
+    }
+
+    if let Some(prev) = previous {
+        let prev_cols: Vec<String> = prev
+            .attributs
+            .iter()
+            .flat_map(|a| {
+                if is_compteur_attr(a) {
+                    compteur::all_sql_columns(a).into_iter().collect::<Vec<_>>()
+                } else {
+                    vec![attr_column(a)]
+                }
+            })
+            .collect();
+        let new_cols: Vec<String> = ent
+            .attributs
+            .iter()
+            .flat_map(|a| {
+                if is_compteur_attr(a) {
+                    compteur::all_sql_columns(a).into_iter().collect::<Vec<_>>()
+                } else {
+                    vec![attr_column(a)]
+                }
+            })
+            .collect();
+        for col in prev_cols {
+            if !new_cols.contains(&col) {
+                let sql = format!("ALTER TABLE {table} DROP COLUMN {col}");
+                if let Err(e) = db.conn.execute(&sql, []) {
+                    eprintln!("DROP COLUMN {table}.{col} : {e}");
+                }
+            }
+        }
+    } else {
+        let existing = list_columns(db, &table)?;
+        for col in existing {
+            if col == "id" || col == "created_at" {
+                continue;
+            }
+            if !desired.contains(&col) {
+                let sql = format!("ALTER TABLE {table} DROP COLUMN {col}");
+                if let Err(e) = db.conn.execute(&sql, []) {
+                    eprintln!("DROP COLUMN {table}.{col} : {e}");
+                }
+            }
+        }
+    }
+
+    super::record_validation::ensure_validation_status_column(db, ent)?;
+
+    db.conn
+        .execute(
+            "INSERT OR REPLACE INTO dda_screen_registry (screen_key, table_name, route, label, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+            params![
+                ent.nom,
+                table,
+                format!("/entite/{}", ent.nom),
+                ent.label.as_deref().unwrap_or(&ent.nom)
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+pub fn attr_column(attr: &EntityAttribute) -> String {
+    let safe: String = attr
+        .nom
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    safe
+}

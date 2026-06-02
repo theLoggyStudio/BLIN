@@ -1,0 +1,161 @@
+{
+  "_comment": "Modèle registre entités — ne pas charger comme écran DDA. Type stock = inventaire (entité stock auto). Ne pas ajouter { nom: stock } dans entities.",
+  "ecosysteme": "Gestion Scolaire v1.0",
+  "slogan": "Établissements, classes et notes",
+  "entities": [
+    {
+      "nom": "users",
+      "label": "Utilisateur",
+      "description": "Base commune pour l'authentification et les profils (Profs, Élèves, Parents)",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "nom", "type": "string", "required": true, "ref": null },
+        { "nom": "prenom", "type": "string", "required": true, "ref": null },
+        { "nom": "email", "type": "email", "required": true, "ref": null },
+        { "nom": "role", "type": "enum[admin,prof,eleve,parent]", "required": true, "ref": null },
+        { "nom": "date_naissance", "type": "date", "required": false, "ref": null },
+        { "nom": "photo_profil", "type": "photo", "required": false, "ref": null }
+      ]
+    },
+    {
+      "nom": "professeur",
+      "label": "Enseignant",
+      "description": "Profil spécifique des enseignants lié à un utilisateur",
+      "ai_suggestions": true,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "info", "type": "entity", "required": true, "ref": "users" },
+        { "nom": "specialite", "type": "string", "required": true, "ref": null },
+        { "nom": "date_embauche", "type": "date", "required": true, "ref": null }
+      ]
+    },
+    {
+      "nom": "eleve",
+      "label": "Élève / Étudiant",
+      "description": "Profil spécifique des apprenants lié à un utilisateur",
+      "ai_suggestions": true,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "info", "type": "entity", "required": true, "ref": "users" },
+        { "nom": "classe_actuelle", "type": "entity", "required": false, "ref": "classe" },
+        { "nom": "tuteur_parent", "type": "entity", "required": false, "ref": "users" }
+      ]
+    },
+    {
+      "nom": "matiere",
+      "label": "Matière / Cours",
+      "description": "Disciplines enseignées au sein de l'établissement",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "libelle", "type": "string", "required": true, "ref": null },
+        { "nom": "coefficient", "type": "number", "required": true, "ref": null }
+      ]
+    },
+    {
+      "nom": "classe",
+      "label": "Classe / Niveau",
+      "description": "Groupes d'élèves affectés à un niveau et un professeur principal",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "nom_classe", "type": "string", "required": true, "ref": null },
+        { "nom": "annee_scolaire", "type": "string", "required": true, "ref": null },
+        { "nom": "professeur_principal", "type": "entity", "required": true, "ref": "professeur" },
+        { "nom": "ecole_rattachement", "type": "entity", "required": true, "ref": "ecole" }
+      ]
+    },
+    {
+      "nom": "ecole",
+      "label": "Établissement Éducatif",
+      "description": "Structure administrative principale de l'écosystème",
+      "ai_suggestions": true,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "nom", "type": "string", "required": true, "ref": null },
+        { "nom": "adresse", "type": "string", "required": false, "ref": null },
+        { "nom": "directeur", "type": "entity", "required": true, "ref": "users" },
+        { "nom": "logo_etablissement", "type": "photo", "required": false, "ref": null }
+      ]
+    },
+    {
+      "nom": "evaluation",
+      "label": "Note / Devoir",
+      "description": "Suivi des performances et résultats des élèves",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "eleve", "type": "entity", "required": true, "ref": "eleve" },
+        { "nom": "matiere", "type": "entity", "required": true, "ref": "matiere" },
+        { "nom": "note", "type": "number", "required": true, "ref": null },
+        { "nom": "note_max", "type": "number", "required": true, "default": 20, "ref": null },
+        { "nom": "date_examen", "type": "date", "required": true, "ref": null },
+        { "nom": "appreciation", "type": "string", "required": false, "ref": null }
+      ]
+    },
+    {
+      "nom": "absence",
+      "label": "Registre d'Absence",
+      "description": "Suivi de l'assiduité et de la ponctualité des élèves",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "eleve", "type": "entity", "required": true, "ref": "eleve" },
+        { "nom": "date", "type": "date", "required": true, "ref": null },
+        { "nom": "duree_heures", "type": "number", "required": true, "ref": null },
+        { "nom": "justifie", "type": "boolean", "required": true, "default": false, "ref": null },
+        { "nom": "motif", "type": "string", "required": false, "ref": null }
+      ]
+    },
+    {
+      "nom": "fourniture",
+      "label": "Fourniture / Matériel",
+      "description": "Stock de fournitures scolaires (exemple attribut type stock)",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "libelle", "type": "string", "label": "Désignation", "required": true, "ref": null },
+        { "nom": "quantite_en_stock", "type": "stock", "label": "Quantité en stock", "required": false, "ref": null },
+        { "nom": "ecole", "type": "entity", "required": false, "ref": "ecole" }
+      ]
+    },
+    {
+      "nom": "tache",
+      "label": "Tâche",
+      "description": "Rappels, validations et déstockage (si module stock actif)",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "libelle", "type": "string", "label": "Intitulé", "required": true, "ref": null },
+        { "nom": "description", "type": "string", "required": false, "ref": null },
+        { "nom": "date_echeance", "type": "date", "label": "Date", "required": false, "ref": null },
+        { "nom": "heure_debut", "type": "time", "label": "Heure", "required": true, "ref": null },
+        { "nom": "statut", "type": "enum[a_faire,en_cours,terminee]", "label": "Statut", "required": false, "default": "a_faire", "ref": null },
+        { "nom": "priorite", "type": "enum[basse,normale,haute]", "label": "Priorité", "required": false, "default": "normale", "ref": null },
+        { "nom": "type_tache", "type": "enum[validation,generale,destockage]", "label": "Type", "required": false, "default": "generale", "ref": null },
+        { "nom": "visibilite", "type": "enum[publique,privee,personnalisee]", "label": "Visibilité", "required": false, "default": "publique", "ref": null },
+        { "nom": "roles_visibles", "type": "string", "label": "Rôles autorisés (personnalisé)", "required": false, "ref": null },
+        { "nom": "entite_a_valider", "type": "string", "label": "Entité à valider", "required": false, "ref": null },
+        { "nom": "enregistrement_id", "type": "string", "label": "ID enregistrement", "required": false, "ref": null },
+        { "nom": "role_validateur", "type": "string", "label": "Rôle valideur", "required": false, "ref": null }
+      ]
+    },
+    {
+      "nom": "emploi_du_temps",
+      "label": "Créneau de Cours",
+      "description": "Planification hebdomadaire des enseignements",
+      "ai_suggestions": false,
+      "attributs": [
+        { "nom": "id", "type": "uuid", "required": true, "ref": null },
+        { "nom": "classe", "type": "entity", "required": true, "ref": "classe" },
+        { "nom": "matiere", "type": "entity", "required": true, "ref": "matiere" },
+        { "nom": "professeur", "type": "entity", "required": true, "ref": "professeur" },
+        { "nom": "jour_semaine", "type": "enum[lundi,mardi,mercredi,jeudi,vendredi,samedi]", "required": true, "ref": null },
+        { "nom": "heure_debut", "type": "time", "required": true, "ref": null },
+        { "nom": "heure_fin", "type": "time", "required": true, "ref": null },
+        { "nom": "salle", "type": "string", "required": false, "ref": null }
+      ]
+    }
+  ]
+}

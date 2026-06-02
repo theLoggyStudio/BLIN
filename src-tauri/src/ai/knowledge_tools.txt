@@ -1,0 +1,14 @@
+=== LOGGY — OUTILS (entités métier DDA) ===
+
+Les écrans Biens / Finances / Hangars / Contrats immobilier ont été retirés.
+Utiliser uniquement les entités déclarées dans Paramètres > Entités (registry.json).
+
+CRUD données :
+- dda_list / dda_get / dda_create / dda_update / dda_delete
+- screen_key = nom exact de l'entité (ex. tache, users)
+
+Catalogue détaillé : MASTER_entities_tools.txt (généré à chaque enregistrement du registre).
+Module stock (si attribut type stock dans le registre) : MASTER_stock_tools.txt, entity_stock_destock, menu Stock.
+
+Format outil : {"tool":"dda_list","params":{"screen_key":"tache","filters":{}},"explain":"..."}
+Écriture = confirmation utilisateur obligatoire.

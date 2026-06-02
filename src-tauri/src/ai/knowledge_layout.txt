@@ -1,0 +1,59 @@
+=== LOGGY — LISTE (Table) vs OBJET UNIQUE (Formulaire JSON) ===
+Règle obligatoire quand Loggy crée ou modifie un écran dans src/constante/json/{screenKey}.json.
+
+Le moteur DataScreen lit le JSON et choisit SEUL la brique UI — Loggy ne code jamais de React.
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ INTENTION UTILISATEUR          │ SECTION JSON          │ BRIQUE UI (items/) │
+├────────────────────────────────┼───────────────────────┼────────────────────┤
+│ Plusieurs enregistrements      │ layout.list           │ Table + FilterBar  │
+│ (liste, tableau, catalogue)    │ + list.enabled champs │ + ScreenHeader     │
+├────────────────────────────────┼───────────────────────┼────────────────────┤
+│ Créer UN enregistrement        │ layout.forms.create   │ Modal + champs     │
+├────────────────────────────────┼───────────────────────┼────────────────────┤
+│ Modifier / voir UNE fiche      │ layout.forms.edit     │ Offpanel + champs  │
+│                                │ layout.forms.detail   │                    │
+├────────────────────────────────┼───────────────────────┼────────────────────┤
+│ Imprimer UNE fiche objet       │ screen.print          │ Modèle impression  │
+│                                │ singleObject: true    │ (Admin / trigger)  │
+└────────────────────────────────┴───────────────────────┴────────────────────┘
+
+=== QUAND ACTIVER layout.list (→ item Table) ===
+Mots-clés utilisateur : liste, tableau, cataloguer, inventaire, tous les, plusieurs, parc, registre.
+JSON minimal :
+  layout.list : { title, subtitle?, actions: ["create","refresh"], rowClick: "detail", pagination? }
+  fields[].list : { "enabled": true, "sortable": true } sur les colonnes visibles
+  fields[].filter : { "enabled": true } pour barre de filtres dynamiques
+
+=== QUAND CONFIGURER layout.forms (→ objet unique, PAS Table) ===
+Mots-clés : fiche, détail, formulaire, créer un/une, modifier le/la, un seul, nouvel enregistrement.
+JSON minimal :
+  layout.forms.create : { title, mode: "modal", submitLabel }
+  layout.forms.edit   : { title, mode: "offpanel", submitLabel }
+  layout.forms.detail : { title, mode: "offpanel", readOnly?: false }
+  Tous les champs métier dans fields[] (sans list.enabled si écran 100 % fiche — rare)
+
+Un écran métier COMPLET combine les deux : layout.list (vue liste) + layout.forms (vue objet unique).
+
+=== OUTILS DONNÉES (distinct du layout UI) ===
+Contexte LISTE (plusieurs lignes) :
+  dda_list / list_{screen} → params filters optionnels
+Contexte OBJET UNIQUE (une ligne) :
+  dda_get / get_{entity} → params id ou labelField (reference…)
+  dda_create / create_{entity} → params = UN objet JSON (pas un tableau racine)
+  dda_update / update_{entity} → params id + champs à patcher
+  dda_delete / delete_{entity} → params id ou labelField
+
+Réponse outil liste → tableau JSON dans ```json
+Réponse outil fiche  → UN objet JSON dans ```json
+
+=== ERREURS À ÉVITER ===
+× list.enabled sur tous les champs sans layout.list → incohérent
+× layout.list sans aucun field.list.enabled → Table vide
+× Demander une « liste » sans layout.list
+× Demander une « fiche » avec rowClick detail absent et sans forms.detail
+× HTML, CSS ou classes dans le JSON écran
+× print.singleObject: false pour une fiche imprimable unitaire
+
+=== EXEMPLE RÉFÉRENCE ===
+Voir {app_data}/dda/generated/{entite}.json : layout.list + forms create/edit/detail + champs mixtes list/form.

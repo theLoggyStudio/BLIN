@@ -1,0 +1,41 @@
+[package]
+name = "blin"
+version = "0.1.0"
+description = "Blin — Application de gestion par entités"
+authors = ["Blin"]
+edition = "2021"
+
+[lib]
+name = "blin_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "image-png"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+bcrypt = "0.16"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+axum = { version = "0.8", features = ["json", "multipart"] }
+tower-http = { version = "0.6", features = ["cors", "limit"] }
+local-ip-address = "0.6"
+rand = "0.8"
+thiserror = "2"
+parking_lot = "0.12"
+csv = "1.3"
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+regex = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true

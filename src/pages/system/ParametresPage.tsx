@@ -1,0 +1,433 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Guard } from "@/components/Guard";
+import { invoke } from "@tauri-apps/api/core";
+import { ChevronsDownUp, ChevronsUpDown, Cpu, Palette, RefreshCw, User } from "lucide-react";
+import {
+  allPanelsClosed,
+  allPanelsOpen,
+  loadParametresPanelsState,
+  saveParametresPanelsState,
+  type ParametresPanelId,
+  type ParametresPanelsState,
+} from "@/lib/parametresPanels";
+import { usePrivilege } from "@/hooks/usePrivilege";
+import { RolesPanel } from "@/items/RolesPanel";
+import { UsersPanel } from "@/items/UsersPanel";
+import { EntityPanel } from "@/items/EntityPanel";
+import { PrintModelsPanel } from "@/items/PrintModelsPanel";
+import { ThemePanel } from "@/items/ThemePanel";
+import { useAuth } from "@/hooks/useAuth";
+import { useEntityBranding } from "@/hooks/useEntityBranding";
+import { Button } from "@/items/Button";
+import { CollapsiblePanel } from "@/items/CollapsiblePanel";
+import { Text } from "@/items/Text";
+import type { AiStatus, AiWebSearchConfig } from "@/types/ai";
+
+function llamaServerStatus(status: AiStatus): { value: string; ok?: boolean } {
+  if (!status.model_present) {
+    return { value: "Modèle absent — installez le GGUF", ok: false };
+  }
+  if (!status.llama_bin) {
+    return { value: "Binaire llama-server introuvable", ok: false };
+  }
+  if (status.server_healthy) {
+    return { value: "Actif", ok: true };
+  }
+  return {
+    value: "Arrêté — démarre au 1er message ou via le bouton ci-dessous",
+    ok: false,
+  };
+}
+
+function StatusLine({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-2 py-2 border-b border-border last:border-0">
+      <span className="text-sm text-muted">{label}</span>
+      <span
+        className={
+          ok === undefined
+            ? "text-sm text-foreground font-mono text-right break-all max-w-[70%]"
+            : ok
+              ? "text-sm text-emerald-400"
+              : "text-sm text-amber-400"
+        }
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** Écran système — compte, runtime Loggy et maintenance DDA. */
+import { ENTITY_REGISTRY_SYNCED_EVENT } from "@/constants/events";
+
+export function ParametresPage() {
+  const { title } = useEntityBranding();
+  const { user, syncSessionPrivileges } = useAuth();
+  const canAi = usePrivilege("ai:utiliser");
+  const canRoles = usePrivilege("users:modifier");
+  const canUsers = usePrivilege("users:voir");
+  const [panelsOpen, setPanelsOpen] = useState<ParametresPanelsState>(loadParametresPanelsState);
+  const [status, setStatus] = useState<AiStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [webSearch, setWebSearch] = useState(true);
+
+  const loadStatus = useCallback(async () => {
+    setLoadingStatus(true);
+    setError(null);
+    try {
+      const [s, web] = await Promise.all([
+        invoke<AiStatus>("ai_status"),
+        invoke<AiWebSearchConfig>("ai_web_search_get_config"),
+      ]);
+      setStatus(s);
+      setWebSearch(web.enabled);
+    } catch (e) {
+      setStatus(null);
+      setError(String(e));
+    } finally {
+      setLoadingStatus(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
+  const runAction = async (key: string, fn: () => Promise<string>) => {
+    setBusy(key);
+    setMessage(null);
+    setError(null);
+    try {
+      const msg = await fn();
+      setMessage(msg);
+      await loadStatus();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const modelReady = status?.model_present && status?.llama_bin;
+
+  const visiblePanelIds = useMemo((): ParametresPanelId[] => {
+    const ids: ParametresPanelId[] = [];
+    if (canAi) ids.push("assistant");
+    ids.push("compte");
+    ids.push("theme");
+    if (canAi) ids.push("impression");
+    ids.push("entites");
+    if (canRoles) ids.push("roles");
+    if (canUsers) ids.push("utilisateurs");
+    return ids;
+  }, [canAi, canRoles, canUsers]);
+
+  const setPanelOpen = useCallback((id: ParametresPanelId, open: boolean) => {
+    setPanelsOpen((prev) => {
+      const next = { ...prev, [id]: open };
+      saveParametresPanelsState(next);
+      return next;
+    });
+  }, []);
+
+  const expandAllPanels = () => {
+    setPanelsOpen((prev) => {
+      const next = { ...prev };
+      for (const id of visiblePanelIds) next[id] = true;
+      saveParametresPanelsState(next);
+      return next;
+    });
+  };
+
+  const collapseAllPanels = () => {
+    setPanelsOpen((prev) => {
+      const next = { ...prev };
+      for (const id of visiblePanelIds) next[id] = false;
+      saveParametresPanelsState(next);
+      return next;
+    });
+  };
+
+  const panelOpen = (id: ParametresPanelId) => panelsOpen[id] ?? false;
+
+  return (
+    <div className="h-full min-h-0 overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-6 py-8">
+      <header className="mb-8">
+        <Text variant="title" as="h1" className="screen-title-gradient !text-3xl">
+          Paramètres
+        </Text>
+        <div className="mt-2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-muted">
+          Compte, registre des entités métier et identité de l&apos;écosystème ({title}).
+        </div>
+      </header>
+
+      {(message || error) && (
+        <div
+          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+            error
+              ? "border-primary/40 bg-primary/10 text-primary"
+              : "border-secondary/40 bg-secondary/10 text-foreground"
+          }`}
+          role="status"
+        >
+          {error ?? message}
+        </div>
+      )}
+
+      <div className="space-y-6">
+        <div className="parametres-panels-toolbar" role="toolbar" aria-label="Panneaux Paramètres">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={expandAllPanels}
+            disabled={allPanelsOpen(panelsOpen, visiblePanelIds)}
+          >
+            <ChevronsUpDown className="h-4 w-4" />
+            Tout déplier
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={collapseAllPanels}
+            disabled={allPanelsClosed(panelsOpen, visiblePanelIds)}
+          >
+            <ChevronsDownUp className="h-4 w-4" />
+            Tout replier
+          </Button>
+        </div>
+
+        <Guard privilege="ai:utiliser">
+          <CollapsiblePanel
+            title={`Assistant — ${title}`}
+            subtitle="Modèle local, recherche Internet optionnelle"
+            open={panelOpen("assistant")}
+            onOpenChange={(open) => setPanelOpen("assistant", open)}
+            headerAction={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadStatus()}
+                disabled={loadingStatus}
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingStatus ? "animate-spin" : ""}`} />
+              </Button>
+            }
+          >
+            {loadingStatus && !status ? (
+              <p className="text-sm text-muted">Chargement…</p>
+            ) : status ? (
+              <div>
+                <StatusLine
+                  label="Modèle GGUF"
+                  value={
+                    status.model_present
+                      ? `${status.model_name} — présent`
+                      : `${status.model_name} — absent`
+                  }
+                  ok={status.model_present}
+                />
+                <StatusLine
+                  label="Binaire llama-server"
+                  value={status.llama_bin ? "Prêt" : "Introuvable"}
+                  ok={status.llama_bin}
+                />
+                <StatusLine label="Serveur IA" {...llamaServerStatus(status)} />
+                <StatusLine label="Backend" value={status.backend} />
+                <StatusLine
+                  label="GPU"
+                  value={
+                    status.gpu_enabled
+                      ? `${status.gpu_layers} calques`
+                      : "CPU uniquement"
+                  }
+                />
+                <StatusLine
+                  label="Contexte / threads"
+                  value={`${status.ctx_size} tokens · ${status.threads} threads`}
+                />
+                <StatusLine
+                  label="Profilage"
+                  value={status.profiled ? status.profile_summary : "Non profilé"}
+                  ok={status.profiled}
+                />
+                <StatusLine
+                  label="Expérience locale"
+                  value={`${status.experience_entries} entrée(s)`}
+                />
+                <StatusLine
+                  label="Recherche Internet"
+                  value={status.web_search_enabled ? "Activée (DuckDuckGo)" : "Désactivée"}
+                  ok={status.web_search_enabled}
+                />
+                {!modelReady && (
+                  <p className="mt-4 text-xs text-muted break-all">
+                    Chemin modèle : <span className="font-mono">{status.model_path}</span>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted">Statut indisponible.</p>
+            )}
+
+            <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={webSearch}
+                disabled={!!busy}
+                className="h-4 w-4 rounded border-border accent-secondary"
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  setWebSearch(enabled);
+                  void runAction("web", async () => {
+                    await invoke<AiWebSearchConfig>("ai_web_search_set_config", {
+                      payload: { enabled },
+                    });
+                    return enabled
+                      ? "Recherche Internet activée pour Loggy."
+                      : "Recherche Internet désactivée.";
+                  });
+                }}
+              />
+              <span className="text-sm text-foreground">
+                Autoriser Loggy à rechercher sur Internet (questions pratiques, actualités…)
+              </span>
+            </label>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!!busy || !modelReady || status?.server_healthy}
+                onClick={() =>
+                  void runAction("start-server", () => invoke<string>("ai_start_server"))
+                }
+              >
+                {busy === "start-server" ? "Démarrage…" : "Démarrer le serveur IA"}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!!busy || !status?.model_present}
+                onClick={() =>
+                  void runAction("profile", () =>
+                    invoke<string>("ai_profile_runtime", { payload: { force: false } }),
+                  )
+                }
+              >
+                <Cpu className="h-4 w-4" />
+                {busy === "profile" ? "Profilage…" : "Profiler le matériel"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!!busy || !status?.model_present}
+                onClick={() =>
+                  void runAction("profile-force", () =>
+                    invoke<string>("ai_profile_runtime", { payload: { force: true } }),
+                  )
+                }
+              >
+                {busy === "profile-force" ? "Relance…" : "Forcer le profilage"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!!busy}
+                onClick={() =>
+                  void runAction("reindex", async () => {
+                    const n = await invoke<number>("ai_reindex");
+                    return `Index IA mis à jour (${n} fichier(s) mémoire).`;
+                  })
+                }
+              >
+                {busy === "reindex" ? "Indexation…" : "Réindexer la mémoire IA"}
+              </Button>
+            </div>
+          </CollapsiblePanel>
+        </Guard>
+
+        <CollapsiblePanel
+          title="Compte"
+          subtitle="Session active sur ce poste"
+          open={panelOpen("compte")}
+          onOpenChange={(open) => setPanelOpen("compte", open)}
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated text-muted">
+              <User className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="font-medium text-foreground">{user?.nom ?? "—"}</p>
+              <p className="text-sm text-muted">{user?.email ?? "—"}</p>
+              <p className="text-xs text-muted">Rôle : {user?.role ?? "—"}</p>
+            </div>
+          </div>
+        </CollapsiblePanel>
+
+        <CollapsiblePanel
+          title="Thème de couleurs"
+          subtitle="Apparence de l'interface — enregistré sur ce poste"
+          open={panelOpen("theme")}
+          onOpenChange={(open) => setPanelOpen("theme", open)}
+          headerAction={<Palette className="h-4 w-4 text-muted" aria-hidden />}
+        >
+          <ThemePanel />
+        </CollapsiblePanel>
+
+        <Guard privilege="ai:utiliser">
+          <CollapsiblePanel
+            title="Création de modèles d'impression"
+            subtitle="Éditeur HTML/CSS — fiche PDF par ligne de tableau"
+            open={panelOpen("impression")}
+            onOpenChange={(open) => setPanelOpen("impression", open)}
+          >
+            <PrintModelsPanel />
+          </CollapsiblePanel>
+        </Guard>
+
+        <CollapsiblePanel
+          title="Entités métier"
+          subtitle="Source de vérité — tables SQLite et formulaires auto"
+          open={panelOpen("entites")}
+          onOpenChange={(open) => setPanelOpen("entites", open)}
+        >
+          <EntityPanel
+            onSaved={async () => {
+              await syncSessionPrivileges();
+              window.dispatchEvent(new Event(ENTITY_REGISTRY_SYNCED_EVENT));
+            }}
+          />
+        </CollapsiblePanel>
+
+        <Guard privilege="users:modifier">
+          <CollapsiblePanel
+            title="Rôles"
+            subtitle="Création des rôles et affectation des privilèges"
+            open={panelOpen("roles")}
+            onOpenChange={(open) => setPanelOpen("roles", open)}
+          >
+            <RolesPanel />
+          </CollapsiblePanel>
+        </Guard>
+
+        <Guard privilege="users:voir">
+          <CollapsiblePanel
+            title="Utilisateurs"
+            subtitle="Comptes, e-mail et affectation de rôle"
+            open={panelOpen("utilisateurs")}
+            onOpenChange={(open) => setPanelOpen("utilisateurs", open)}
+          >
+            <UsersPanel />
+          </CollapsiblePanel>
+        </Guard>
+      </div>
+    </div>
+    </div>
+  );
+}

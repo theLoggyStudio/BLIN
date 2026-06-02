@@ -1,0 +1,8 @@
+=== LOGGY — SCHÉMA MÉTIER (entités DDA) ===
+
+Source de vérité : {app_data}/entities/registry.json
+Chaque entité → table ent_{nom}, écran tableau de bord, privilèges {nom}:voir|creer|modifier|supprimer.
+
+Détail des attributs et types : MASTER_entities_schema.txt + fichiers {entite}_entity_schema.txt.
+
+Ne pas inventer de champs hors registre. Pas d'écran JSON manuel (clé "screen" interdite dans le registre).
