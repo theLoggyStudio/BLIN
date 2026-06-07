@@ -20,6 +20,7 @@ pub fn apply_registry(
     let mut registry = registry::load(data_dir)?;
     let stock_changed = super::stock::ensure_stock_module(&mut registry);
     super::tache_visibility::ensure_tache_visibility_in_registry(&mut registry);
+    super::validation::ensure_tache_workflow_attrs(&mut registry);
     let auto_entities = relations::ensure_referenced_entities(&mut registry);
     if !auto_entities.is_empty() || stock_changed {
         registry::save(data_dir, &registry)?;
@@ -70,6 +71,7 @@ pub fn apply_registry(
         schema::sync_entity_table(db, ent, prev, &registry)?;
         if ent.nom == super::tache_visibility::TACHE_ENTITY_KEY {
             super::tache_visibility::ensure_visibility_columns(db)?;
+            super::validation::ensure_tache_workflow_columns(db)?;
         }
         let cfg = config::build_screen_config(ent, &registry);
         let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;

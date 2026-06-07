@@ -70,6 +70,15 @@ pub fn sync_entity_table(
         )
         .map_err(|e| e.to_string())?;
 
+    if !table_has_column(db, &table, "created_at")? {
+        db.conn
+            .execute(
+                &format!("ALTER TABLE {table} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+                [],
+            )
+            .map_err(|e| format!("ALTER {table}.created_at : {e}"))?;
+    }
+
     let mut desired: Vec<String> = vec!["id".into(), "created_at".into()];
     for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
         if is_compteur_attr(attr) {
@@ -147,6 +156,21 @@ pub fn sync_entity_table(
                 [],
             )
             .map_err(|e| format!("ALTER {table}.{col} : {e}"))?;
+    }
+
+    if super::parent_lignes::entity_has_embed_children(ent, registry) {
+        let lignes_col = super::parent_lignes::LIGNES_COLUMN;
+        if !table_has_column(db, &table, lignes_col)? {
+            db.conn
+                .execute(
+                    &format!("ALTER TABLE {table} ADD COLUMN {lignes_col} TEXT"),
+                    [],
+                )
+                .map_err(|e| format!("ALTER {table}.{lignes_col} : {e}"))?;
+        }
+        if !desired.contains(&lignes_col.to_string()) {
+            desired.push(lignes_col.to_string());
+        }
     }
 
     if let Some(prev) = previous {

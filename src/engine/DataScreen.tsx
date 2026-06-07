@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, Pencil, Printer, Trash2 } from "lucide-react";
+import { ExternalLink, Eye, Pencil, Printer, Trash2 } from "lucide-react";
 import { Guard } from "@/components/Guard";
 import { Button } from "@/items/Button";
 import { FilterBar } from "@/items/FilterBar";
@@ -19,13 +19,34 @@ import {
   parseValidationReportFromError,
   validateScreenForm,
 } from "@/engine/validation";
-import { ValidationBanner } from "@/items/ValidationBanner";
+import { Alert, ValidationBanner } from "@/items/Alert";
+import {
+  EntityCreateLineForm,
+  type EntityCreateLineFormHandle,
+} from "@/items/EntityCreateLineForm";
+import {
+  embedHeaderFields,
+  expandRowsForLignes,
+  isSharedListColumn,
+  normalizeEditFormValues,
+  parseParentLignes,
+  scalarFormFields,
+  type ListLineRow,
+} from "@/lib/createFormLines";
 import type { Privilege } from "@/types/auth";
 import { PrintListPdfModal } from "@/items/PrintListPdfModal";
 import { EntityCsvImportModal } from "@/items/EntityCsvImportModal";
 import { printEntityRowPdf } from "@/lib/print/rowPrint";
 import { exportEntityCsv } from "@/lib/entityCsv";
+import {
+  canCreatorEditRecord,
+  hasSignatureWorkflow,
+  isRecordRefused,
+  isRecordSigned,
+  isSignatureRecordReadOnly,
+} from "@/lib/entitySignature";
 import { useAlert } from "@/contexts/AlertContext";
+import { useAuth } from "@/hooks/useAuth";
 import type { ReactNode } from "react";
 import { BUSINESS_SESSION_CHANGED_EVENT, ENTITY_CSV_IMPORT_OPEN_EVENT } from "@/constants/events";
 import type { ScreenConfigFile, ScreenRow, ValidationIssue } from "@/types/screen";
@@ -77,12 +98,14 @@ export function DataScreen({
     warnings: ValidationIssue[];
   }>({ errors: [], warnings: [] });
   const uploadDraftIdRef = useRef(crypto.randomUUID());
+  const lineFormRef = useRef<EntityCreateLineFormHandle>(null);
   const initialCreateAppliedRef = useRef(false);
   const [entitySignatureTarget, setEntitySignatureTarget] = useState<{
     entityKey: string;
     recordId: string;
   } | null>(null);
   const { showSuccess, showError, showInfo } = useAlert();
+  const { user } = useAuth();
 
   const isAutoSignatureTask = useCallback(
     (row: ScreenRow) => {
@@ -111,10 +134,14 @@ export function DataScreen({
     [config.fields],
   );
 
-  const listFields = useMemo(
-    () => config.fields.filter((f) => f.list?.enabled && f.type !== "hidden"),
-    [config.fields],
-  );
+  const listFields = useMemo(() => {
+    const fromConfig = config.fields.filter((f) => f.list?.enabled && f.type !== "hidden");
+    const createdAt = config.fields.find((f) => f.key === "created_at");
+    if (createdAt && !fromConfig.some((f) => f.key === "created_at")) {
+      return [createdAt, ...fromConfig];
+    }
+    return fromConfig;
+  }, [config.fields]);
 
   const formFieldsForMode = useCallback(
     (mode: FormMode) =>
@@ -136,6 +163,29 @@ export function DataScreen({
     () => formFieldsForMode(formMode),
     [formFieldsForMode, formMode],
   );
+
+  const hasMultilineEmbeds = useMemo(
+    () => embedHeaderFields(config.fields).length > 0,
+    [config.fields],
+  );
+
+  const useLineTabsForm = useMemo(
+    () =>
+      hasMultilineEmbeds &&
+      (formMode === "create" || formMode === "edit" || formMode === "detail"),
+    [hasMultilineEmbeds, formMode],
+  );
+
+  const scalarFields = useMemo(
+    () => (useLineTabsForm ? scalarFormFields(formFields) : formFields),
+    [useLineTabsForm, formFields],
+  );
+
+  const embedFields = useMemo(
+    () => (useLineTabsForm ? embedHeaderFields(formFields) : []),
+    [useLineTabsForm, formFields],
+  );
+
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,13 +228,14 @@ export function DataScreen({
     if (id) setRelationDetailId(id);
   };
 
-  const columns: Column<ScreenRow>[] = useMemo(
-    () =>
-      listFields.map((f) => ({
+  const columns: Column<ListLineRow>[] = useMemo(
+    () => {
+      const base = listFields.map((f) => ({
         key: f.key,
         header: f.label,
-        sortable: f.list?.sortable,
-        render: (row) => {
+        sortable: hasMultilineEmbeds ? false : f.list?.sortable,
+        sharedAcrossLines: isSharedListColumn(f),
+        render: (row: ListLineRow) => {
           if (f.type === "detail_link") {
             return (
               <Button
@@ -214,8 +265,24 @@ export function DataScreen({
           }
           return formatCellValue(f, raw);
         },
-      })),
-    [listFields, pk],
+      }));
+      if (hasMultilineEmbeds) {
+        base.unshift({
+          key: "_lineNum",
+          header: "Ligne",
+          sortable: false,
+          sharedAcrossLines: false,
+          render: (row: ListLineRow) =>
+            row.__lineCount > 1 ? (
+              <span className="text-muted">Ligne {row.__lineIndex + 1}</span>
+            ) : (
+              "—"
+            ),
+        });
+      }
+      return base;
+    },
+    [listFields, hasMultilineEmbeds, pk],
   );
 
   const runFormValidation = (values: ScreenRow) => {
@@ -275,18 +342,43 @@ export function DataScreen({
     onInitialCreateApplied?.();
   }, [initialCreateValues, openCreateWith, onInitialCreateApplied]);
 
-  const openRow = (row: ScreenRow, mode: "edit" | "detail") => {
-    if (isAutoSignatureTask(row)) {
-      openEntitySignatureFromTask(row);
+  const displayRows = useMemo(
+    () =>
+      hasMultilineEmbeds
+        ? expandRowsForLignes(rows, pk, config.fields)
+        : rows.map((row) => ({
+            ...row,
+            __parentId: String(row[pk] ?? ""),
+            __lineIndex: 0,
+            __lineCount: 1,
+            __isFirstLine: true,
+          })),
+    [hasMultilineEmbeds, rows, pk, config.fields],
+  );
+
+  const openRow = async (row: ListLineRow, mode: "edit" | "detail") => {
+    const id = row.__parentId || String(row[pk] ?? "");
+    const parentRow = rows.find((r) => String(r[pk] ?? "") === id) ?? row;
+    if (isAutoSignatureTask(parentRow)) {
+      openEntitySignatureFromTask(parentRow);
       return;
     }
     if (mode === "detail" && hasRelations) {
-      openRelationDetail(row);
+      openRelationDetail(parentRow);
       return;
     }
-    setFormValues({ ...row });
-    setFormValidation({ errors: [], warnings: [] });
-    setFormMode(mode);
+    try {
+      const full = await invoke<ScreenRow>("dda_get", {
+        payload: { screen_key: screenKey, id },
+      });
+      setFormValues(normalizeEditFormValues(full, config.fields));
+      setFormValidation({ errors: [], warnings: [] });
+      setFormMode(mode);
+    } catch (e) {
+      const msg = String(e);
+      setError(msg);
+      showError(msg);
+    }
   };
 
   const closeForm = () => {
@@ -305,26 +397,37 @@ export function DataScreen({
 
   const submitForm = async () => {
     setError(null);
-    const report = runFormValidation(formValues);
+    let payload = formValues;
+    if (useLineTabsForm && lineFormRef.current) {
+      payload = { ...formValues, ...lineFormRef.current.flushForSubmit() };
+    }
+    if (isRecordSigned(payload) || !canCreatorEditRecord(payload, user?.id)) return;
+    const report = runFormValidation(payload);
     if (!report.valid) return;
     try {
+      const savedLineCount = parseParentLignes(payload, config.fields).length;
+      const wasCreate = formMode === "create";
       if (formMode === "create") {
         await invoke("dda_create", {
-          payload: { screen_key: screenKey, data: formValues },
+          payload: { screen_key: screenKey, data: payload },
         });
       } else if (formMode === "edit") {
-        const id = String(formValues[pk] ?? "");
+        const id = String(payload[pk] ?? "");
         await invoke("dda_update", {
-          payload: { screen_key: screenKey, id, data: formValues },
+          payload: { screen_key: screenKey, id, data: payload },
         });
       }
       closeForm();
-      showSuccess(
-        formMode === "create"
-          ? "Enregistrement créé avec succès."
-          : "Enregistrement mis à jour.",
-      );
       await load();
+      showSuccess(
+        wasCreate
+          ? savedLineCount > 1
+            ? `Enregistrement créé avec ${savedLineCount} lignes (même matricule).`
+            : "Enregistrement créé avec succès."
+          : savedLineCount > 1
+            ? `Enregistrement mis à jour (${savedLineCount} lignes).`
+            : "Enregistrement mis à jour.",
+      );
     } catch (e) {
       const parsed = parseValidationReportFromError(e);
       if (parsed) {
@@ -397,28 +500,43 @@ export function DataScreen({
           <Button
             variant="ghost"
             size="sm"
-            aria-label="Modifier"
+            aria-label={isSignatureRecordReadOnly(row, user?.id) ? "Consulter" : "Modifier"}
+            title={
+              isRecordSigned(row)
+                ? "Objet signé — consultation seule"
+                : isRecordRefused(row)
+                  ? "Objet refusé — consultation seule"
+                  : !canCreatorEditRecord(row, user?.id)
+                    ? "Seul l'auteur peut modifier avant signature"
+                    : undefined
+            }
             onClick={(e) => {
               e.stopPropagation();
               openRow(row, "edit");
             }}
           >
-            <Pencil className="h-4 w-4" />
+            {isSignatureRecordReadOnly(row, user?.id) ? (
+              <Eye className="h-4 w-4" />
+            ) : (
+              <Pencil className="h-4 w-4" />
+            )}
           </Button>
         )}
       </Guard>
       <Guard privilege={config.screen.privileges.delete as Privilege}>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="Supprimer"
-          onClick={(e) => {
-            e.stopPropagation();
-            void deleteRow(row);
-          }}
-        >
-          <Trash2 className="h-4 w-4 text-primary" />
-        </Button>
+        {canCreatorEditRecord(row, user?.id) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Supprimer"
+            onClick={(e) => {
+              e.stopPropagation();
+              void deleteRow(row);
+            }}
+          >
+            <Trash2 className="h-4 w-4 text-primary" />
+          </Button>
+        )}
       </Guard>
     </div>
   );
@@ -439,9 +557,17 @@ export function DataScreen({
   const detailLayout = config.layout.forms?.detail;
   const activeLayout =
     formMode === "create" ? createLayout : formMode === "edit" ? editLayout : detailLayout;
+  const isSignedForm =
+    (formMode === "edit" || formMode === "detail") && isRecordSigned(formValues);
+  const isSignatureReadOnlyForm =
+    (formMode === "edit" || formMode === "detail") &&
+    isSignatureRecordReadOnly(formValues, user?.id);
   const formReadOnly =
     (formMode === "detail" && (detailLayout?.readOnly ?? true)) ||
-    (formMode === "edit" && isAutoSignatureTask(formValues));
+    (formMode === "edit" && isAutoSignatureTask(formValues)) ||
+    isSignedForm ||
+    isSignatureReadOnlyForm;
+  const formDisplayOnly = isSignedForm || isSignatureReadOnlyForm;
   const excludeRecordId =
     formMode === "edit" && formValues[pk] != null ? String(formValues[pk]) : undefined;
 
@@ -450,21 +576,72 @@ export function DataScreen({
   const filterErrorsMap = issuesByField(filterValidation.errors);
   const filterWarningsMap = issuesByField(filterValidation.warnings);
 
+  const renderFormField = (field: (typeof formFields)[number]) => (
+    <FieldRenderer
+      key={field.key}
+      field={field}
+      allFields={config.fields}
+      fieldErrorsMap={formErrorsMap}
+      fieldWarningsMap={formWarningsMap}
+      values={formValues}
+      onChange={setField}
+      onBatchChange={(updates) => {
+        setFormValues((prev) => {
+          const next = { ...prev, ...updates };
+          runFormValidation(next);
+          return next;
+        });
+      }}
+      onBlur={() => runFormValidation(formValues)}
+      readOnly={formReadOnly}
+      displayOnly={formDisplayOnly}
+      fieldError={formErrorsMap[field.key]}
+      fieldWarning={formWarningsMap[field.key]}
+      screenKey={screenKey}
+      uploadDraftId={uploadDraftIdRef.current}
+      storageFolders={config.screen.storage?.folders}
+      excludeRecordId={excludeRecordId}
+    />
+  );
+
   const formBody = (
     <div className="space-y-4">
-      <ValidationBanner errors={formValidation.errors} warnings={formValidation.warnings} />
-      {error && (
-        <p className="text-sm text-primary" role="alert">
-          {error}
-        </p>
+      {isSignedForm && (
+        <Alert
+          variant="info"
+          size="inline"
+          message="Cet objet est signé et ne peut plus être modifié."
+        />
       )}
-      {formFields.map((field) => (
-        <FieldRenderer
-          key={field.key}
-          field={field}
+      {!isSignedForm && isRecordRefused(formValues) && (
+        <Alert
+          variant="warning"
+          size="inline"
+          message="Cet objet a été refusé. Seul un signataire peut le réaccepter par signature."
+        />
+      )}
+      {!isSignedForm &&
+        !isRecordRefused(formValues) &&
+        !canCreatorEditRecord(formValues, user?.id) &&
+        hasSignatureWorkflow(formValues) && (
+          <Alert
+            variant="info"
+            size="inline"
+            message="Seul l'auteur de l'objet peut le modifier avant signature."
+          />
+        )}
+      <ValidationBanner errors={formValidation.errors} warnings={formValidation.warnings} />
+      {error && <Alert variant="danger" size="inline" message={error} />}
+      <div className={formDisplayOnly ? "grid gap-4 sm:grid-cols-2" : "space-y-4"}>
+        {scalarFields.map(renderFormField)}
+      </div>
+      {useLineTabsForm && (
+        <EntityCreateLineForm
+          ref={lineFormRef}
+          key={`mother-lines-${formMode}-${String(formValues[pk] ?? "new")}`}
+          entityLabel={config.screen.label}
+          primaryKey={pk}
           allFields={config.fields}
-          fieldErrorsMap={formErrorsMap}
-          fieldWarningsMap={formWarningsMap}
           values={formValues}
           onChange={setField}
           onBatchChange={(updates) => {
@@ -474,16 +651,14 @@ export function DataScreen({
               return next;
             });
           }}
-          onBlur={() => runFormValidation(formValues)}
           readOnly={formReadOnly}
-          fieldError={formErrorsMap[field.key]}
-          fieldWarning={formWarningsMap[field.key]}
-          screenKey={screenKey}
-          uploadDraftId={uploadDraftIdRef.current}
-          storageFolders={config.screen.storage?.folders}
-          excludeRecordId={excludeRecordId}
-        />
-      ))}
+          displayOnly={formDisplayOnly}
+        >
+          <div className={formDisplayOnly ? "grid gap-4 sm:grid-cols-2" : "space-y-4"}>
+            {embedFields.map(renderFormField)}
+          </div>
+        </EntityCreateLineForm>
+      )}
     </div>
   );
 
@@ -534,9 +709,7 @@ export function DataScreen({
       </div>
 
       {error && !formMode && (
-        <p className="text-sm text-primary mb-4" role="alert">
-          {error}
-        </p>
+        <Alert variant="danger" size="inline" className="mb-4" message={error} />
       )}
 
       <Table
@@ -550,17 +723,23 @@ export function DataScreen({
             key: "_actions",
             header: "",
             className: "w-36",
-            render: (row: ScreenRow) => rowActions(row),
-          } as Column<ScreenRow>,
+            sharedAcrossLines: true,
+            render: (row: ListLineRow) =>
+              row.__isFirstLine ? rowActions(rows.find((r) => String(r[pk] ?? "") === row.__parentId) ?? row) : null,
+          } as Column<ListLineRow>,
         ]}
-        data={rows}
-        keyExtractor={(row) => String(row[pk] ?? "")}
+        data={displayRows}
+        keyExtractor={(row) => `${row.__parentId}-${row.__lineIndex}`}
+        lineCount={(row) => row.__lineCount}
+        isFirstLine={(row) => row.__isFirstLine}
+        defaultSortKey={hasMultilineEmbeds ? undefined : "created_at"}
+        defaultSortDir="desc"
         emptyMessage={loading ? "Chargement…" : "Aucun enregistrement"}
         onRowClick={(row) => {
           if (config.layout.list.rowClick === "detail") {
-            openRow(row, "detail");
+            void openRow(row, "detail");
           } else if (config.layout.list.rowClick === "edit") {
-            openRow(row, "edit");
+            void openRow(row, "edit");
           }
         }}
       />
@@ -590,22 +769,26 @@ export function DataScreen({
         <Modal
           open={formMode === "edit"}
           onClose={closeForm}
-          title={editLayout.title}
+          title={
+            isSignedForm
+              ? `${config.screen.label} — fiche signée`
+              : editLayout.title
+          }
           size="lg"
           footer={
-            !isAutoSignatureTask(formValues) ? (
+            isSignedForm || isAutoSignatureTask(formValues) ? (
+              <div className="flex justify-end">
+                <Button variant="ghost" onClick={closeForm}>
+                  Fermer
+                </Button>
+              </div>
+            ) : (
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={closeForm}>
                   Annuler
                 </Button>
                 <Button onClick={() => void submitForm()}>
                   {editLayout.submitLabel ?? "Enregistrer"}
-                </Button>
-              </div>
-            ) : (
-              <div className="flex justify-end">
-                <Button variant="ghost" onClick={closeForm}>
-                  Fermer
                 </Button>
               </div>
             )
@@ -638,13 +821,13 @@ export function DataScreen({
           title={activeLayout.title}
           width="lg"
           headerActions={
-            !formReadOnly ? (
-              <Button size="sm" onClick={() => void submitForm()}>
-                {activeLayout.submitLabel ?? "Enregistrer"}
-              </Button>
-            ) : (
+            formReadOnly ? (
               <Button size="sm" variant="ghost" onClick={closeForm}>
                 Fermer
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => void submitForm()}>
+                {activeLayout.submitLabel ?? "Enregistrer"}
               </Button>
             )
           }

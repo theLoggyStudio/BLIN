@@ -1,4 +1,5 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
+import { Alert } from "@/items/Alert";
 import { cn } from "@/lib/utils";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -32,11 +33,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           aria-describedby={error ? `${inputId}-error` : undefined}
           {...props}
         />
-        {error && (
-          <p id={`${inputId}-error`} className="text-xs text-primary" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Alert variant="danger" size="field" message={error} id={`${inputId}-error`} />}
         {hint && !error && <p className="text-xs text-muted">{hint}</p>}
       </div>
     );

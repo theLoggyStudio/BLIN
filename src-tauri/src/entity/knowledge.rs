@@ -33,9 +33,10 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
          1) Confirmer l'entité cible (nom exact du registre).\n\
          2) Indiquer que l'interface affiche liste + formulaire modal (champs = attributs).\n\
          3) CRUD via outils DDA : dda_list, dda_get, dda_create, dda_update, dda_delete avec screen_key = nom entité.\n\
-         4) Liste dans le chat : « liste les {entité} » ou « liste les {entité} avec nom, prix » — tableau HTML read-only + bouton ouvrir écran.\n\
-         5) Jointures : si l'utilisateur cite une entité liée (entity ref), inclure la colonne libellé de l'entité cible (voir MASTER_entities_relations.txt).\n\
-         6) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\n",
+         4) Liste dans le chat : « liste les {entité} » ou « liste les {entité} de {attribut} = {valeur} » — tableau HTML read-only + bouton ouvrir écran.\n\
+         5) Filtres : trigger auto `trigger_filters` — opérateur par type d'attribut (number=equals, string=contains, enum=equals…) ; voir `{nom}_filters.txt` et MASTER_entities_filters.txt.\n\
+         6) Jointures : si l'utilisateur cite une entité liée (entity ref), inclure la colonne libellé de l'entité cible (voir MASTER_entities_relations.txt).\n\
+         7) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\n",
     );
 
     if stock::registry_has_stock(registry) {
@@ -55,6 +56,10 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
 
     let relations = format_relations_catalog(registry);
     fs::write(dir.join("MASTER_entities_relations.txt"), &relations).map_err(|e| e.to_string())?;
+
+    let filters_master = format_filters_master_catalog(data_dir, registry);
+    fs::write(dir.join("MASTER_entities_filters.txt"), &filters_master)
+        .map_err(|e| e.to_string())?;
 
     if stock::registry_has_stock(registry) {
         fs::write(dir.join("MASTER_stock_module.txt"), STOCK_MODULE_SCHEMA)
@@ -217,6 +222,29 @@ fn format_relations_catalog(registry: &EntityRegistry) -> String {
     for ent in &registry.entities {
         s.push_str(&format_entity_relations(ent, registry));
         s.push('\n');
+    }
+    s
+}
+
+fn format_filters_master_catalog(data_dir: &Path, registry: &EntityRegistry) -> String {
+    let mut s = String::from(
+        "=== BLIN — CATALOGUE FILTRES ENTITÉS (auto, trigger_filters) ===\n\
+         Généré à chaque apply_registry — opérateur SQL selon le type d'attribut.\n\
+         Chat : « liste les {entité} de {label attribut} = {valeur} ».\n\
+         Fichiers par entité : dda/filters/{nom}_filters.txt\n\n",
+    );
+    for ent in &registry.entities {
+        if let Ok(cfg) = super::load_screen_config(data_dir, &ent.nom) {
+            let catalog = crate::dda::filters::build_filter_catalog(&cfg);
+            if catalog.fields.is_empty() {
+                continue;
+            }
+            s.push_str(&crate::dda::filters::format_filter_knowledge(&cfg, &catalog));
+            s.push('\n');
+        }
+    }
+    if s.lines().count() <= 5 {
+        s.push_str("(Aucun filtre configuré — ajoutez des attributs filtrables au registre.)\n");
     }
     s
 }

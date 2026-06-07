@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Alert } from "@/items/Alert";
 import { CollapsiblePanel } from "@/items/CollapsiblePanel";
 import { Modal } from "@/items/Modal";
 import { Text } from "@/items/Text";
@@ -49,11 +50,7 @@ export function EntityRelationDetail({
   return (
     <Modal open={open} onClose={onClose} title={title} size="xl">
       {loading && <Text variant="muted">Chargement…</Text>}
-      {error && (
-        <p className="text-sm text-primary" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <Alert variant="danger" size="inline" message={error} />}
       {data && (
         <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
           {data.panels.map((panel) => (

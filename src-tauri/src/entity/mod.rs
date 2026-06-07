@@ -1,3 +1,4 @@
+pub mod parent_lignes;
 pub mod child_table;
 pub mod list_preview;
 pub mod apply;

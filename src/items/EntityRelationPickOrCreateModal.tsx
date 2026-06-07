@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus } from "lucide-react";
 import { usePrivilege } from "@/hooks/usePrivilege";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Modal } from "@/items/Modal";
@@ -89,11 +90,17 @@ export function EntityRelationPickOrCreateModal({
           />
           <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border p-1">
             {filtered.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-muted" role="alert">
-                {available.length === 0
-                  ? "Aucun objet signé disponible — créez-en un nouveau ou demandez la signature d'un objet existant."
-                  : "Aucun résultat pour cette recherche."}
-              </p>
+              <Alert
+                variant="info"
+                size="inline"
+                centered
+                className="px-3 py-6"
+                message={
+                  available.length === 0
+                    ? "Aucun objet signé disponible — créez-en un nouveau ou demandez la signature d'un objet existant."
+                    : "Aucun résultat pour cette recherche."
+                }
+              />
             ) : (
               filtered.map((option) => (
                 <button

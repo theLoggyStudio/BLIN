@@ -189,19 +189,7 @@ fn build_field_with_key_column(
             enabled: list_enabled && !is_entity_ref && !is_photo,
             sortable: list_enabled && !is_entity_ref && !is_photo,
         }),
-        filter: if list_enabled
-            && matches!(
-                attr.attr_type.as_str(),
-                "string" | "enum" | "email" | "date" | "number" | "integer" | "float" | "stock"
-            )
-        {
-            Some(FieldFilterMeta {
-                enabled: true,
-                operator: None,
-            })
-        } else {
-            None
-        },
+        filter: crate::dda::filters::filter_meta_for_attribute(&attr.attr_type, list_enabled),
         form: Some(FieldFormMeta {
             col_span: None,
             placeholder: if attr.attr_type == "time" {
@@ -429,7 +417,12 @@ fn apply_tache_screen_fields(fields: &mut [FieldDef]) {
     for f in fields.iter_mut() {
         if matches!(
             f.key.as_str(),
-            "entite_a_signer" | "enregistrement_id" | "role_signataire"
+            "entite_a_signer"
+                | "entite_a_valider"
+                | "enregistrement_id"
+                | "role_signataire"
+                | "role_validateur"
+                | "utilisateur_cible"
         ) {
             if let Some(form) = f.form.as_mut() {
                 form.read_only = Some(true);
@@ -551,13 +544,13 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
             key: "created_at".into(),
             column: "created_at".into(),
             field_type: "datetime".into(),
-            label: "Créé le".into(),
+            label: "Date et heure de création".into(),
             required: false,
             default: None,
             options: vec![],
             list: Some(FieldListMeta {
-                enabled: !relations_mode,
-                sortable: !relations_mode,
+                enabled: true,
+                sortable: true,
             }),
             filter: None,
             form: None,
@@ -588,7 +581,10 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
     }
 
     if ent.requires_signature {
-        use super::record_signature::{STATUS_NON_SIGNE, STATUS_SIGNE, SIGNATURE_STATUS_COLUMN};
+        use super::record_signature::{
+            REFUSAL_REASON_COLUMN, REFUSED_BY_COLUMN, SIGNATURE_STATUS_COLUMN, SIGNED_BY_COLUMN,
+            STATUS_NON_SIGNE, STATUS_REFUSE, STATUS_SIGNE,
+        };
         fields.push(FieldDef {
             key: SIGNATURE_STATUS_COLUMN.into(),
             column: SIGNATURE_STATUS_COLUMN.into(),
@@ -604,6 +600,10 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
                 FieldOption {
                     value: STATUS_NON_SIGNE.into(),
                     label: "Non signé".into(),
+                },
+                FieldOption {
+                    value: STATUS_REFUSE.into(),
+                    label: "Refusé".into(),
                 },
             ],
             list: Some(FieldListMeta {
@@ -630,6 +630,117 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
                 embed_parent: None,
             }),
             visible_when: None,
+            validation: None,
+        });
+        fields.push(FieldDef {
+            key: SIGNED_BY_COLUMN.into(),
+            column: SIGNED_BY_COLUMN.into(),
+            field_type: "string".into(),
+            label: "Signé par".into(),
+            required: false,
+            default: None,
+            options: vec![],
+            list: Some(FieldListMeta {
+                enabled: true,
+                sortable: true,
+            }),
+            filter: Some(FieldFilterMeta {
+                enabled: false,
+                operator: None,
+            }),
+            form: Some(FieldFormMeta {
+                col_span: None,
+                placeholder: None,
+                min: None,
+                step: None,
+                read_only: Some(true),
+                auto_generated: None,
+                storage_folder: None,
+                max_files: None,
+                accept: None,
+                ref_entity: None,
+                relation_exclusive_parent: None,
+                relation_multiple: None,
+                embed_parent: None,
+            }),
+            visible_when: Some(VisibleWhen {
+                field: SIGNATURE_STATUS_COLUMN.into(),
+                equals: serde_json::json!(STATUS_SIGNE),
+            }),
+            validation: None,
+        });
+        fields.push(FieldDef {
+            key: REFUSED_BY_COLUMN.into(),
+            column: REFUSED_BY_COLUMN.into(),
+            field_type: "string".into(),
+            label: "Refusé par".into(),
+            required: false,
+            default: None,
+            options: vec![],
+            list: Some(FieldListMeta {
+                enabled: true,
+                sortable: true,
+            }),
+            filter: Some(FieldFilterMeta {
+                enabled: false,
+                operator: None,
+            }),
+            form: Some(FieldFormMeta {
+                col_span: None,
+                placeholder: None,
+                min: None,
+                step: None,
+                read_only: Some(true),
+                auto_generated: None,
+                storage_folder: None,
+                max_files: None,
+                accept: None,
+                ref_entity: None,
+                relation_exclusive_parent: None,
+                relation_multiple: None,
+                embed_parent: None,
+            }),
+            visible_when: Some(VisibleWhen {
+                field: SIGNATURE_STATUS_COLUMN.into(),
+                equals: serde_json::json!(STATUS_REFUSE),
+            }),
+            validation: None,
+        });
+        fields.push(FieldDef {
+            key: REFUSAL_REASON_COLUMN.into(),
+            column: REFUSAL_REASON_COLUMN.into(),
+            field_type: "string".into(),
+            label: "Motif du refus".into(),
+            required: false,
+            default: None,
+            options: vec![],
+            list: Some(FieldListMeta {
+                enabled: false,
+                sortable: false,
+            }),
+            filter: Some(FieldFilterMeta {
+                enabled: false,
+                operator: None,
+            }),
+            form: Some(FieldFormMeta {
+                col_span: Some(2),
+                placeholder: None,
+                min: None,
+                step: None,
+                read_only: Some(true),
+                auto_generated: None,
+                storage_folder: None,
+                max_files: None,
+                accept: None,
+                ref_entity: None,
+                relation_exclusive_parent: None,
+                relation_multiple: None,
+                embed_parent: None,
+            }),
+            visible_when: Some(VisibleWhen {
+                field: SIGNATURE_STATUS_COLUMN.into(),
+                equals: serde_json::json!(STATUS_REFUSE),
+            }),
             validation: None,
         });
     }
@@ -676,7 +787,7 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
             table: table_name(&ent.nom),
             primary_key: pk,
             label_field: label_field.clone(),
-            default_order_by: Some(label_field),
+            default_order_by: Some("datetime(created_at) DESC".into()),
             privileges: ScreenPrivileges {
                 view: format!("{priv_base}:voir"),
                 create: format!("{priv_base}:creer"),

@@ -1,5 +1,6 @@
 pub mod config;
 pub mod crud;
+pub mod filters;
 pub mod knowledge;
 pub mod media;
 pub mod registry;

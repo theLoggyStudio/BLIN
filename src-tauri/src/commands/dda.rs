@@ -10,7 +10,7 @@ use crate::dda::{
     media::{absolute_path, decode_base64, delete_media, save_media},
     validation::{validate_screen_data, ValidationReport},
 };
-use crate::entity::record_signature::{self, RowUserContext};
+use crate::entity::record_signature::{self};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -128,6 +128,7 @@ pub fn dda_list(
     let role_id = record_signature::user_role_id(&db, &session.user.id)?;
     let opts = ListRowsOptions {
         viewer_role_id: Some(role_id.as_str()),
+        viewer_user_id: Some(session.user.id.as_str()),
         viewer_privileges: &session.user.privileges,
     };
     crud::list_rows_with_options(&db, &cfg, &payload.filters, opts)
@@ -142,6 +143,7 @@ pub fn dda_get(state: State<'_, AppState>, payload: DdaIdPayload) -> Result<Map<
     let role_id = record_signature::user_role_id(&db, &session.user.id)?;
     let opts = ListRowsOptions {
         viewer_role_id: Some(role_id.as_str()),
+        viewer_user_id: Some(session.user.id.as_str()),
         viewer_privileges: &session.user.privileges,
     };
     crud::get_row_with_options(&db, &cfg, &payload.id, opts)
@@ -161,7 +163,8 @@ pub fn dda_create(
     let db = state.db.lock();
     let data_dir = db.data_dir.clone();
     let role_id = record_signature::user_role_id(&db, &session.user.id)?;
-    let user_ctx = RowUserContext {
+    let user_ctx = record_signature::RowUserContext {
+        user_id: &session.user.id,
         role_id: Some(role_id.as_str()),
         privileges: &session.user.privileges,
     };
@@ -196,6 +199,7 @@ pub fn dda_update(
     let role_id = record_signature::user_role_id(&db, &session.user.id)?;
     let opts = ListRowsOptions {
         viewer_role_id: Some(role_id.as_str()),
+        viewer_user_id: Some(session.user.id.as_str()),
         viewer_privileges: &session.user.privileges,
     };
     let row = crud::update_row_with_options(&db, &cfg, &id, &payload.data, opts)?;
@@ -285,8 +289,15 @@ pub fn dda_media_delete(
 pub fn dda_delete(state: State<'_, AppState>, payload: DdaIdPayload) -> Result<(), String> {
     let cfg = load_cfg(&state, &payload.screen_key)?;
     require_delete(&state, &cfg)?;
+    let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
     let data_dir = db.data_dir.clone();
+    let role_id = record_signature::user_role_id(&db, &session.user.id)?;
+    let opts = ListRowsOptions {
+        viewer_role_id: Some(role_id.as_str()),
+        viewer_user_id: Some(session.user.id.as_str()),
+        viewer_privileges: &session.user.privileges,
+    };
     if payload.screen_key != crate::entity::stock::STOCK_ENTITY_KEY {
         let _ = crate::entity::stock::remove_stock_line_for_source(
             &db,
@@ -295,5 +306,5 @@ pub fn dda_delete(state: State<'_, AppState>, payload: DdaIdPayload) -> Result<(
             &payload.id,
         );
     }
-    crud::delete_row(&db, &cfg, &payload.id)
+    crud::delete_row_with_options(&db, &cfg, &payload.id, opts)
 }

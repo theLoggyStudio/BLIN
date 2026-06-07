@@ -169,8 +169,12 @@ export interface RecordSignatureDetail {
   entityLabel: string;
   recordId: string;
   signed: boolean;
+  rejected: boolean;
   canView: boolean;
   canSign: boolean;
+  canReject: boolean;
+  refusedBy?: string | null;
+  refusalReason?: string | null;
   fields: RecordSignatureField[];
   signatoryContacts: SignatoryContact[];
 }

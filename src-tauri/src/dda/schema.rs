@@ -37,6 +37,15 @@ pub fn sync_table_from_config(db: &Database, cfg: &ScreenConfigFile) -> Result<(
         )
         .map_err(|e| e.to_string())?;
 
+    if !table_has_column(db, table, "created_at").map_err(|e| e.to_string())? {
+        db.conn
+            .execute(
+                &format!("ALTER TABLE {table} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+                [],
+            )
+            .map_err(|e| format!("ALTER {table}.created_at : {e}"))?;
+    }
+
     for field in &cfg.fields {
         if field.column == "id" {
             continue;
@@ -91,6 +100,11 @@ pub fn ensure_dda_registry_table(db: &Database) -> Result<(), DbError> {
             updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS dda_validation_rules (
+            screen_key TEXT PRIMARY KEY NOT NULL,
+            rules_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS dda_filter_rules (
             screen_key TEXT PRIMARY KEY NOT NULL,
             rules_json TEXT NOT NULL,
             updated_at TEXT NOT NULL

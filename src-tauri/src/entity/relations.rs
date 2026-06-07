@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::load_screen_config;
-use super::record_signature::{self, RelationSelectOptionExt, SIGNATURE_STATUS_COLUMN, STATUS_NON_SIGNE, STATUS_SIGNE};
+use super::record_signature::{self, RelationSelectOptionExt, SIGNATURE_STATUS_COLUMN, STATUS_NON_SIGNE, STATUS_REFUSE, STATUS_SIGNE};
 use super::schema::table_has_column;
 use super::registry::{EntityAttribute, EntityDef, EntityRegistry};
 use crate::dda::config::FieldDef;
@@ -423,7 +423,8 @@ pub fn relation_select_options(
     });
     for (id, label, statut) in rows {
         let non_signe = !is_embed && statut.as_deref() == Some(STATUS_NON_SIGNE);
-        if non_signe {
+        let refuse = !is_embed && statut.as_deref() == Some(STATUS_REFUSE);
+        if non_signe || refuse {
             continue;
         }
         let is_current = current_fks.contains(id.as_str());

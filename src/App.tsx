@@ -13,6 +13,7 @@ import { ParametresPage } from "@/pages/system/ParametresPage";
 import { TachesModalProvider } from "@/contexts/TachesModalContext";
 import { StockModalProvider } from "@/contexts/StockModalContext";
 import { AlertProvider } from "@/contexts/AlertContext";
+import { LoginNoticesHost } from "@/items/LoginNoticesHost";
 
 function LoadingScreen() {
   return (
@@ -79,6 +80,7 @@ export default function App() {
           <AuthProvider>
             <BusinessSessionProvider>
               <AlertProvider>
+                <LoginNoticesHost />
                 <AppRoutes />
               </AlertProvider>
             </BusinessSessionProvider>

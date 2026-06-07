@@ -1,4 +1,5 @@
 import { forwardRef, type TextareaHTMLAttributes } from "react";
+import { Alert } from "@/items/Alert";
 import { cn } from "@/lib/utils";
 
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -31,11 +32,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           aria-invalid={!!error}
           {...props}
         />
-        {error && (
-          <p className="text-xs text-primary" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Alert variant="danger" size="field" message={error} />}
         {hint && !error && <p className="text-xs text-muted">{hint}</p>}
       </div>
     );

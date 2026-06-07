@@ -1,6 +1,6 @@
 import { Input } from "@/items/Input";
 import { Select } from "@/items/Select";
-import { FieldMessages } from "@/items/FieldMessages";
+import { FieldMessages } from "@/items/Alert";
 import type { FieldDef, ValidationIssue } from "@/types/screen";
 
 interface FilterBarProps {

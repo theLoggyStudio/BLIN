@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { DataScreen } from "@/engine/DataScreen";
 import { Button } from "@/items/Button";
 import { EntityStatsPanel } from "@/items/EntityStatsPanel";
@@ -75,9 +76,12 @@ export function EntityWorkspace({
 
   if (error || !config) {
     return (
-      <div className="card-panel mx-6 my-8 rounded-xl border border-primary/40 p-6 text-sm text-primary">
-        {error ?? "Configuration introuvable."}
-      </div>
+      <Alert
+        variant="danger"
+        size="box"
+        className="card-panel mx-6 my-8 rounded-xl p-6"
+        message={error ?? "Configuration introuvable."}
+      />
     );
   }
 

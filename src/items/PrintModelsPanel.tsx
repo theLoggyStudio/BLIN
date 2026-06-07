@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileText, Plus, Save, Trash2 } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Select } from "@/items/Select";
@@ -172,9 +173,12 @@ export function PrintModelsPanel() {
       </Text>
 
       {(message || error) && (
-        <p className={`text-sm ${error ? "text-primary" : "text-secondary"}`} role="status">
-          {error ?? message}
-        </p>
+        <Alert
+          variant={error ? "danger" : "success"}
+          size="inline"
+          role="status"
+          message={error ?? message ?? ""}
+        />
       )}
 
       <div className="flex flex-wrap gap-2 items-end">

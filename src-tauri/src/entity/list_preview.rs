@@ -10,6 +10,9 @@ use crate::ai::agent::ChatDisplayColumn;
 use crate::ai::intent_filters::{normalize_message, wants_list_intent};
 use crate::dda::config::FieldDef;
 use crate::dda::crud::{list_rows_with_options, ListRowsOptions};
+use crate::dda::filters::{
+    apply_exact_filters, extract_filters_from_message, filters_summary,
+};
 use crate::db::Database;
 use crate::entity::intent;
 use crate::entity::load_screen_config;
@@ -33,6 +36,8 @@ struct StoredDisplayPayload {
 struct StoredColsRequest {
     entity_key: String,
     available: Vec<ColMeta>,
+    #[serde(default)]
+    filters: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,10 +79,16 @@ pub fn parse_display_from_message(content: &str) -> (String, Vec<ChatDisplayBloc
     (content.to_string(), vec![])
 }
 
-fn embed_cols_request(message: &str, entity_key: &str, available: &[ColMeta]) -> String {
+fn embed_cols_request(
+    message: &str,
+    entity_key: &str,
+    available: &[ColMeta],
+    filters: &HashMap<String, String>,
+) -> String {
     let payload = StoredColsRequest {
         entity_key: entity_key.to_string(),
         available: available.to_vec(),
+        filters: filters.clone(),
     };
     let json = serde_json::to_string(&payload).unwrap_or_default();
     format!("{message}{COLS_MARKER_START}{json}{COLS_MARKER_END}")
@@ -213,6 +224,7 @@ fn build_rows_with_joins(
     entity_key: &str,
     column_keys: &[String],
     joins: &[JoinHint],
+    filters: &HashMap<String, String>,
     user: &SessionUser,
 ) -> Result<(Vec<ChatDisplayBlock>, String), String> {
     let cfg = load_screen_config(data_dir, entity_key)?;
@@ -226,12 +238,14 @@ fn build_rows_with_joins(
     let rows = list_rows_with_options(
         db,
         &cfg,
-        &HashMap::new(),
+        filters,
         ListRowsOptions {
             viewer_role_id: None,
+            viewer_user_id: None,
             viewer_privileges: &user.privileges,
         },
     )?;
+    let rows = apply_exact_filters(rows, &cfg, filters);
 
     let field_by_key: HashMap<String, &FieldDef> =
         cfg.fields.iter().map(|f| (f.key.clone(), f)).collect();
@@ -317,7 +331,12 @@ fn build_rows_with_joins(
         columns,
         rows: out_rows,
     };
-    let msg = format!("Voici {count} enregistrement(s) pour « {label} ».");
+    let filter_hint = filters_summary(&cfg, filters);
+    let msg = if filter_hint.is_empty() {
+        format!("Voici {count} enregistrement(s) pour « {label} ».")
+    } else {
+        format!("Voici {count} enregistrement(s) pour « {label} » ({filter_hint}).")
+    };
     Ok((vec![block], msg))
 }
 
@@ -344,11 +363,15 @@ pub fn try_list_preview(
     if let Some(prev) = last_assistant_message(db, conv_id) {
         if let Some(req) = parse_cols_request(&prev) {
             let available = req.available;
-            let cols = parse_requested_columns(user_message, &available);
+            let (msg_filters, text_for_cols) =
+                extract_filters_from_message(user_message, &load_screen_config(data_dir, &req.entity_key)?);
+            let mut filters = req.filters.clone();
+            filters.extend(msg_filters);
+            let cols = parse_requested_columns(&text_for_cols, &available);
             if cols.is_empty() {
                 let msg = ask_columns_message(&req.entity_key, &available);
                 return Ok(Some((
-                    embed_cols_request(&msg, &req.entity_key, &available),
+                    embed_cols_request(&msg, &req.entity_key, &available, &filters),
                     vec![],
                 )));
             }
@@ -359,6 +382,7 @@ pub fn try_list_preview(
                 &req.entity_key,
                 &cols,
                 &joins,
+                &filters,
                 user,
             )?;
             return Ok(Some((embed_display(&msg, &blocks), blocks)));
@@ -370,19 +394,20 @@ pub fn try_list_preview(
     };
 
     let cfg = load_screen_config(data_dir, &entity_key)?;
+    let (filters, text_for_cols) = extract_filters_from_message(user_message, &cfg);
     let available = list_column_metas(&cfg);
-    let cols = columns_from_message(user_message, &available);
+    let cols = columns_from_message(&text_for_cols, &available);
 
     if cols.is_empty() {
         let msg = ask_columns_message(&entity_key, &available);
         return Ok(Some((
-            embed_cols_request(&msg, &entity_key, &available),
+            embed_cols_request(&msg, &entity_key, &available, &filters),
             vec![],
         )));
     }
 
     let joins = detect_joins(&registry, &entity_key, user_message);
     let (blocks, msg) =
-        build_rows_with_joins(db, data_dir, &entity_key, &cols, &joins, user)?;
+        build_rows_with_joins(db, data_dir, &entity_key, &cols, &joins, &filters, user)?;
     Ok(Some((embed_display(&msg, &blocks), blocks)))
 }

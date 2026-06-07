@@ -66,6 +66,14 @@ pub struct EntityRecordSignaturePayload {
 }
 
 #[derive(Deserialize)]
+pub struct EntityRecordRejectPayload {
+    pub entity_key: String,
+    pub record_id: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct EntityIntentPayload {
     pub message: String,
 }
@@ -309,6 +317,26 @@ pub fn entity_record_sign(
         &payload.record_id,
         &session.user.id,
         &session.user.privileges,
+    )
+}
+
+#[tauri::command]
+pub fn entity_record_reject(
+    state: State<'_, AppState>,
+    payload: EntityRecordRejectPayload,
+) -> Result<(), String> {
+    state.desktop_sessions.require_session()?;
+    let session = state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    let data_dir = db.data_dir.clone();
+    entity::record_signature::reject_record(
+        &db,
+        &data_dir,
+        &payload.entity_key,
+        &payload.record_id,
+        &session.user.id,
+        &session.user.privileges,
+        payload.reason.as_deref(),
     )
 }
 

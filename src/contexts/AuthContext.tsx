@@ -14,12 +14,15 @@ interface LoginResponse {
   token: string;
   user: User;
   must_change_password: boolean;
+  login_notices?: string[];
 }
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   mustChangePassword: boolean;
+  loginNotices: string[];
+  clearLoginNotices: () => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (newPassword: string, confirmPassword: string) => Promise<void>;
@@ -32,6 +35,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [loginNotices, setLoginNotices] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const applyUser = useCallback((next: User | null) => {
@@ -60,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         payload: { email, password },
       });
       applyUser(response.user);
+      setLoginNotices(response.login_notices ?? []);
       setMustChangePassword(
         response.must_change_password || Boolean(response.user.must_change_password),
       );
@@ -70,7 +75,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await invoke("auth_logout");
     applyUser(null);
+    setLoginNotices([]);
   }, [applyUser]);
+
+  const clearLoginNotices = useCallback(() => {
+    setLoginNotices([]);
+  }, []);
 
   const changePassword = useCallback(
     async (newPassword: string, confirmPassword: string) => {
@@ -107,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       mustChangePassword,
+      loginNotices,
+      clearLoginNotices,
       login,
       logout,
       changePassword,
@@ -117,6 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       mustChangePassword,
+      loginNotices,
+      clearLoginNotices,
       login,
       logout,
       changePassword,

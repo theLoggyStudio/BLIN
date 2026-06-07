@@ -127,6 +127,7 @@ pub fn run() {
             commands::entity::entity_list_roles,
             commands::entity::entity_record_signature_detail,
             commands::entity::entity_record_sign,
+            commands::entity::entity_record_reject,
             commands::entity::entity_relation_detail,
             commands::entity::entity_stats,
             commands::entity::entity_active_session_get,

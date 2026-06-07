@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useEntityBranding } from "@/hooks/useEntityBranding";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Alert } from "@/items/Alert";
 import { Modal } from "@/items/Modal";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -146,11 +147,7 @@ export function LoginPage() {
             required
           />
 
-          {error && (
-            <p className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-              {error}
-            </p>
-          )}
+          {error && <Alert variant="danger" size="box" message={error} />}
 
           <Button type="submit" variant="secondary" size="lg" disabled={submitting} className="w-full">
             <Lock className="mr-2 h-4 w-4" />
@@ -186,9 +183,7 @@ export function LoginPage() {
             </div>
           )}
           {scanError && (
-            <p className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary text-center">
-              {scanError}
-            </p>
+            <Alert variant="danger" size="box" centered className="text-xs" message={scanError} />
           )}
           <p className="text-xs text-muted text-center">
             Utilisez l&apos;adresse IP locale du PC (même réseau Wi‑Fi). Le jeton QR expire après 15 minutes.

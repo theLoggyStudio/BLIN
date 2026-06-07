@@ -15,6 +15,7 @@ use crate::db::Database;
 #[derive(Clone, Copy)]
 pub struct ListRowsOptions<'a> {
     pub viewer_role_id: Option<&'a str>,
+    pub viewer_user_id: Option<&'a str>,
     pub viewer_privileges: &'a [String],
 }
 
@@ -22,6 +23,7 @@ impl Default for ListRowsOptions<'_> {
     fn default() -> Self {
         Self {
             viewer_role_id: None,
+            viewer_user_id: None,
             viewer_privileges: &[],
         }
     }
@@ -51,11 +53,19 @@ pub fn list_rows_with_options(
     )?;
 
     let table = &cfg.screen.table;
-    let cols: Vec<String> = cfg
+    let mut cols: Vec<String> = cfg
         .persisted_fields()
         .iter()
         .map(|f| f.column.clone())
         .collect();
+    if let Some(ent) = registry.find(&cfg.screen.key) {
+        if crate::entity::parent_lignes::entity_has_embed_children(ent, &registry) {
+            let lignes_col = crate::entity::parent_lignes::LIGNES_COLUMN;
+            if !cols.iter().any(|c| c == lignes_col) {
+                cols.push(lignes_col.to_string());
+            }
+        }
+    }
     let col_list = if cols.iter().any(|c| c == "id") {
         cols.join(", ")
     } else {
@@ -72,23 +82,15 @@ pub fn list_rows_with_options(
         if val.trim().is_empty() {
             continue;
         }
-        let op = field.filter.as_ref().and_then(|f| f.operator.as_deref()).unwrap_or("contains");
-        match op {
-            "equals" => {
-                sql.push_str(&format!(" AND {} = ?", field.column));
-                sql_params.push(SqlValue::Text(val.trim().to_string()));
-            }
-            _ => {
-                sql.push_str(&format!(" AND {} LIKE ?", field.column));
-                sql_params.push(SqlValue::Text(format!("%{}%", val.trim())));
-            }
-        }
+        crate::dda::filters::append_field_filter_sql(&mut sql, &mut sql_params, field, val, false);
     }
 
-    // Filtres injectés (session métier, etc.) sur champs sans filtre UI — ex. liaison entity.
+    // Filtres injectés (session métier, chat Loggy, etc.) sur champs filtrables.
     let filter_field_keys: std::collections::HashSet<String> =
         cfg.filter_fields().into_iter().map(|f| f.key.to_string()).collect();
-    for field in cfg.persisted_fields() {
+    for field in cfg.fields.iter().filter(|f| {
+        f.filter.as_ref().is_some_and(|x| x.enabled) && crate::dda::config::is_persisted_field(f)
+    }) {
         if filter_field_keys.contains(&field.key) {
             continue;
         }
@@ -98,14 +100,16 @@ pub fn list_rows_with_options(
         if val.trim().is_empty() {
             continue;
         }
-        sql.push_str(&format!(" AND {} = ?", field.column));
-        sql_params.push(SqlValue::Text(val.trim().to_string()));
+        crate::dda::filters::append_field_filter_sql(&mut sql, &mut sql_params, field, val, true);
     }
 
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
         if let Some(role_id) = options.viewer_role_id {
             if !crate::entity::tache_visibility::can_user_see_all_tasks(options.viewer_privileges) {
-                sql.push_str(&crate::entity::tache_visibility::sql_visibility_filter(role_id));
+                sql.push_str(&crate::entity::tache_visibility::sql_visibility_filter(
+                    role_id,
+                    options.viewer_user_id,
+                ));
             }
         }
     }
@@ -114,8 +118,16 @@ pub fn list_rows_with_options(
         .screen
         .default_order_by
         .as_deref()
-        .unwrap_or(&cfg.screen.label_field);
-    sql.push_str(&format!(" ORDER BY {order} COLLATE NOCASE"));
+        .unwrap_or("datetime(created_at) DESC");
+    if order.contains(" DESC")
+        || order.contains(" ASC")
+        || order.contains('(')
+        || order.contains(',')
+    {
+        sql.push_str(&format!(" ORDER BY {order}"));
+    } else {
+        sql.push_str(&format!(" ORDER BY {order} COLLATE NOCASE"));
+    }
 
     let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
@@ -146,13 +158,19 @@ pub fn get_row_with_options(
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
         if let Some(role_id) = options.viewer_role_id {
             if !crate::entity::tache_visibility::can_user_see_all_tasks(options.viewer_privileges)
-                && !crate::entity::tache_visibility::row_visible_to_role(&row, role_id, false)
+                && !crate::entity::tache_visibility::row_visible_to_role(
+                    &row,
+                    role_id,
+                    options.viewer_user_id,
+                    false,
+                )
             {
                 return Err("Tâche introuvable ou non visible pour votre rôle.".into());
             }
         }
     }
     hydrate_embed_lists(db, cfg, &mut row)?;
+    crate::entity::parent_lignes::hydrate_form_lines(&mut row, cfg);
     Ok(row)
 }
 
@@ -226,6 +244,11 @@ pub fn create_row_with_user(
         &mut data,
         &cfg.screen.key,
         &registry,
+    );
+    record_signature::apply_creator_on_create(
+        &mut data,
+        &cfg.screen.key,
+        &registry,
         user_ctx,
     );
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
@@ -237,6 +260,8 @@ pub fn create_row_with_user(
         &cfg.screen.key,
         &mut data,
     )?;
+
+    crate::entity::parent_lignes::merge_create_lines_into_data(&mut data, cfg);
 
     let report = validate_screen_data(cfg, &data, false);
     if !report.valid {
@@ -288,6 +313,51 @@ pub fn create_row_with_user(
         values.push(val);
     }
 
+    if let Some(lignes_val) = data.get(crate::entity::parent_lignes::LIGNES_COLUMN) {
+        let col = crate::entity::parent_lignes::LIGNES_COLUMN;
+        if !columns.iter().any(|c| c == col) {
+            columns.push(col.to_string());
+            placeholders.push(format!("?{idx}"));
+            idx += 1;
+            values.push(SqlValue::Text(
+                lignes_val
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| lignes_val.to_string()),
+            ));
+        }
+    }
+
+    if let Some(sig_val) = data.get(record_signature::SIGNATURE_STATUS_COLUMN) {
+        let col = record_signature::SIGNATURE_STATUS_COLUMN;
+        if !columns.iter().any(|c| c == col) {
+            columns.push(col.to_string());
+            placeholders.push(format!("?{idx}"));
+            idx += 1;
+            values.push(SqlValue::Text(
+                sig_val
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| sig_val.to_string()),
+            ));
+        }
+    }
+
+    if let Some(creator_val) = data.get(record_signature::CREATED_BY_COLUMN) {
+        let col = record_signature::CREATED_BY_COLUMN;
+        if !columns.iter().any(|c| c == col) {
+            columns.push(col.to_string());
+            placeholders.push(format!("?{idx}"));
+            idx += 1;
+            values.push(SqlValue::Text(
+                creator_val
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| creator_val.to_string()),
+            ));
+        }
+    }
+
     let sql = format!(
         "INSERT INTO {table} ({}) VALUES ({})",
         columns.join(", "),
@@ -328,12 +398,19 @@ pub fn update_row_with_options(
     options: ListRowsOptions<'_>,
 ) -> Result<Map<String, Value>, String> {
     let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
-    record_signature::assert_record_mutable(db, &cfg.screen.key, id, &registry)?;
+    record_signature::assert_record_editable_by_user(
+        db,
+        &cfg.screen.key,
+        id,
+        options.viewer_user_id,
+        &registry,
+    )?;
     get_row_with_options(db, cfg, id, options)?;
     let mut data = data.clone();
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
         crate::entity::tache_visibility::apply_create_defaults(&mut data);
     }
+    crate::entity::parent_lignes::merge_create_lines_into_data(&mut data, cfg);
     let report = validate_screen_data(cfg, &data, false);
     if !report.valid {
         return Err(validation_error_json(&report));
@@ -355,6 +432,17 @@ pub fn update_row_with_options(
         sets.push(format!("{} = ?{idx}", field.column));
         idx += 1;
         values.push(json_to_sql(Some(v), field));
+    }
+    if let Some(lignes_val) = data.get(crate::entity::parent_lignes::LIGNES_COLUMN) {
+        let col = crate::entity::parent_lignes::LIGNES_COLUMN;
+        sets.push(format!("{col} = ?{idx}"));
+        idx += 1;
+        values.push(SqlValue::Text(
+            lignes_val
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| lignes_val.to_string()),
+        ));
     }
     if sets.is_empty() {
         return get_row_with_options(db, cfg, id, options);
@@ -378,7 +466,23 @@ pub fn update_row_with_options(
 }
 
 pub fn delete_row(db: &Database, cfg: &ScreenConfigFile, id: &str) -> Result<(), String> {
+    delete_row_with_options(db, cfg, id, ListRowsOptions::default())
+}
+
+pub fn delete_row_with_options(
+    db: &Database,
+    cfg: &ScreenConfigFile,
+    id: &str,
+    options: ListRowsOptions<'_>,
+) -> Result<(), String> {
     let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    record_signature::assert_record_editable_by_user(
+        db,
+        &cfg.screen.key,
+        id,
+        options.viewer_user_id,
+        &registry,
+    )?;
     child_table::delete_embed_lists_for_parent(db, &registry, &cfg.screen.key, id)?;
     let table = &cfg.screen.table;
     let pk = &cfg.screen.primary_key;

@@ -69,9 +69,9 @@ impl<'a> SyncReporter<'a> {
     }
 }
 
-/// Nombre d'étapes pour `apply_registry` : nettoyage + (schéma + config + 5 triggers) × entités + mémoire + suggestions.
+/// Nombre d'étapes pour `apply_registry` : nettoyage + (schéma + config + 6 triggers) × entités + mémoire + suggestions.
 pub fn count_apply_registry_steps(entity_count: usize, removed_count: usize) -> u32 {
     let cleanup = if removed_count > 0 { 1 } else { 0 };
-    let per_entity = 7u32; // schéma, JSON DDA, privilèges, validations, knowledge, dossiers, impression
+    let per_entity = 8u32; // schéma, JSON DDA, privilèges, validations, filtres, knowledge, dossiers, impression
     cleanup + entity_count as u32 * per_entity + 2 // finalize knowledge + suggestions dashboard
 }

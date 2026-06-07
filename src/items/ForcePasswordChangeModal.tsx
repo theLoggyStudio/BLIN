@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { KeyRound } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
@@ -66,11 +67,7 @@ export function ForcePasswordChangeModal() {
           minLength={6}
         />
 
-        {error && (
-          <p className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-            {error}
-          </p>
-        )}
+        {error && <Alert variant="danger" size="box" message={error} />}
 
         <Button type="submit" variant="secondary" size="lg" disabled={submitting} className="w-full">
           <KeyRound className="mr-2 h-4 w-4" />

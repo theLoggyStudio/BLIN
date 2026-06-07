@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Alert } from "@/items/Alert";
 import { Modal } from "@/items/Modal";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
@@ -289,11 +290,7 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
             {tableToken}.
           </p>
         )}
-        {error && (
-          <p className="text-sm text-primary" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Alert variant="danger" size="inline" message={error} />}
       </div>
     </Modal>
   );

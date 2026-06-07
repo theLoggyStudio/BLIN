@@ -16,6 +16,7 @@ pub struct LoginResponse {
     pub token: String,
     pub user: SessionUser,
     pub must_change_password: bool,
+    pub login_notices: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -48,9 +49,12 @@ pub fn auth_login(
     payload: LoginRequest,
 ) -> Result<LoginResponse, String> {
     let db = state.db.lock();
-    let (id, nom, role_nom, _role_id, privileges, must_change_password) = db
+    let (id, nom, role_nom, role_id, privileges, must_change_password) = db
         .authenticate(&payload.email, &payload.password)
         .map_err(|e| e.to_string())?;
+
+    let login_notices = crate::entity::validation::login_workflow_notices(&db, &id, &role_id)
+        .unwrap_or_default();
     drop(db);
 
     let token = Uuid::new_v4().to_string();
@@ -72,6 +76,7 @@ pub fn auth_login(
         token,
         user,
         must_change_password,
+        login_notices,
     })
 }
 

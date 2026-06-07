@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Pencil, Plus, Save, Shield, Trash2 } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Modal } from "@/items/Modal";
 import { Select } from "@/items/Select";
 import { Table, type Column } from "@/items/Table";
 import { Text } from "@/items/Text";
+import {
+  isPrivilegeChecked,
+  mergePrivilegeCatalog,
+  normalizePrivilegesForSave,
+  togglePrivilege,
+} from "@/lib/rolePrivileges";
 import type { RoleWithPrivileges } from "@/types/privileges";
 import type { RoleRow } from "@/types/users";
 
@@ -67,10 +74,10 @@ export function RolesPanel() {
 
   const currentRole = roles.find((r) => r.id === roleId);
 
-  const allPrivileges = useMemo(() => {
-    const merged = new Set([...catalog, ...selected]);
-    return Array.from(merged).sort((a, b) => a.localeCompare(b, "fr"));
-  }, [catalog, selected]);
+  const allPrivileges = useMemo(
+    () => mergePrivilegeCatalog(catalog, selected),
+    [catalog, selected],
+  );
 
   const filteredPrivileges = useMemo(() => {
     const q = privFilter.trim().toLowerCase();
@@ -79,12 +86,7 @@ export function RolesPanel() {
   }, [allPrivileges, privFilter]);
 
   const toggle = (priv: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(priv)) next.delete(priv);
-      else next.add(priv);
-      return next;
-    });
+    setSelected((prev) => togglePrivilege(prev, priv, allPrivileges));
   };
 
   const savePrivileges = async () => {
@@ -94,7 +96,10 @@ export function RolesPanel() {
     setError(null);
     try {
       await invoke("roles_update_privileges", {
-        payload: { role_id: roleId, privileges: Array.from(selected).sort() },
+        payload: {
+          role_id: roleId,
+          privileges: normalizePrivilegesForSave(selected, catalog),
+        },
       });
       setMessage("Privilèges enregistrés.");
       await load();
@@ -230,9 +235,12 @@ export function RolesPanel() {
       </Text>
 
       {(message || error) && (
-        <p className={`text-sm ${error ? "text-primary" : "text-secondary"}`} role="status">
-          {error ?? message}
-        </p>
+        <Alert
+          variant={error ? "danger" : "success"}
+          size="inline"
+          role="status"
+          message={error ?? message ?? ""}
+        />
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -287,7 +295,7 @@ export function RolesPanel() {
               >
                 <input
                   type="checkbox"
-                  checked={selected.has(priv)}
+                  checked={isPrivilegeChecked(selected, priv)}
                   onChange={() => toggle(priv)}
                   className="h-4 w-4 rounded border-border accent-secondary"
                 />

@@ -107,9 +107,22 @@ pub fn can_user_see_all_tasks(privileges: &[String]) -> bool {
     has_privilege(privileges, "*")
 }
 
-pub fn row_visible_to_role(row: &Map<String, Value>, role_id: &str, see_all: bool) -> bool {
+pub fn row_visible_to_role(
+    row: &Map<String, Value>,
+    role_id: &str,
+    viewer_user_id: Option<&str>,
+    see_all: bool,
+) -> bool {
     if see_all {
         return true;
+    }
+    if let Some(target) = row
+        .get(super::validation::COL_UTILISATEUR_CIBLE)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return viewer_user_id.is_some_and(|uid| uid == target);
     }
     let vis = row
         .get(COL_VISIBILITE)
@@ -131,18 +144,36 @@ pub fn row_visible_to_role(row: &Map<String, Value>, role_id: &str, see_all: boo
     }
 }
 
-/// Clause SQL `AND (...)` pour filtrer les tâches visibles par un rôle.
-pub fn sql_visibility_filter(role_id: &str) -> String {
+/// Clause SQL `AND (...)` pour filtrer les tâches visibles par un rôle / utilisateur.
+pub fn sql_visibility_filter(role_id: &str, viewer_user_id: Option<&str>) -> String {
     let r = role_id.replace('\'', "''");
+    let user_target = viewer_user_id
+        .map(|uid| uid.replace('\'', "''"))
+        .unwrap_or_default();
+    let user_match = if user_target.is_empty() {
+        "0".to_string()
+    } else {
+        format!(
+            "(COALESCE({COL_UTILISATEUR_CIBLE}, '') != '' AND {COL_UTILISATEUR_CIBLE} = '{user_target}')"
+        )
+    };
     format!(
         " AND (
-            COALESCE({COL_VISIBILITE}, '{VIS_PUBLIQUE}') = '{VIS_PUBLIQUE}'
-            OR ({COL_VISIBILITE} = '{VIS_PRIVEE}' AND (role_signataire = '{r}' OR role_validateur = '{r}'))
-            OR ({COL_VISIBILITE} = '{VIS_PERSONNALISEE}'
-                AND instr(',' || COALESCE({COL_ROLES_VISIBLES}, '') || ',', ',{r},') > 0)
+            {user_match}
+            OR (
+                COALESCE({COL_UTILISATEUR_CIBLE}, '') = ''
+                AND (
+                    COALESCE({COL_VISIBILITE}, '{VIS_PUBLIQUE}') = '{VIS_PUBLIQUE}'
+                    OR ({COL_VISIBILITE} = '{VIS_PRIVEE}' AND (role_signataire = '{r}' OR role_validateur = '{r}'))
+                    OR ({COL_VISIBILITE} = '{VIS_PERSONNALISEE}'
+                        AND instr(',' || COALESCE({COL_ROLES_VISIBLES}, '') || ',', ',{r},') > 0)
+                )
+            )
         )"
     )
 }
+
+const COL_UTILISATEUR_CIBLE: &str = super::validation::COL_UTILISATEUR_CIBLE;
 
 pub fn apply_create_defaults(data: &mut Map<String, Value>) {
     if !data.contains_key(COL_VISIBILITE) || data.get(COL_VISIBILITE).map(|v| v.is_null()).unwrap_or(true) {

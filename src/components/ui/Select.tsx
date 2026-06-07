@@ -1,4 +1,5 @@
 import { forwardRef, type SelectHTMLAttributes } from "react";
+import { Alert } from "@/items/Alert";
 import { cn } from "@/lib/utils";
 
 export interface SelectOption {
@@ -49,11 +50,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error && (
-          <p className="text-xs text-primary" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Alert variant="danger" size="field" message={error} />}
       </div>
     );
   },

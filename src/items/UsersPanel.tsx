@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, Pencil, Plus, UserPlus } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Guard } from "@/components/Guard";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
@@ -222,9 +223,12 @@ export function UsersPanel() {
       </Text>
 
       {(message || error) && (
-        <p className={`text-sm ${error ? "text-primary" : "text-secondary"}`} role="status">
-          {error ?? message}
-        </p>
+        <Alert
+          variant={error ? "danger" : "success"}
+          size="inline"
+          role="status"
+          message={error ?? message ?? ""}
+        />
       )}
 
       <Guard privilege="users:modifier">
@@ -235,9 +239,11 @@ export function UsersPanel() {
           </Button>
         </div>
         {roles.length === 0 && (
-          <p className="text-sm text-amber-400">
-            Créez d&apos;abord un rôle dans le panneau Rôles.
-          </p>
+          <Alert
+            variant="warning"
+            size="inline"
+            message="Créez d'abord un rôle dans le panneau Rôles."
+          />
         )}
       </Guard>
 

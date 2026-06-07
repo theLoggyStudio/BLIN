@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Alert } from "@/items/Alert";
 import { DataScreen } from "@/engine/DataScreen";
 import { StockDestockButton } from "@/items/StockDestockButton";
 import { Modal } from "@/items/Modal";
@@ -53,11 +54,7 @@ export function StockModal({ open, onClose }: StockModalProps) {
             <div className="h-10 w-10 animate-spin rounded-full border-2 border-secondary border-t-transparent" />
           </div>
         )}
-        {!loading && error && (
-          <p className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
-            {error}
-          </p>
-        )}
+        {!loading && error && <Alert variant="danger" size="box" message={error} />}
         {!loading && config && (
           <>
             <Text variant="muted" className="mb-4 text-sm">

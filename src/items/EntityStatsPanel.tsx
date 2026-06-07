@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { CollapsiblePanel } from "@/items/CollapsiblePanel";
 import { Select } from "@/items/Select";
@@ -224,11 +225,7 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
           </div>
         </div>
 
-        {error && (
-          <p className="text-sm text-primary" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Alert variant="danger" size="inline" message={error} />}
 
         <div className="space-y-3">
         {series.map((s, index) => {

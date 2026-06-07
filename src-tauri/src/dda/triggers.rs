@@ -28,6 +28,7 @@ pub fn run_all_with_progress(
     let steps = [
         ("privileges", "Privilèges"),
         ("validations", "Validations"),
+        ("filters", "Filtres"),
         ("knowledge", "Mémoire IA"),
         ("folders", "Dossiers"),
         ("print", "Impression"),
@@ -39,6 +40,7 @@ pub fn run_all_with_progress(
         match step {
             "privileges" => trigger_privileges(db, cfg)?,
             "validations" => trigger_validations(db, data_dir, cfg)?,
+            "filters" => trigger_filters(db, data_dir, cfg)?,
             "knowledge" => knowledge::write_screen_knowledge(data_dir, cfg)?,
             "folders" => trigger_folders(data_dir, cfg)?,
             "print" => trigger_print_model(db, cfg)?,
@@ -84,6 +86,57 @@ fn trigger_validations(
     Ok(())
 }
 
+/// Trigger filtres : catalogue JSON + mémoire IA par attribut filtrable (opérateur selon type).
+fn trigger_filters(
+    db: &Database,
+    data_dir: &Path,
+    cfg: &ScreenConfigFile,
+) -> Result<(), String> {
+    use super::filters::{build_filter_catalog, format_filter_knowledge};
+
+    let dir = data_dir.join("dda").join("filters");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let catalog = build_filter_catalog(cfg);
+    let catalog_json = serde_json::to_string_pretty(&catalog).map_err(|e| e.to_string())?;
+    fs::write(dir.join(format!("{}.json", cfg.screen.key)), &catalog_json)
+        .map_err(|e| e.to_string())?;
+
+    let knowledge = format_filter_knowledge(cfg, &catalog);
+    fs::write(
+        dir.join(format!("{}_filters.txt", cfg.screen.key)),
+        &knowledge,
+    )
+    .map_err(|e| e.to_string())?;
+
+    db.conn
+        .execute(
+            "CREATE TABLE IF NOT EXISTS dda_filter_rules (
+                screen_key TEXT PRIMARY KEY NOT NULL,
+                rules_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    db.conn
+        .execute(
+            "INSERT INTO dda_filter_rules (screen_key, rules_json, updated_at)
+             VALUES (?1, ?2, datetime('now'))
+             ON CONFLICT(screen_key) DO UPDATE SET
+               rules_json = excluded.rules_json,
+               updated_at = excluded.updated_at",
+            params![cfg.screen.key, catalog_json],
+        )
+        .map_err(|e| format!(
+            "Table dda_filter_rules absente ou erreur : {e}. Appliquer la migration schéma."
+        ))?;
+
+    Ok(())
+}
+
+/// Crée les privilèges CRUD de l'écran (voir, créer, modifier, supprimer, importer, exporter).
+/// La signature n'est pas un privilège : elle dépend des rôles signataires définis sur l'entité.
 fn trigger_privileges(db: &Database, cfg: &ScreenConfigFile) -> Result<(), String> {
     let privs = [
         &cfg.screen.privileges.view,

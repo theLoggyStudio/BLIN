@@ -172,22 +172,34 @@ fn validate_tache_link_fields(data: &Map<String, Value>) -> ValidationReport {
         .get("type_tache")
         .and_then(|v| v.as_str())
         .unwrap_or("generale");
-    if type_tache != "signature" && type_tache != "destockage" {
+    if type_tache != "signature" && type_tache != "destockage" && type_tache != "validation" {
         return ValidationReport::ok();
     }
     let mut report = ValidationReport::ok();
-    let entity_key = data
-        .get("entite_a_signer")
-        .or_else(|| data.get("entite_a_valider"));
+    let entity_key = if type_tache == "validation" {
+        data.get("entite_a_valider")
+    } else {
+        data.get("entite_a_signer").or_else(|| data.get("entite_a_valider"))
+    };
+    let entity_field = if type_tache == "validation" {
+        "entite_a_valider"
+    } else {
+        "entite_a_signer"
+    };
+    let entity_label = if type_tache == "validation" {
+        "Entité à valider"
+    } else {
+        "Entité à signer"
+    };
     let record_id = data.get("enregistrement_id");
     if is_empty_value(entity_key) {
         report.errors.push(ValidationIssue {
-            field: "entite_a_signer".into(),
-            label: "Entité à signer".into(),
+            field: entity_field.into(),
+            label: entity_label.into(),
             level: "error".into(),
             code: "required".into(),
             message: format!(
-                "« Entité à signer » est obligatoire pour une tâche de type « {type_tache} »."
+                "« {entity_label} » est obligatoire pour une tâche de type « {type_tache} »."
             ),
             fix_hint: None,
         });
@@ -215,6 +227,19 @@ fn validate_tache_link_fields(data: &Map<String, Value>) -> ValidationReport {
                 level: "error".into(),
                 code: "required".into(),
                 message: "« Rôle signataire » est obligatoire pour une tâche de signature.".into(),
+                fix_hint: None,
+            });
+        }
+    }
+    if type_tache == "validation" {
+        let value = data.get("role_validateur");
+        if is_empty_value(value) {
+            report.errors.push(ValidationIssue {
+                field: "role_validateur".into(),
+                label: "Rôle validateur".into(),
+                level: "error".into(),
+                code: "required".into(),
+                message: "« Rôle validateur » est obligatoire pour une tâche de validation.".into(),
                 fix_hint: None,
             });
         }

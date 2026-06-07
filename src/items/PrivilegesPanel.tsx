@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Save, Shield } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Select } from "@/items/Select";
 import { Text } from "@/items/Text";
+import {
+  isPrivilegeChecked,
+  mergePrivilegeCatalog,
+  normalizePrivilegesForSave,
+  togglePrivilege,
+} from "@/lib/rolePrivileges";
 import type { RoleWithPrivileges } from "@/types/privileges";
 
 interface PrivilegesPanelProps {
@@ -56,10 +63,10 @@ export function PrivilegesPanel({ onClose }: PrivilegesPanelProps) {
     }
   }, [roleId, roles]);
 
-  const allPrivileges = useMemo(() => {
-    const merged = new Set([...catalog, ...selected]);
-    return Array.from(merged).sort((a, b) => a.localeCompare(b));
-  }, [catalog, selected]);
+  const allPrivileges = useMemo(
+    () => mergePrivilegeCatalog(catalog, selected),
+    [catalog, selected],
+  );
 
   const filteredPrivileges = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -68,12 +75,7 @@ export function PrivilegesPanel({ onClose }: PrivilegesPanelProps) {
   }, [allPrivileges, filter]);
 
   const toggle = (priv: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(priv)) next.delete(priv);
-      else next.add(priv);
-      return next;
-    });
+    setSelected((prev) => togglePrivilege(prev, priv, allPrivileges));
   };
 
   const save = async () => {
@@ -83,7 +85,10 @@ export function PrivilegesPanel({ onClose }: PrivilegesPanelProps) {
     setError(null);
     try {
       await invoke("roles_update_privileges", {
-        payload: { role_id: roleId, privileges: Array.from(selected).sort() },
+        payload: {
+          role_id: roleId,
+          privileges: normalizePrivilegesForSave(selected, catalog),
+        },
       });
       setMessage("Privilèges enregistrés pour ce rôle.");
       await load();
@@ -108,9 +113,12 @@ export function PrivilegesPanel({ onClose }: PrivilegesPanelProps) {
       </div>
 
       {(message || error) && (
-        <p className={`text-sm ${error ? "text-primary" : "text-muted"}`} role="status">
-          {error ?? message}
-        </p>
+        <Alert
+          variant={error ? "danger" : "info"}
+          size="inline"
+          role="status"
+          message={error ?? message ?? ""}
+        />
       )}
 
       <Select
@@ -145,7 +153,7 @@ export function PrivilegesPanel({ onClose }: PrivilegesPanelProps) {
             >
               <input
                 type="checkbox"
-                checked={selected.has(priv)}
+                checked={isPrivilegeChecked(selected, priv)}
                 onChange={() => toggle(priv)}
                 className="h-4 w-4 rounded border-border accent-secondary"
               />

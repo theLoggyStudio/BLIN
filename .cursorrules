@@ -35,8 +35,9 @@ Types d'attribut : `string`, `number`, `integer`, `float`, `boolean`, `date`, `d
 2. **SQLite** : `CREATE TABLE ent_{nom}` + `ALTER ADD/DROP COLUMN` selon les attributs.
 3. **DDA généré** : `{app_data}/dda/generated/{nom}.json` — si liaisons : liste = libellé + lien **Détail** ; fiche = modal panneaux rétractables (parent + entités liées) ; formulaire create = `select` des cibles libres (`entity_relation_options`, exclusivité sur l'entité parente uniquement).
 4. **Privilèges** : `{nom}:voir`, `{nom}:creer`, `{nom}:modifier`, `{nom}:supprimer` (INSERT OR IGNORE via triggers uniquement — pas de création manuelle dans l’UI Admin).
-4. **RAG Loggy** : `MASTER_entities_schema.txt`, `MASTER_entities_tools.txt`, `{nom}_entity_schema.txt` + `ai_reindex` automatique.
-5. **Suggestions barre de commande** (trigger, jamais en dur dans le front) : `entities/dashboard_suggestions.json` + `MASTER_entity_dashboard_suggestions.txt` — une phrase « Gérer {label} » par entité avec `ai_suggestions: true` **uniquement** si le formulaire contient une liaison `entity` vers une entité en `ai_suggestions: false` (recalcul à `entity_registry_save` / `normalize_registry`) ; affichage filtré par `{nom}:voir` via `entity_list_manageable`.
+5. **Filtres** (`trigger_filters`) : opérateur auto par type d'attribut → FilterBar + chat « liste les X de {label} = {valeur} » ; fichiers `dda/filters/{nom}.json`, `{nom}_filters.txt`, `MASTER_entities_filters.txt` (voir AItools §21).
+6. **RAG Loggy** : `MASTER_entities_schema.txt`, `MASTER_entities_tools.txt`, `{nom}_entity_schema.txt` + `ai_reindex` automatique.
+7. **Suggestions barre de commande** (trigger, jamais en dur dans le front) : `entities/dashboard_suggestions.json` + `MASTER_entity_dashboard_suggestions.txt` — une phrase « Gérer {label} » par entité avec `ai_suggestions: true` **uniquement** si le formulaire contient une liaison `entity` vers une entité en `ai_suggestions: false` (recalcul à `entity_registry_save` / `normalize_registry`) ; affichage filtré par `{nom}:voir` via `entity_list_manageable`.
 
 ## 2. CHARTE GRAPHIQUE
 - **Sidebar** : fond noir `#000`, rétractable. Pilules teal `#4DB6AC`. Entrées système : Tableau de bord, **Tâches** (modal), **Stock** (modal si module actif), Paramètres.

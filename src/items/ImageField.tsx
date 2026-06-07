@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/items/Button";
-import { FieldMessages } from "@/items/FieldMessages";
+import { Alert, FieldMessages } from "@/items/Alert";
 import {
   fileToBase64,
   useMediaSrc,
@@ -147,11 +147,7 @@ export function ImageField({
           </div>
         )}
       </div>
-      {localError && (
-        <p className="text-xs text-primary" role="alert">
-          {localError}
-        </p>
-      )}
+      {localError && <Alert variant="danger" size="field" message={localError} />}
       <FieldMessages error={fieldError} warning={fieldWarning} />
     </div>
   );

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Alert } from "@/items/Alert";
 import { Text } from "@/items/Text";
 import type { RoleRow } from "@/types/users";
 
@@ -80,11 +81,7 @@ export function TacheRolesVisibleField({
           </label>
         ))}
       </div>
-      {error && (
-        <p className="text-xs text-primary" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <Alert variant="danger" size="field" message={error} />}
     </div>
   );
 }

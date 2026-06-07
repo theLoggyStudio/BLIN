@@ -9,11 +9,12 @@ import { TacheRolesVisibleField } from "@/items/TacheRolesVisibleField";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Select } from "@/items/Select";
-import { FieldMessages } from "@/items/FieldMessages";
+import { FieldMessages } from "@/items/Alert";
 import { ImageField } from "@/items/ImageField";
 import { ImagesField } from "@/items/ImagesField";
 import type { FieldDef, ScreenRow, ValidationIssue } from "@/types/screen";
 import type { RelationSelectOption } from "@/types/entity";
+import { FieldReadOnlyValue } from "@/engine/FieldReadOnlyValue";
 import { defaultStorageFolder, mediaEntityId } from "./mediaUtils";
 import { isFieldVisible } from "./screenUtils";
 import { toDateInputValue, toDatetimeLocalValue, toTimeInputValue } from "@/lib/dateInputValues";
@@ -26,6 +27,8 @@ interface FieldRendererProps {
   onBatchChange?: (updates: Record<string, unknown>) => void;
   onBlur?: (key: string) => void;
   readOnly?: boolean;
+  /** Affichage texte (pas de champs de saisie) — ex. objet signé. */
+  displayOnly?: boolean;
   fieldError?: ValidationIssue;
   fieldWarning?: ValidationIssue;
   screenKey: string;
@@ -234,17 +237,18 @@ function EntityRefListEditor({
           className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2"
         >
           <span className="text-sm text-foreground">{labelById(rowValue)}</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={readOnly}
-            onClick={() => {
-              const next = rows.filter((_, i) => i !== idx);
-              updateRows(next);
-            }}
-          >
-            Retirer
-          </Button>
+          {!readOnly && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                const next = rows.filter((_, i) => i !== idx);
+                updateRows(next);
+              }}
+            >
+              Retirer
+            </Button>
+          )}
         </div>
       ))}
       {!readOnly && refEntity && (
@@ -276,6 +280,7 @@ export function FieldRenderer({
   onBatchChange,
   onBlur,
   readOnly,
+  displayOnly,
   fieldError,
   fieldWarning,
   screenKey,
@@ -303,6 +308,17 @@ export function FieldRenderer({
     uploadDraftId,
   );
 
+  if (displayOnly && field.type !== "entity_embed" && field.type !== "entity_embed_list") {
+    return (
+      <FieldReadOnlyValue
+        field={field}
+        value={val}
+        screenKey={screenKey}
+        excludeRecordId={excludeRecordId}
+      />
+    );
+  }
+
   const wrap = (node: ReactNode) => (
     <div className={cn(hasWarning && "rounded-lg ring-1 ring-amber-500/30 p-0.5 -m-0.5")}>
       {node}
@@ -327,12 +343,13 @@ export function FieldRenderer({
   }
 
   if (field.type === "entity_embed") {
-    return wrap(
+    const node = (
       <EntityEmbedGroup
         field={field}
         allFields={allFields}
         values={values}
         readOnly={ro}
+        displayOnly={displayOnly}
         screenKey={screenKey}
         uploadDraftId={uploadDraftId}
         storageFolders={storageFolders}
@@ -342,23 +359,26 @@ export function FieldRenderer({
         onBlur={onBlur}
         fieldErrors={fieldErrorsMap}
         fieldWarnings={fieldWarningsMap}
-      />,
+      />
     );
+    return displayOnly ? node : wrap(node);
   }
 
   if (field.type === "entity_embed_list") {
-    return wrap(
+    const node = (
       <EntityEmbedListEditor
         field={field}
         value={val}
         readOnly={ro}
+        displayOnly={displayOnly}
         screenKey={screenKey}
         excludeRecordId={excludeRecordId}
         fieldError={fieldError}
         onChange={onChange}
         onBlur={onBlur}
-      />,
+      />
     );
+    return displayOnly ? node : wrap(node);
   }
 
   if (field.type === "entity_ref") {
@@ -367,6 +387,7 @@ export function FieldRenderer({
         field={field}
         value={String(val ?? "")}
         readOnly={ro}
+        displayOnly={displayOnly}
         screenKey={screenKey}
         excludeRecordId={excludeRecordId}
         fieldError={fieldError}
@@ -382,6 +403,7 @@ export function FieldRenderer({
         field={field}
         value={val}
         readOnly={ro}
+        displayOnly={displayOnly}
         screenKey={screenKey}
         excludeRecordId={excludeRecordId}
         fieldError={fieldError}

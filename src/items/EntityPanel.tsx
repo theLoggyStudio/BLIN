@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Plus, Trash2 } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Modal } from "@/items/Modal";
@@ -551,9 +552,11 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                 {entityValidationAttempted &&
                   (!entityModal.signatory_role_ids ||
                     entityModal.signatory_role_ids.length === 0) && (
-                    <p className="text-xs text-primary">
-                      Sélection obligatoire : cochez au moins un rôle signataire.
-                    </p>
+                    <Alert
+                      variant="danger"
+                      size="field"
+                      message="Sélection obligatoire : cochez au moins un rôle signataire."
+                    />
                   )}
               </div>
             )}

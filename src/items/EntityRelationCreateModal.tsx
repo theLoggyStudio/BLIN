@@ -8,7 +8,7 @@ import {
 } from "@/engine/validation";
 import { Button } from "@/items/Button";
 import { Modal } from "@/items/Modal";
-import { ValidationBanner } from "@/items/ValidationBanner";
+import { Alert, ValidationBanner } from "@/items/Alert";
 import type { ScreenConfigFile, ScreenRow, ValidationIssue } from "@/types/screen";
 
 interface EntityRelationCreateModalProps {
@@ -163,11 +163,7 @@ export function EntityRelationCreateModal({
       {!loading && config && (
         <div className="space-y-4 pr-1">
           <ValidationBanner errors={validation.errors} warnings={validation.warnings} />
-          {error && (
-            <p className="text-sm text-primary" role="alert">
-              {error}
-            </p>
-          )}
+          {error && <Alert variant="danger" size="inline" message={error} />}
           {formFields.map((field) => (
             <FieldRenderer
               key={field.key}

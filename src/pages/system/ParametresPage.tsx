@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert } from "@/items/Alert";
 import { Guard } from "@/components/Guard";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronsDownUp, ChevronsUpDown, Cpu, Palette, RefreshCw, User } from "lucide-react";
@@ -167,16 +168,13 @@ export function ParametresPage() {
       </header>
 
       {(message || error) && (
-        <div
-          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
-            error
-              ? "border-primary/40 bg-primary/10 text-primary"
-              : "border-secondary/40 bg-secondary/10 text-foreground"
-          }`}
+        <Alert
+          variant={error ? "danger" : "info"}
+          size="box"
+          className="mb-6 px-4 py-3"
           role="status"
-        >
-          {error ?? message}
-        </div>
+          message={error ?? message ?? ""}
+        />
       )}
 
       <div className="space-y-6">

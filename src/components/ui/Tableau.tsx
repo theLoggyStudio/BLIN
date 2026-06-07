@@ -9,6 +9,7 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { parseToDate } from "@/lib/formatDateTime";
 import { Button } from "./Button";
 
 export interface Column<T> {
@@ -17,7 +18,11 @@ export interface Column<T> {
   sortable?: boolean;
   render?: (row: T) => ReactNode;
   className?: string;
+  /** Fusion verticale (rowspan) si l'entité mère a plusieurs lignes. */
+  sharedAcrossLines?: boolean;
 }
+
+type SortDir = "asc" | "desc";
 
 export interface TablePaginationProps {
   /** Taille de page initiale (défaut 10). */
@@ -28,6 +33,9 @@ export interface TablePaginationProps {
   showPageSizeSelector?: boolean;
   /** Masquer toute la barre si une seule page (défaut false = toujours afficher le compteur). */
   hideWhenSinglePage?: boolean;
+  /** Tri initial (ex. created_at + desc = plus récent en premier). */
+  defaultSortKey?: string;
+  defaultSortDir?: SortDir;
 }
 
 interface TableauProps<T> extends TablePaginationProps {
@@ -36,11 +44,26 @@ interface TableauProps<T> extends TablePaginationProps {
   keyExtractor: (row: T) => string;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  /** Nombre de lignes visuelles par enregistrement (rowspan colonnes partagées). */
+  lineCount?: (row: T) => number;
+  isFirstLine?: (row: T) => boolean;
 }
 
-type SortDir = "asc" | "desc";
-
 const DEFAULT_PAGE_SIZES = [10, 25, 50, 100];
+
+function compareSortValues(av: unknown, bv: unknown, sortDir: SortDir): number {
+  if (av === bv) return 0;
+  if (av == null || av === "") return 1;
+  if (bv == null || bv === "") return -1;
+  const ad = parseToDate(av);
+  const bd = parseToDate(bv);
+  if (ad && bd) {
+    const cmp = ad.getTime() - bd.getTime();
+    return sortDir === "asc" ? cmp : -cmp;
+  }
+  const cmp = String(av).localeCompare(String(bv), "fr", { numeric: true });
+  return sortDir === "asc" ? cmp : -cmp;
+}
 
 function buildPageList(current: number, total: number): (number | "ellipsis")[] {
   if (total <= 7) {
@@ -68,23 +91,21 @@ export function Tableau<T extends Record<string, unknown>>({
   hideWhenSinglePage = false,
   emptyMessage = "Aucune donnée",
   onRowClick,
+  lineCount,
+  isFirstLine,
+  defaultSortKey,
+  defaultSortDir = "desc",
 }: TableauProps<T>) {
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortKey, setSortKey] = useState<string | null>(defaultSortKey ?? null);
+  const [sortDir, setSortDir] = useState<SortDir>(
+    defaultSortKey ? defaultSortDir : "asc",
+  );
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(initialPageSize);
 
   const sorted = useMemo(() => {
     if (!sortKey) return data;
-    return [...data].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (av === bv) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      const cmp = String(av).localeCompare(String(bv), "fr", { numeric: true });
-      return sortDir === "asc" ? cmp : -cmp;
-    });
+    return [...data].sort((a, b) => compareSortValues(a[sortKey], b[sortKey], sortDir));
   }, [data, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
@@ -178,13 +199,27 @@ export function Tableau<T extends Record<string, unknown>>({
                   )}
                   onClick={() => onRowClick?.(row)}
                 >
-                  {columns.map((col) => (
-                    <td key={col.key} className={cn("px-4 py-3", col.className)}>
-                      {col.render
-                        ? col.render(row)
-                        : String(row[col.key] ?? "—")}
-                    </td>
-                  ))}
+                  {columns.map((col) => {
+                    const shared = col.sharedAcrossLines && lineCount && isFirstLine;
+                    if (shared && !isFirstLine?.(row)) {
+                      return null;
+                    }
+                    const span =
+                      shared && isFirstLine(row) && lineCount(row) > 1
+                        ? lineCount(row)
+                        : undefined;
+                    return (
+                      <td
+                        key={col.key}
+                        rowSpan={span}
+                        className={cn("px-4 py-3 align-top", col.className)}
+                      >
+                        {col.render
+                          ? col.render(row)
+                          : String(row[col.key] ?? "—")}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             )}
