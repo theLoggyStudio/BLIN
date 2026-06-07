@@ -2,8 +2,7 @@ use std::path::Path;
 
 use tauri::{AppHandle, Manager};
 
-use super::logo::ECOSYSTEM_ICON_FILENAME;
-use super::registry::{self, entities_dir};
+use super::registry;
 
 pub const DEFAULT_APP_NAME: &str = "Blin";
 pub const DEFAULT_SLOGAN: &str = "Gestion par entités";
@@ -32,11 +31,9 @@ pub fn apply_window_branding(app: &AppHandle, data_dir: &Path) -> Result<(), Str
         .ok_or_else(|| "Fenêtre principale introuvable.".to_string())?;
     window.set_title(&title).map_err(|e| e.to_string())?;
 
-    let icon_path = entities_dir(data_dir).join(ECOSYSTEM_ICON_FILENAME);
-    if icon_path.is_file() {
-        let image = tauri::image::Image::from_path(&icon_path).map_err(|e| e.to_string())?;
-        window.set_icon(image).map_err(|e| e.to_string())?;
-    }
+    let icon_path = super::logo::ensure_ecosystem_icon_png(data_dir)?;
+    let image = tauri::image::Image::from_path(&icon_path).map_err(|e| e.to_string())?;
+    window.set_icon(image).map_err(|e| e.to_string())?;
     Ok(())
 }
 

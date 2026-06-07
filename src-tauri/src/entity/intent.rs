@@ -2,6 +2,9 @@ use super::registry::{EntityDef, EntityRegistry};
 use crate::ai::intent_filters::normalize_message;
 
 const ACTION_PREFIXES: &[&str] = &[
+    "gerer les ",
+    "gere les ",
+    "gérer les ",
     "gerer ",
     "gere ",
     "gérer ",
@@ -176,8 +179,9 @@ mod tests {
             label: Some("École".into()),
             description: None,
             ai_suggestions: true,
-            requires_validation: false,
-            validator_role_ids: vec![],
+            requires_signature: false,
+            signatory_role_ids: vec![],
+            is_session: false,
             attributs: vec![],
         }]);
         assert_eq!(match_intent("ecole", &r).as_deref(), Some("ecole"));
@@ -191,8 +195,9 @@ mod tests {
             label: Some("Clients".into()),
             description: None,
             ai_suggestions: true,
-            requires_validation: false,
-            validator_role_ids: vec![],
+            requires_signature: false,
+            signatory_role_ids: vec![],
+            is_session: false,
             attributs: vec![],
         }]);
         assert_eq!(match_intent("gerer clients", &r).as_deref(), Some("clients"));

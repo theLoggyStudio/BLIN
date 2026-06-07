@@ -42,15 +42,21 @@ export async function applyAppBranding(branding: AppBranding): Promise<void> {
     try {
       const win = getCurrentWindow();
       await win.setTitle(windowTitle);
-      const res = await fetch(branding.logoSrc);
-      if (res.ok) {
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        const { Image } = await import("@tauri-apps/api/image");
-        const image = await Image.fromBytes(bytes);
-        await win.setIcon(image);
-      }
     } catch {
       /* fenêtre non prête */
     }
+  }
+
+  try {
+    const win = getCurrentWindow();
+    const res = await fetch(branding.logoSrc);
+    if (res.ok) {
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const { Image } = await import("@tauri-apps/api/image");
+      const image = await Image.fromBytes(bytes);
+      await win.setIcon(image);
+    }
+  } catch {
+    /* icône fenêtre / barre des tâches */
   }
 }

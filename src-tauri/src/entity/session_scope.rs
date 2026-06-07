@@ -150,7 +150,7 @@ pub fn merge_active_session_filter(
 
 /// Préremplit la liaison session à la création si le champ est vide.
 pub fn apply_active_session_on_create(
-    data_dir: &Path,
+    db: &Database,
     registry: &EntityRegistry,
     screen_key: &str,
     data: &mut Map<String, Value>,
@@ -161,7 +161,7 @@ pub fn apply_active_session_on_create(
     let Some(binding) = session_ref_binding(registry, screen_key) else {
         return Ok(());
     };
-    let Some(active) = load_active(data_dir)? else {
+    let Some(active) = load_active(&db.data_dir)? else {
         return Ok(());
     };
     if active.entity_key != binding.session_entity_key {
@@ -170,7 +170,44 @@ pub fn apply_active_session_on_create(
     if !value_is_empty(data.get(&binding.field_key)) {
         return Ok(());
     }
-    data.insert(binding.field_key.clone(), json!(active.record_id));
+    let parent_ent = registry
+        .find(screen_key)
+        .ok_or_else(|| format!("Entité « {screen_key} » introuvable."))?;
+    let parent_attr = parent_ent
+        .attributs
+        .iter()
+        .find(|a| a.nom == binding.field_key && a.attr_type == "entity")
+        .ok_or_else(|| format!("Attribut session « {} » introuvable.", binding.field_key))?;
+
+    if parent_attr.relation_multiple {
+        let session_ent = registry
+            .find(&active.entity_key)
+            .ok_or_else(|| format!("Entité session « {} » introuvable.", active.entity_key))?;
+        let child = super::embed::resolve_child(registry, parent_attr)
+            .ok_or_else(|| format!("Entité fille « {} » introuvable.", binding.field_key))?;
+        let session_row = crate::dda::crud::get_row(
+            db,
+            &super::config::build_screen_config(session_ent, registry),
+            &active.record_id,
+        )
+        .map_err(|_| format!("Enregistrement session introuvable ({})", active.record_id))?;
+        let item = super::embed::child_object_from_row_for_embed_list(child, &session_row);
+        data.insert(
+            binding.field_key.clone(),
+            Value::String(serde_json::to_string(&vec![item]).map_err(|e| e.to_string())?),
+        );
+    } else {
+        let copied = super::relations::embed_values_from_record(
+            db,
+            &db.data_dir,
+            screen_key,
+            &binding.field_key,
+            &active.record_id,
+        )?;
+        for (k, v) in copied {
+            data.insert(k, v);
+        }
+    }
     Ok(())
 }
 
@@ -185,10 +222,62 @@ pub fn record_display_label(ent: &EntityDef, row: &Map<String, Value>) -> String
             }
         }
     }
+    for (_col, raw) in row {
+        if let Some(label) = label_from_embed_value(raw) {
+            return label;
+        }
+    }
     row.get("id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| ent.label.clone().unwrap_or_else(|| ent.nom.clone()))
+        .unwrap_or_else(|| {
+            ent.label
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| ent.nom.clone())
+        })
+}
+
+fn label_from_embed_value(raw: &Value) -> Option<String> {
+    let parsed = match raw {
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                return None;
+            }
+            serde_json::from_str::<Value>(t).ok().or_else(|| Some(Value::String(s.clone())))
+        }
+        other => Some(other.clone()),
+    }?;
+    const KEYS: &[&str] = &["libelle", "nom", "titre", "reference", "intitule"];
+    match &parsed {
+        Value::Array(items) => {
+            for item in items {
+                let map = item.as_object()?;
+                for key in KEYS {
+                    if let Some(Value::String(s)) = map.get(*key) {
+                        let t = s.trim();
+                        if !t.is_empty() {
+                            return Some(t.to_string());
+                        }
+                    }
+                }
+            }
+            None
+        }
+        Value::Object(map) => {
+            for key in KEYS {
+                if let Some(Value::String(s)) = map.get(*key) {
+                    let t = s.trim();
+                    if !t.is_empty() {
+                        return Some(t.to_string());
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 pub fn resolve_record_label(
@@ -201,7 +290,7 @@ pub fn resolve_record_label(
     let ent = registry
         .find(entity_key)
         .ok_or_else(|| format!("Entité « {entity_key} » introuvable."))?;
-    let cfg = super::config::build_screen_config(ent);
+    let cfg = super::config::build_screen_config(ent, registry);
     let row = crate::dda::crud::get_row(db, &cfg, record_id)
         .map_err(|_| format!("Enregistrement session introuvable ({record_id})."))?;
     Ok(record_display_label(ent, &row))

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ReactNode } from "react";
 import { usePrivilege } from "@/hooks/usePrivilege";
+import { EntityEmbedGroup, EntityEmbedListEditor } from "@/items/EntityEmbedField";
 import { EntityRelationCreateModal } from "@/items/EntityRelationCreateModal";
-import { EntityValidationModal } from "@/items/EntityValidationModal";
+import { EntityRelationPickOrCreateModal } from "@/items/EntityRelationPickOrCreateModal";
 import { TacheRolesVisibleField } from "@/items/TacheRolesVisibleField";
+import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Select } from "@/items/Select";
 import { FieldMessages } from "@/items/FieldMessages";
@@ -21,6 +23,7 @@ interface FieldRendererProps {
   field: FieldDef;
   values: ScreenRow;
   onChange: (key: string, value: unknown) => void;
+  onBatchChange?: (updates: Record<string, unknown>) => void;
   onBlur?: (key: string) => void;
   readOnly?: boolean;
   fieldError?: ValidationIssue;
@@ -30,10 +33,37 @@ interface FieldRendererProps {
   storageFolders?: string[];
   /** Pour les liaisons entity_ref : exclure l'enregistrement en cours de la règle d'exclusivité parent. */
   excludeRecordId?: string;
+  /** Tous les champs de l'écran (groupes embarqués). */
+  allFields?: FieldDef[];
+  fieldErrorsMap?: Record<string, ValidationIssue>;
+  fieldWarningsMap?: Record<string, ValidationIssue>;
 }
 
 /** Valeur réservée de la première option « Créer un nouveau ». */
 export const ENTITY_REF_CREATE_NEW = "__blin_create_new__";
+
+function parseEntityRefListValue(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v ?? "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((v) => String(v ?? "").trim()).filter(Boolean);
+      }
+    } catch {
+      // support legacy comma-separated values
+      return trimmed
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
 
 function EntityRefSelect({
   field,
@@ -56,10 +86,8 @@ function EntityRefSelect({
 }) {
   const refEntity = field.form?.refEntity?.trim() ?? "";
   const canCreate = usePrivilege(refEntity ? `${refEntity}:creer` : "");
-  const canViewRef = usePrivilege(refEntity ? `${refEntity}:voir` : "");
   const [options, setOptions] = useState<RelationSelectOption[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [validationTarget, setValidationTarget] = useState<string | null>(null);
   const selectValueRef = useRef(value);
 
   useEffect(() => {
@@ -104,15 +132,6 @@ function EntityRefSelect({
     void load();
   };
 
-  const optionByValue = (id: string) => merged.find((o) => o.value === id);
-
-  const openValidationFor = (recordId: string) => {
-    if (!canViewRef) return;
-    const opt = optionByValue(recordId);
-    if (opt?.validationStatus !== VALIDATION_STATUS_NON_VALIDE) return;
-    setValidationTarget(recordId);
-  };
-
   return (
     <>
       <Select
@@ -126,30 +145,12 @@ function EntityRefSelect({
             setCreateOpen(true);
             return;
           }
-          const opt = optionByValue(v);
-          if (opt?.validationStatus === VALIDATION_STATUS_NON_VALIDE) {
-            if (canViewRef) {
-              setValidationTarget(v);
-            }
-            return;
-          }
           selectValueRef.current = v;
           onChange(field.key, v);
         }}
         onBlur={() => onBlur?.(field.key)}
         options={selectOptions}
       />
-      {canViewRef &&
-        value &&
-        optionByValue(value)?.validationStatus === VALIDATION_STATUS_NON_VALIDE && (
-        <button
-          type="button"
-          className="mt-1.5 text-left text-sm text-amber-400 underline-offset-2 hover:underline"
-          onClick={() => openValidationFor(value)}
-        >
-          Non validé — cliquer pour consulter et valider
-        </button>
-      )}
       {refEntity && (
         <EntityRelationCreateModal
           entityKey={refEntity}
@@ -158,18 +159,113 @@ function EntityRefSelect({
           onCreated={handleCreated}
         />
       )}
-      {refEntity && canViewRef && validationTarget && (
-        <EntityValidationModal
+    </>
+  );
+}
+
+function EntityRefListEditor({
+  field,
+  value,
+  readOnly,
+  screenKey,
+  excludeRecordId,
+  fieldError,
+  onChange,
+  onBlur,
+}: {
+  field: FieldDef;
+  value: unknown;
+  readOnly?: boolean;
+  screenKey: string;
+  excludeRecordId?: string;
+  fieldError?: ValidationIssue;
+  onChange: (key: string, value: unknown) => void;
+  onBlur?: (key: string) => void;
+}) {
+  const [options, setOptions] = useState<RelationSelectOption[]>([]);
+  const [pickOpen, setPickOpen] = useState(false);
+  const rows = parseEntityRefListValue(value);
+  const refEntity = field.form?.refEntity?.trim() ?? "";
+
+  const load = useCallback(async () => {
+    try {
+      const fetched = await invoke<RelationSelectOption[]>("entity_relation_options", {
+        payload: {
+          screen_key: screenKey,
+          field_key: field.key,
+          exclude_record_id: excludeRecordId ?? null,
+        },
+      });
+      setOptions(fetched);
+    } catch {
+      setOptions([{ value: "", label: "— Aucun —" }]);
+    }
+  }, [screenKey, field.key, excludeRecordId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const labelById = (id: string) =>
+    options.find((o) => o.value === id)?.label ?? id;
+
+  const updateRows = (next: string[]) => {
+    onChange(field.key, next);
+    onBlur?.(field.key);
+  };
+
+  const addRow = (id: string) => {
+    if (!id || rows.includes(id)) return;
+    updateRows([...rows, id]);
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-3">
+      <p className="text-sm font-medium text-foreground">{field.label}</p>
+      <p className="text-xs text-muted">
+        Liaison multiple sous forme de tableau incrémentable.
+      </p>
+      {rows.length === 0 && (
+        <p className="text-xs text-muted">Aucune ligne — cliquez sur « Ajouter ».</p>
+      )}
+      {rows.map((rowValue, idx) => (
+        <div
+          key={`${idx}-${rowValue}`}
+          className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2"
+        >
+          <span className="text-sm text-foreground">{labelById(rowValue)}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={readOnly}
+            onClick={() => {
+              const next = rows.filter((_, i) => i !== idx);
+              updateRows(next);
+            }}
+          >
+            Retirer
+          </Button>
+        </div>
+      ))}
+      {!readOnly && refEntity && (
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setPickOpen(true)}>
+            Ajouter
+          </Button>
+        </div>
+      )}
+      {refEntity && (
+        <EntityRelationPickOrCreateModal
           entityKey={refEntity}
-          recordId={validationTarget}
-          open={Boolean(validationTarget)}
-          onClose={() => setValidationTarget(null)}
-          onValidated={() => {
-            void load();
-          }}
+          open={pickOpen}
+          onClose={() => setPickOpen(false)}
+          options={options}
+          excludeIds={rows}
+          onSelected={addRow}
+          onOptionsRefresh={() => void load()}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -177,6 +273,7 @@ export function FieldRenderer({
   field,
   values,
   onChange,
+  onBatchChange,
   onBlur,
   readOnly,
   fieldError,
@@ -185,8 +282,14 @@ export function FieldRenderer({
   uploadDraftId,
   storageFolders,
   excludeRecordId,
+  allFields = [],
+  fieldErrorsMap,
+  fieldWarningsMap,
 }: FieldRendererProps) {
   if (field.type === "hidden" || field.type === "detail_link" || !isFieldVisible(field, values)) {
+    return null;
+  }
+  if (field.form?.embedParent) {
     return null;
   }
 
@@ -223,11 +326,61 @@ export function FieldRenderer({
     );
   }
 
+  if (field.type === "entity_embed") {
+    return wrap(
+      <EntityEmbedGroup
+        field={field}
+        allFields={allFields}
+        values={values}
+        readOnly={ro}
+        screenKey={screenKey}
+        uploadDraftId={uploadDraftId}
+        storageFolders={storageFolders}
+        excludeRecordId={excludeRecordId}
+        onChange={onChange}
+        onBatchChange={onBatchChange}
+        onBlur={onBlur}
+        fieldErrors={fieldErrorsMap}
+        fieldWarnings={fieldWarningsMap}
+      />,
+    );
+  }
+
+  if (field.type === "entity_embed_list") {
+    return wrap(
+      <EntityEmbedListEditor
+        field={field}
+        value={val}
+        readOnly={ro}
+        screenKey={screenKey}
+        excludeRecordId={excludeRecordId}
+        fieldError={fieldError}
+        onChange={onChange}
+        onBlur={onBlur}
+      />,
+    );
+  }
+
   if (field.type === "entity_ref") {
     return wrap(
       <EntityRefSelect
         field={field}
         value={String(val ?? "")}
+        readOnly={ro}
+        screenKey={screenKey}
+        excludeRecordId={excludeRecordId}
+        fieldError={fieldError}
+        onChange={onChange}
+        onBlur={onBlur}
+      />,
+    );
+  }
+
+  if (field.type === "entity_ref_list") {
+    return wrap(
+      <EntityRefListEditor
+        field={field}
+        value={val}
         readOnly={ro}
         screenKey={screenKey}
         excludeRecordId={excludeRecordId}

@@ -1,11 +1,34 @@
-import { useState, type FormEvent } from "react";
-import { Lock } from "lucide-react";
+import { useCallback, useState, type FormEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Copy, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEntityBranding } from "@/hooks/useEntityBranding";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Modal } from "@/items/Modal";
+import { QRCodeSVG } from "qrcode.react";
 
 const DEFAULT_ADMIN_EMAIL = "admin@blin.local";
+
+interface RemoteConnectionResponse {
+  ip?: string;
+  url?: string;
+  frontUrl?: string;
+  success?: boolean;
+}
+
+function QrCodeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 512 512"
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+    >
+      <path d="M0 80C0 35.8 35.8 0 80 0H176c44.2 0 80 35.8 80 80V176c0 44.2-35.8 80-80 80H80c-44.2 0-80-35.8-80-80V80zM64 64c-17.7 0-32 14.3-32 32v64c0 17.7 14.3 32 32 32H128c17.7 0 32-14.3 32-32V96c0-17.7-14.3-32-32-32H64zm0 32H128v64H64V96zm128-32c0 17.7 14.3 32 32 32s32-14.3 32-32-14.3-32-32-32-32 14.3-32 32zm32 64c-17.7 0-32 14.3-32 32v32c0 17.7 14.3 32 32 32h32v32c0 17.7 14.3 32 32 32s32-14.3 32-32V224c17.7 0 32-14.3 32-32V160c0-17.7-14.3-32-32-32H224zM352 64c0-17.7-14.3-32-32-32s-32 14.3-32 32V96c0 17.7 14.3 32 32 32h32v32c0 17.7 14.3 32 32 32s32-14.3 32-32V128c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32H384c-17.7 0-32 14.3-32 32V64zM384 256c-17.7 0-32 14.3-32 32v64c0 17.7 14.3 32 32 32h64c17.7 0 32-14.3 32-32V288c0-17.7-14.3-32-32-32H384zm0 32h64v64H384V288z" />
+    </svg>
+  );
+}
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -14,6 +37,41 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [scanUrl, setScanUrl] = useState("");
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  const loadScanUrl = useCallback(async () => {
+    setScanLoading(true);
+    setScanError(null);
+    try {
+      const data = await invoke<RemoteConnectionResponse>("remote_connection_get");
+      if (data?.success && (data.frontUrl || data.url)) {
+        setScanUrl(data.frontUrl || data.url || "");
+      } else {
+        setScanUrl("");
+        setScanError("Impossible d'obtenir l'adresse réseau. Vérifiez votre connexion.");
+      }
+    } catch {
+      setScanUrl("");
+      setScanError("Impossible d'obtenir l'adresse réseau du PC.");
+    } finally {
+      setScanLoading(false);
+    }
+  }, []);
+
+  const openQrModal = () => {
+    setQrOpen(true);
+    void loadScanUrl();
+  };
+
+  const closeQrModal = () => {
+    setQrOpen(false);
+    setScanUrl("");
+    setScanError(null);
+  };
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -28,9 +86,35 @@ export function LoginPage() {
     }
   };
 
+  const sendMailTo = () => {
+    const subject = "Connexion Blin depuis mobile";
+    const body = `Scannez ou ouvrez ce lien depuis votre mobile :\n${scanUrl}\n\nAttention : l'URL peut changer après redémarrage de l'application.`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const copyUrl = async () => {
+    if (!scanUrl) return;
+    try {
+      await navigator.clipboard.writeText(scanUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
     <div className="login-page flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="card-panel w-full max-w-md rounded-2xl border border-border p-8 shadow-2xl">
+      <div className="card-panel relative w-full max-w-md rounded-2xl border border-border p-8 shadow-2xl">
+        <button
+          type="button"
+          onClick={openQrModal}
+          className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-white shadow-lg transition hover:scale-105 hover:opacity-95"
+          aria-label="Scannez pour vous connecter"
+          title="Scannez pour vous connecter"
+        >
+          <QrCodeIcon className="h-4 w-4" />
+        </button>
         <div className="mb-8 flex flex-col items-center gap-4 text-center">
           <img src={logoSrc} alt={title} className="h-16 w-16 object-contain" />
           <div>
@@ -80,6 +164,63 @@ export function LoginPage() {
           <span className="text-secondary">admin1234</span>. Vous devrez le modifier immédiatement.
         </p>
       </div>
+
+      <Modal
+        open={qrOpen}
+        onClose={closeQrModal}
+        title="Scannez pour vous connecter"
+        size="sm"
+      >
+        <div className="flex flex-col items-center gap-4">
+          {scanLoading ? (
+            <div className="flex h-[190px] w-[190px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
+              Chargement...
+            </div>
+          ) : scanUrl ? (
+            <div className="rounded-lg bg-white p-3">
+              <QRCodeSVG value={scanUrl} size={190} />
+            </div>
+          ) : (
+            <div className="flex h-[190px] w-[190px] items-center justify-center rounded-lg bg-muted px-4 text-center text-sm text-muted-foreground">
+              {scanError || "Adresse indisponible"}
+            </div>
+          )}
+          {scanError && (
+            <p className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary text-center">
+              {scanError}
+            </p>
+          )}
+          <p className="text-xs text-muted text-center">
+            Utilisez l&apos;adresse IP locale du PC (même réseau Wi‑Fi). Le jeton QR expire après 15 minutes.
+          </p>
+          <div className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted break-all">
+            {scanUrl || "—"}
+          </div>
+          <div className="flex w-full gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="flex-1"
+              onClick={copyUrl}
+              disabled={!scanUrl}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              {copied ? "Copié" : "Copier l'URL"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="flex-1"
+              onClick={sendMailTo}
+              disabled={!scanUrl}
+            >
+              Envoyer par e-mail
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

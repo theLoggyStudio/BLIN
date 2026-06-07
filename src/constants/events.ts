@@ -12,3 +12,6 @@ export const AI_CONVERSATION_SELECT_EVENT = "ai-conversation-select";
 
 /** Nouvelle discussion vide (tableau de bord). */
 export const AI_CONVERSATION_NEW_EVENT = "ai-conversation-new";
+
+/** Ouvre le modal d'import CSV sur l'écran entité active. */
+export const ENTITY_CSV_IMPORT_OPEN_EVENT = "entity-csv-import-open";

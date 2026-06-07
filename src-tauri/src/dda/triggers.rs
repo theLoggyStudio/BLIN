@@ -2,14 +2,12 @@ use std::fs;
 use std::path::Path;
 
 use rusqlite::params;
-use uuid::Uuid;
 
 use super::config::ScreenConfigFile;
 use super::knowledge;
 use super::validation::{build_validation_catalog, format_validation_knowledge};
 use crate::db::Database;
-use crate::print_seed::PRINT_CSS;
-use crate::print_template::{build_fiche_html_from_config, FICHE_CSS};
+use crate::print_template::{auto_print_description, build_fiche_html_from_config, FICHE_CSS};
 
 use crate::sync_progress::SyncReporter;
 
@@ -136,40 +134,19 @@ fn trigger_print_model(db: &Database, cfg: &ScreenConfigFile) -> Result<(), Stri
         return Ok(());
     }
     let screen_key = &print.screen_key;
-    let exists: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM document_print_models WHERE screen_key = ?1 AND name LIKE '%Fiche%'",
-            params![screen_key],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-    if exists > 0 {
-        return Ok(());
-    }
-
-    let name = print
+    let base_name = print
         .template_name
         .clone()
         .unwrap_or_else(|| format!("Fiche {}", cfg.screen.label));
     let html = build_fiche_html_from_config(cfg);
-    let id = Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    db.conn
-        .execute(
-            "INSERT INTO document_print_models (id, name, description, html_content, css_content, screen_key, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                id,
-                name,
-                format!("Fiche objet unique — écran {} (généré DDA)", screen_key),
-                html,
-                FICHE_CSS,
-                screen_key,
-                now,
-                now
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    let description = auto_print_description("fiche", screen_key);
+    db.sync_auto_print_model(
+        screen_key,
+        &base_name,
+        &description,
+        &html,
+        FICHE_CSS,
+        "Fiche",
+    )
+    .map_err(|e| e.to_string())
 }

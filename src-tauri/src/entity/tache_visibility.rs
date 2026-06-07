@@ -29,6 +29,8 @@ pub fn ensure_tache_visibility_in_registry(registry: &mut EntityRegistry) {
         label: Some("Visibilité".into()),
         required: false,
         r#ref: None,
+        relation_multiple: false,
+        relation_exclusive_parent: true,
         default: Some(Value::String(VIS_PUBLIQUE.into())),
         enum_options: None,
     });
@@ -38,6 +40,8 @@ pub fn ensure_tache_visibility_in_registry(registry: &mut EntityRegistry) {
         label: Some("Rôles autorisés (visibilité personnalisée)".into()),
         required: false,
         r#ref: None,
+        relation_multiple: false,
+        relation_exclusive_parent: true,
         default: None,
         enum_options: None,
     });
@@ -114,7 +118,8 @@ pub fn row_visible_to_role(row: &Map<String, Value>, role_id: &str, see_all: boo
     match vis {
         VIS_PUBLIQUE => true,
         VIS_PRIVEE => row
-            .get("role_validateur")
+            .get("role_signataire")
+            .or_else(|| row.get("role_validateur"))
             .and_then(|v| v.as_str())
             .map(|r| r.trim() == role_id.trim())
             .unwrap_or(false),
@@ -132,7 +137,7 @@ pub fn sql_visibility_filter(role_id: &str) -> String {
     format!(
         " AND (
             COALESCE({COL_VISIBILITE}, '{VIS_PUBLIQUE}') = '{VIS_PUBLIQUE}'
-            OR ({COL_VISIBILITE} = '{VIS_PRIVEE}' AND role_validateur = '{r}')
+            OR ({COL_VISIBILITE} = '{VIS_PRIVEE}' AND (role_signataire = '{r}' OR role_validateur = '{r}'))
             OR ({COL_VISIBILITE} = '{VIS_PERSONNALISEE}'
                 AND instr(',' || COALESCE({COL_ROLES_VISIBLES}, '') || ',', ',{r},') > 0)
         )"

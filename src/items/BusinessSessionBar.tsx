@@ -7,6 +7,7 @@ import { Modal } from "@/items/Modal";
 import { Select } from "@/items/Select";
 import { Text } from "@/items/Text";
 import type { ScreenRow } from "@/types/screen";
+import { entityRowDisplayLabel } from "@/lib/entityRowLabel";
 
 interface BusinessSessionBarProps {
   collapsed?: boolean;
@@ -38,9 +39,7 @@ export function BusinessSessionBar({ collapsed = false }: BusinessSessionBarProp
       setOptions(
         rows.map((row) => {
           const id = String(row.id ?? "");
-          const label =
-            String(row.libelle ?? row.nom ?? row.titre ?? row.reference ?? id).trim() || id;
-          return { value: id, label };
+          return { value: id, label: entityRowDisplayLabel(row) };
         }),
       );
       setRecordId((prev) => (prev && rows.some((r) => String(r.id) === prev) ? prev : ""));

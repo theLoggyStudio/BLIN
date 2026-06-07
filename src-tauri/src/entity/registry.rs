@@ -10,6 +10,15 @@ use super::{generated_config_dir, registry_path};
 
 pub const LOGO_FILENAME: &str = "logo.base64";
 
+/// Entités obsolètes retirées du registre à la normalisation (ex. typo « atricles »).
+pub const ORPHAN_ENTITY_KEYS: &[&str] = &["atricles"];
+
+pub fn is_orphan_entity_key(key: &str) -> bool {
+    ORPHAN_ENTITY_KEYS
+        .iter()
+        .any(|k| k.eq_ignore_ascii_case(key.trim()))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityAttribute {
     pub nom: String,
@@ -22,12 +31,20 @@ pub struct EntityAttribute {
     #[serde(default)]
     pub r#ref: Option<String>,
     #[serde(default)]
+    pub relation_multiple: bool,
+    #[serde(default = "default_relation_exclusive_parent")]
+    pub relation_exclusive_parent: bool,
+    #[serde(default)]
     pub default: Option<Value>,
     #[serde(default)]
     pub enum_options: Option<Vec<String>>,
 }
 
 fn default_ai_suggestions() -> bool {
+    true
+}
+
+fn default_relation_exclusive_parent() -> bool {
     true
 }
 
@@ -41,11 +58,12 @@ pub struct EntityDef {
     /// Afficher dans la barre de suggestions du tableau de bord / Loggy.
     #[serde(default = "default_ai_suggestions")]
     pub ai_suggestions: bool,
-    /// Création d'une tâche de validation pour les rôles listés.
-    #[serde(default)]
-    pub requires_validation: bool,
-    #[serde(default)]
-    pub validator_role_ids: Vec<String>,
+    /// Trigger système : tâches de signature auto à chaque création (une par rôle signataire).
+    #[serde(default, alias = "requires_validation")]
+    pub requires_signature: bool,
+    /// Identifiants de rôles SQLite autorisés à signer (ex. role-admin, role-directeur).
+    #[serde(default, alias = "validator_role_ids")]
+    pub signatory_role_ids: Vec<String>,
     /// Contexte métier : enregistrements = sessions actives (filtrage / préremplissage des liaisons).
     #[serde(default)]
     pub is_session: bool,
@@ -91,6 +109,13 @@ pub fn qualifies_for_ai_suggestions(registry: &EntityRegistry, ent: &EntityDef) 
     if ent.nom == super::stock::STOCK_ENTITY_KEY || ent.nom == "tache" {
         return false;
     }
+    if is_orphan_entity_key(&ent.nom) {
+        return false;
+    }
+    let has_entity_link = ent.attributs.iter().any(|a| a.attr_type == "entity");
+    if !has_entity_link {
+        return true;
+    }
     ent.attributs.iter().any(|a| {
         if a.attr_type != "entity" {
             return false;
@@ -109,10 +134,18 @@ pub fn qualifies_for_ai_suggestions(registry: &EntityRegistry, ent: &EntityDef) 
 pub fn apply_ai_suggestions_visibility(registry: &mut EntityRegistry) {
     let names: Vec<String> = registry.entities.iter().map(|e| e.nom.clone()).collect();
     for nom in names {
-        let visible = registry
+        let is_session = registry
             .find(&nom)
-            .map(|e| qualifies_for_ai_suggestions(registry, e))
+            .map(|e| e.is_session)
             .unwrap_or(false);
+        let visible = if is_session {
+            true
+        } else {
+            registry
+                .find(&nom)
+                .map(|e| qualifies_for_ai_suggestions(registry, e))
+                .unwrap_or(false)
+        };
         if let Some(ent) = registry.entities.iter_mut().find(|e| e.nom == nom) {
             ent.ai_suggestions = visible;
         }
@@ -120,23 +153,28 @@ pub fn apply_ai_suggestions_visibility(registry: &mut EntityRegistry) {
 }
 
 pub fn normalize_registry(mut registry: EntityRegistry) -> EntityRegistry {
+    registry
+        .entities
+        .retain(|e| !is_orphan_entity_key(&e.nom));
     for ent in &mut registry.entities {
         ent.attributs.retain(|a| !is_reserved_attribute(a));
         for attr in &mut ent.attributs {
             normalize_attribute(attr);
         }
-        if ent.is_session {
-            ent.ai_suggestions = true;
+        if ent.nom != super::stock::STOCK_ENTITY_KEY && ent.nom != "tache" {
+            ent.is_session = true;
         }
-        if !ent.requires_validation {
-            ent.validator_role_ids.clear();
+        if ent.nom == super::stock::STOCK_ENTITY_KEY || ent.nom == "tache" {
+            ent.ai_suggestions = false;
+        }
+        if !ent.requires_signature {
+            ent.signatory_role_ids.clear();
         } else {
-            ent.validator_role_ids.retain(|id| !id.trim().is_empty());
-            ent.validator_role_ids.sort();
-            ent.validator_role_ids.dedup();
+            ent.signatory_role_ids.retain(|id| !id.trim().is_empty());
+            ent.signatory_role_ids.sort();
+            ent.signatory_role_ids.dedup();
         }
     }
-    apply_ai_suggestions_visibility(&mut registry);
     registry
 }
 

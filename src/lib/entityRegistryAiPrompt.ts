@@ -1,3 +1,5 @@
+import type { RoleRow } from "@/types/users";
+
 /** Idées par défaut si l'utilisateur ne précise pas de domaine (tirage aléatoire). */
 const ECOSYSTEM_IDEAS: { ecosysteme: string; slogan: string; domaine: string }[] = [
   {
@@ -32,6 +34,8 @@ export interface EntityRegistryPromptOptions {
   currentSlogan?: string;
   /** Domaine métier saisi par l'utilisateur — pilote tout le prompt. */
   domainHint: string;
+  /** Rôles déjà créés dans l'app (Paramètres → Rôles) — injectés pour validator_role_ids. */
+  roles?: RoleRow[];
 }
 
 function ecosystemNameFromDomain(domain: string): string {
@@ -76,11 +80,38 @@ export function proposeEcosystemNames(options: EntityRegistryPromptOptions): {
   };
 }
 
+function buildRolesSection(roles: RoleRow[] | undefined): string {
+  if (!roles?.length) {
+    return `## Rôles existants dans cette installation
+
+Aucun rôle trouvé en base. Si une entité a \`requires_validation: true\`, laisse \`validator_role_ids: []\` ou propose des IDs au format \`role-xxx\` — l'utilisateur devra créer les rôles dans **Paramètres → Rôles** puis ajuster le JSON.
+
+`;
+  }
+
+  const rows = roles
+    .map((role) => `| \`${role.id}\` | ${role.nom.replace(/\|/g, "\\|")} |`)
+    .join("\n");
+
+  return `## Rôles existants dans cette installation
+
+Utilise **uniquement** les IDs du tableau ci-dessous dans \`validator_role_ids\` (entités à valider). Pour les tâches en visibilité \`personnalisee\`, les mêmes IDs vont dans \`roles_visibles\` (CSV \`,role-id,\`).
+
+| ID (à copier dans le JSON) | Nom affiché |
+|-----------------------------|-------------|
+${rows}
+
+**Règle** : si \`requires_validation: true\`, choisis un ou plusieurs rôles **métier** adaptés au domaine (ex. directeur, responsable qualité) — pas uniquement \`role-admin\` sauf si pertinent.
+
+`;
+}
+
 /**
  * Prompt complet à copier vers ChatGPT, Claude, etc. pour générer un registry.json Blin.
  */
 export function buildEntityRegistryAiPrompt(options: EntityRegistryPromptOptions): string {
   const proposal = proposeEcosystemNames(options);
+  const rolesSection = buildRolesSection(options.roles);
 
   return `Tu es un architecte de données pour **Blin**, une application desktop (Tauri + SQLite) **agnostique du métier** : chaque utilisateur définit son propre domaine (santé, sport, atelier, école, association, etc.). Il n'y a **pas** d'écran figé ni de module immobilier : tout est décrit dans un fichier \`registry.json\`, puis l'app génère tables SQLite, formulaires, privilèges et aide IA.
 
@@ -94,7 +125,7 @@ Tout le JSON doit être pensé **uniquement** pour ce domaine : vocabulaire, ent
 
 ---
 
-## Ta mission
+${rolesSection}## Ta mission
 
 Conçois un **registre d'entités métier complet** pour ce domaine, prêt à être collé dans **Paramètres → Entités → Vue JSON** puis enregistré.
 
@@ -156,7 +187,7 @@ Inclure **au minimum 5 entités** cohérentes entre elles pour **${proposal.doma
 
 **Exemples (domaine scolaire)** :
 - \`users\` → \`ai_suggestions: false\` (comptes, rôles).
-- \`professeur\` avec \`"info" → ref: "users"\` → \`ai_suggestions: true\` (« Gérer Enseignant »).
+- \`professeur\` avec \`"info" → ref: "users"\` → \`ai_suggestions: true\` (« Gérer les Enseignant »).
 - \`eleve\` avec liaison vers \`users\` → \`true\`.
 - \`matiere\` **sans** liaison vers une entité en \`false\` → \`false\` (on gère les matières depuis les notes / classes, pas depuis la barre).
 - \`classe\` qui ne lie que d'autres entités déjà « visibles » (\`professeur\`, \`ecole\` en \`true\`) → \`false\` ; \`ecole\` qui lie \`users\` en \`false\` → \`true\`.
@@ -164,8 +195,10 @@ Inclure **au minimum 5 entités** cohérentes entre elles pour **${proposal.doma
 **Entités système** : \`stock\` (auto), \`tache\` → toujours \`ai_suggestions: false\` (menu **Tâches** dédié, pas la barre de commande).
 
 **À l'enregistrement**, Blin **recalcule** \`ai_suggestions\` selon cette règle — ne pas mettre \`true\` partout par défaut.
+
+**Trigger knowledge (auto)** : à chaque sauvegarde du registre, Blin génère \`MASTER_entities_relations.txt\` et \`{nom}_entity_relations.txt\` (jointures entity ref) pour le chat « liste les … avec … ».
 | \`requires_validation\` | Si \`true\`, **trigger système** : à chaque \`dda_create\` / création, une tâche \`validation\` privée par rôle valideur (entité \`tache\` obligatoire). L'entité doit avoir **au moins un** attribut \`required: true\`. |
-| \`validator_role_ids\` | Tableau d'IDs de rôles, ex. \`["role-admin"]\` — **obligatoire** si \`requires_validation\` est true. |
+| \`validator_role_ids\` | Tableau d'IDs de rôles — **obligatoire** si \`requires_validation\` est true. Utilise **uniquement** les IDs listés dans la section « Rôles existants » ci-dessus. |
 | \`is_session\` | Si \`true\`, chaque enregistrement peut être la **session métier active** (sidebar). Les entités avec un attribut \`entity\` vers cette session sont **filtrées** et **préremplies** à la création. Ex. \`seance\`, \`journee\`, \`intervention\`. |
 
 ---

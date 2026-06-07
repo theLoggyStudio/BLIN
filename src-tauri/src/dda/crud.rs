@@ -8,6 +8,8 @@ use uuid::Uuid;
 use super::config::{FieldDef, ScreenConfigFile};
 use super::media::{relocate_draft_media, rewrite_path_after_relocate};
 use super::validation::{validate_screen_data, validation_error_json};
+use crate::entity::child_table;
+use crate::entity::record_signature::{self, RowUserContext};
 use crate::db::Database;
 
 #[derive(Clone, Copy)]
@@ -83,6 +85,23 @@ pub fn list_rows_with_options(
         }
     }
 
+    // Filtres injectés (session métier, etc.) sur champs sans filtre UI — ex. liaison entity.
+    let filter_field_keys: std::collections::HashSet<String> =
+        cfg.filter_fields().into_iter().map(|f| f.key.to_string()).collect();
+    for field in cfg.persisted_fields() {
+        if filter_field_keys.contains(&field.key) {
+            continue;
+        }
+        let Some(val) = filters.get(&field.key) else {
+            continue;
+        };
+        if val.trim().is_empty() {
+            continue;
+        }
+        sql.push_str(&format!(" AND {} = ?", field.column));
+        sql_params.push(SqlValue::Text(val.trim().to_string()));
+    }
+
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
         if let Some(role_id) = options.viewer_role_id {
             if !crate::entity::tache_visibility::can_user_see_all_tasks(options.viewer_privileges) {
@@ -120,7 +139,7 @@ pub fn get_row_with_options(
     let table = &cfg.screen.table;
     let pk = &cfg.screen.primary_key;
     let sql = format!("SELECT * FROM {table} WHERE {pk} = ?1");
-    let row = db
+    let mut row = db
         .conn
         .query_row(&sql, params![id], row_to_json_map)
         .map_err(|e| e.to_string())?;
@@ -133,7 +152,52 @@ pub fn get_row_with_options(
             }
         }
     }
+    hydrate_embed_lists(db, cfg, &mut row)?;
     Ok(row)
+}
+
+fn hydrate_embed_lists(
+    db: &Database,
+    cfg: &ScreenConfigFile,
+    row: &mut Map<String, Value>,
+) -> Result<(), String> {
+    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    let Some(ent) = registry.find(&cfg.screen.key) else {
+        return Ok(());
+    };
+    let record_id = row
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if record_id.is_empty() {
+        return Ok(());
+    }
+    for (attr, child) in child_table::embed_list_attrs(ent, &registry) {
+        let items = child_table::load_embed_list(db, &cfg.screen.key, &record_id, child)?;
+        row.insert(
+            attr.nom.clone(),
+            Value::Array(items.into_iter().map(Value::Object).collect()),
+        );
+    }
+    Ok(())
+}
+
+fn extract_embed_lists(
+    data: &mut Map<String, Value>,
+    cfg: &ScreenConfigFile,
+    registry: &crate::entity::registry::EntityRegistry,
+) -> Vec<(String, crate::entity::registry::EntityDef, Vec<Map<String, Value>>)> {
+    let Some(ent) = registry.find(&cfg.screen.key) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (attr, child) in child_table::embed_list_attrs(ent, registry) {
+        let raw = data.remove(&attr.nom);
+        let items = child_table::parse_embed_list_items(raw.as_ref());
+        out.push((attr.nom.clone(), (*child).clone(), items));
+    }
+    out
 }
 
 pub fn create_row(
@@ -141,18 +205,28 @@ pub fn create_row(
     cfg: &ScreenConfigFile,
     data: &Map<String, Value>,
 ) -> Result<Map<String, Value>, String> {
+    create_row_with_user(db, cfg, data, None)
+}
+
+pub fn create_row_with_user(
+    db: &Database,
+    cfg: &ScreenConfigFile,
+    data: &Map<String, Value>,
+    user_ctx: Option<RowUserContext<'_>>,
+) -> Result<Map<String, Value>, String> {
     let mut data = data.clone();
     let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
     crate::entity::session_scope::apply_active_session_on_create(
-        &db.data_dir,
+        db,
         &registry,
         &cfg.screen.key,
         &mut data,
     )?;
-    crate::entity::record_validation::set_non_valide_on_create(
+    record_signature::apply_signature_status_on_create(
         &mut data,
         &cfg.screen.key,
         &registry,
+        user_ctx,
     );
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
         crate::entity::tache_visibility::apply_create_defaults(&mut data);
@@ -168,6 +242,7 @@ pub fn create_row(
     if !report.valid {
         return Err(validation_error_json(&report));
     }
+    let embed_lists = extract_embed_lists(&mut data, cfg, &registry);
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let table = &cfg.screen.table;
@@ -223,6 +298,13 @@ pub fn create_row(
         .map_err(|e| e.to_string())?;
 
     finalize_media_paths_after_create(db, cfg, &id, &data)?;
+    for (attr_key, child, items) in embed_lists {
+        child_table::save_embed_list(db, &cfg.screen.key, &id, &child, &items)?;
+        data.insert(
+            attr_key,
+            Value::Array(items.into_iter().map(Value::Object).collect()),
+        );
+    }
     let row = get_row(db, cfg, &id)?;
     crate::entity::validation::after_entity_row_created(db, &cfg.screen.key, &row)?;
     crate::entity::session_scope::activate_if_session_entity(&db.data_dir, &registry, &cfg.screen.key, &row)?;
@@ -245,6 +327,8 @@ pub fn update_row_with_options(
     data: &Map<String, Value>,
     options: ListRowsOptions<'_>,
 ) -> Result<Map<String, Value>, String> {
+    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    record_signature::assert_record_mutable(db, &cfg.screen.key, id, &registry)?;
     get_row_with_options(db, cfg, id, options)?;
     let mut data = data.clone();
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
@@ -254,6 +338,7 @@ pub fn update_row_with_options(
     if !report.valid {
         return Err(validation_error_json(&report));
     }
+    let embed_lists = extract_embed_lists(&mut data, cfg, &registry);
     let table = &cfg.screen.table;
     let pk = &cfg.screen.primary_key;
     let mut sets = Vec::new();
@@ -282,10 +367,19 @@ pub fn update_row_with_options(
     db.conn
         .execute(&sql, rusqlite::params_from_iter(values.iter()))
         .map_err(|e| e.to_string())?;
+    for (attr_key, child, items) in embed_lists {
+        child_table::save_embed_list(db, &cfg.screen.key, id, &child, &items)?;
+        data.insert(
+            attr_key,
+            Value::Array(items.into_iter().map(Value::Object).collect()),
+        );
+    }
     get_row_with_options(db, cfg, id, options)
 }
 
 pub fn delete_row(db: &Database, cfg: &ScreenConfigFile, id: &str) -> Result<(), String> {
+    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    child_table::delete_embed_lists_for_parent(db, &registry, &cfg.screen.key, id)?;
     let table = &cfg.screen.table;
     let pk = &cfg.screen.primary_key;
     let sql = format!("DELETE FROM {table} WHERE {pk} = ?1");

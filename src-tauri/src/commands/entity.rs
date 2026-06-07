@@ -5,7 +5,7 @@ use crate::dda::config::ScreenConfigFile;
 use crate::entity::{
     self,
     create_draft::EntityCreateDraft,
-    record_validation::{RecordValidationDetail, RelationSelectOptionExt},
+    record_signature::{RecordSignatureDetail, RelationSelectOptionExt, RowUserContext},
     registry::EntityRegistry,
     relations::RelationDetailResponse,
 };
@@ -47,13 +47,20 @@ pub struct EntityRelationFieldPayload {
 }
 
 #[derive(Deserialize)]
+pub struct EntityEmbedCopyPayload {
+    pub screen_key: String,
+    pub field_key: String,
+    pub record_id: String,
+}
+
+#[derive(Deserialize)]
 pub struct EntityRelationDetailPayload {
     pub screen_key: String,
     pub record_id: String,
 }
 
 #[derive(Deserialize)]
-pub struct EntityRecordValidationPayload {
+pub struct EntityRecordSignaturePayload {
     pub entity_key: String,
     pub record_id: String,
 }
@@ -218,6 +225,50 @@ pub fn entity_relation_options(
 }
 
 #[tauri::command]
+pub fn entity_embed_values_from_record(
+    state: State<'_, AppState>,
+    payload: EntityEmbedCopyPayload,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let cfg = {
+        let db = state.db.lock();
+        entity::load_screen_config(&db.data_dir, &payload.screen_key)?
+    };
+    state
+        .desktop_sessions
+        .require_privilege(&cfg.screen.privileges.view)?;
+    let db = state.db.lock();
+    entity::relations::embed_values_from_record(
+        &db,
+        &db.data_dir,
+        &payload.screen_key,
+        &payload.field_key,
+        &payload.record_id,
+    )
+}
+
+#[tauri::command]
+pub fn entity_embed_child_from_record(
+    state: State<'_, AppState>,
+    payload: EntityEmbedCopyPayload,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let cfg = {
+        let db = state.db.lock();
+        entity::load_screen_config(&db.data_dir, &payload.screen_key)?
+    };
+    state
+        .desktop_sessions
+        .require_privilege(&cfg.screen.privileges.view)?;
+    let db = state.db.lock();
+    entity::relations::embed_child_object_from_record(
+        &db,
+        &db.data_dir,
+        &payload.screen_key,
+        &payload.field_key,
+        &payload.record_id,
+    )
+}
+
+#[tauri::command]
 pub fn entity_list_roles(state: State<'_, AppState>) -> Result<Vec<crate::db::RoleRow>, String> {
     state.desktop_sessions.require_privilege("tache:voir")?;
     let db = state.db.lock();
@@ -225,14 +276,14 @@ pub fn entity_list_roles(state: State<'_, AppState>) -> Result<Vec<crate::db::Ro
 }
 
 #[tauri::command]
-pub fn entity_record_validation_detail(
+pub fn entity_record_signature_detail(
     state: State<'_, AppState>,
-    payload: EntityRecordValidationPayload,
-) -> Result<RecordValidationDetail, String> {
+    payload: EntityRecordSignaturePayload,
+) -> Result<RecordSignatureDetail, String> {
     state.desktop_sessions.require_session()?;
     let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
-    entity::record_validation::record_validation_detail(
+    entity::record_signature::record_signature_detail(
         &db,
         &db.data_dir,
         &payload.entity_key,
@@ -243,15 +294,15 @@ pub fn entity_record_validation_detail(
 }
 
 #[tauri::command]
-pub fn entity_record_validate(
+pub fn entity_record_sign(
     state: State<'_, AppState>,
-    payload: EntityRecordValidationPayload,
+    payload: EntityRecordSignaturePayload,
 ) -> Result<(), String> {
     state.desktop_sessions.require_session()?;
     let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
     let data_dir = db.data_dir.clone();
-    entity::record_validation::validate_record(
+    entity::record_signature::sign_record(
         &db,
         &data_dir,
         &payload.entity_key,
@@ -420,6 +471,7 @@ pub fn entity_stats(
 
     let rows = entity::stats::query_entity_stats(
         &db,
+        &cfg,
         ent,
         &payload.group_by,
         op,
@@ -509,4 +561,63 @@ pub fn entity_active_session_clear(state: State<'_, AppState>) -> Result<(), Str
     state.desktop_sessions.require_session()?;
     let db = state.db.lock();
     entity::session_scope::clear_active(&db.data_dir)
+}
+
+#[derive(Deserialize)]
+pub struct EntityCsvPayload {
+    pub entity_key: String,
+}
+
+#[derive(Deserialize)]
+pub struct EntityCsvImportPayload {
+    pub entity_key: String,
+    pub csv: String,
+}
+
+#[derive(Serialize)]
+pub struct EntityCsvExportResponse {
+    pub csv: String,
+    pub file_name: String,
+}
+
+#[tauri::command]
+pub fn entity_export_csv(
+    state: State<'_, AppState>,
+    payload: EntityCsvPayload,
+) -> Result<EntityCsvExportResponse, String> {
+    let cfg = {
+        let db = state.db.lock();
+        entity::load_screen_config(&db.data_dir, &payload.entity_key)?
+    };
+    let export_priv = cfg
+        .screen
+        .privileges
+        .export
+        .clone()
+        .unwrap_or_else(|| format!("{}:exporter", payload.entity_key));
+    state.desktop_sessions.require_privilege(&export_priv)?;
+    let db = state.db.lock();
+    let (csv, file_name) =
+        entity::csv_io::export_entity_csv(&db, &db.data_dir, &payload.entity_key)?;
+    Ok(EntityCsvExportResponse { csv, file_name })
+}
+
+#[tauri::command]
+pub fn entity_import_csv(
+    state: State<'_, AppState>,
+    payload: EntityCsvImportPayload,
+) -> Result<entity::csv_io::EntityCsvImportResult, String> {
+    let cfg = {
+        let db = state.db.lock();
+        entity::load_screen_config(&db.data_dir, &payload.entity_key)?
+    };
+    let import_priv = cfg
+        .screen
+        .privileges
+        .import
+        .clone()
+        .unwrap_or_else(|| format!("{}:importer", payload.entity_key));
+    state.desktop_sessions.require_privilege(&import_priv)?;
+    let db = state.db.lock();
+    entity::csv_io::import_entity_csv(&db, &db.data_dir, &payload.entity_key, &payload.csv)
 }

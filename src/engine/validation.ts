@@ -17,6 +17,7 @@ function emptyValue(value: unknown, field?: FieldDef): boolean {
   }
   if (value == null) return true;
   if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
   return false;
 }
 
@@ -50,6 +51,56 @@ function issue(
     message,
     fixHint,
   };
+}
+
+export function parseEmbedListValue(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.filter((v) => v && typeof v === "object") as Record<string, unknown>[];
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed)
+        ? (parsed.filter((v) => v && typeof v === "object") as Record<string, unknown>[])
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** Champs fille dupliqués (embed) — le champ parent entity_embed n'a pas de valeur propre. */
+function validateEmbeddedGroup(
+  config: ScreenConfigFile,
+  parentField: FieldDef,
+  values: ScreenRow,
+): { errors: ValidationIssue[]; warnings: ValidationIssue[] } {
+  const errors: ValidationIssue[] = [];
+  const warnings: ValidationIssue[] = [];
+  let anyChildFilled = false;
+  for (const child of config.fields) {
+    if (child.form?.embedParent !== parentField.key) continue;
+    if (!isFieldVisible(child, values)) continue;
+    const v = values[child.key] ?? values[child.column];
+    if (!emptyValue(v, child)) anyChildFilled = true;
+    const r = validateOneField(child, values);
+    errors.push(...r.errors);
+    warnings.push(...r.warnings);
+  }
+  if (parentField.required && !anyChildFilled) {
+    errors.push(
+      issue(
+        parentField,
+        "error",
+        "required",
+        `« ${parentField.label} » : choisissez ou renseignez au moins un champ.`,
+      ),
+    );
+  }
+  return { errors, warnings };
 }
 
 function validateOneField(
@@ -303,8 +354,70 @@ export function validateScreenForm(
 
   for (const field of config.fields) {
     if (field.type === "hidden") continue;
+    if (field.form?.embedParent) continue;
     if (options?.filtersOnly && !field.filter?.enabled) continue;
     if (!options?.filtersOnly && !isFieldVisible(field, values)) continue;
+
+    if (field.type === "entity_embed") {
+      const r = validateEmbeddedGroup(config, field, values);
+      errors.push(...r.errors);
+      warnings.push(...r.warnings);
+      continue;
+    }
+
+    if (field.type === "entity_embed_list") {
+      const rows = parseEmbedListValue(values[field.key] ?? values[field.column]);
+      if (field.required && rows.length === 0) {
+        errors.push(
+          issue(
+            field,
+            "error",
+            "required",
+            `« ${field.label} » : ajoutez au moins un élément.`,
+          ),
+        );
+      }
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const hasLabel = ["libelle", "nom", "titre", "reference", "intitule"].some(
+          (k) => row[k] != null && String(row[k]).trim() !== "",
+        );
+        if (!hasLabel) {
+          errors.push(
+            issue(
+              field,
+              "error",
+              "required",
+              `« ${field.label} » ligne ${i + 1} : libellé ou nom obligatoire.`,
+            ),
+          );
+        }
+        if (field.form?.refEntity === "articles") {
+          if (row.nom != null && !String(row.nom).trim()) {
+            errors.push(
+              issue(
+                field,
+                "error",
+                "required",
+                `« ${field.label} » ligne ${i + 1} : le nom est obligatoire.`,
+              ),
+            );
+          }
+          const qte = row.qte;
+          if (qte === undefined || qte === null || String(qte).trim() === "") {
+            errors.push(
+              issue(
+                field,
+                "error",
+                "required",
+                `« ${field.label} » ligne ${i + 1} : la quantité est obligatoire.`,
+              ),
+            );
+          }
+        }
+      }
+      continue;
+    }
 
     const r = validateOneField(field, values);
     errors.push(...r.errors);

@@ -9,6 +9,22 @@ const MAX_LOGO_BYTES: usize = 5 * 1024 * 1024;
 
 pub const ECOSYSTEM_ICON_FILENAME: &str = "ecosystem-icon.png";
 
+/// Icône Blin embarquée (générée depuis `public/logo.png` via `npm run tauri:icons`).
+pub fn default_icon_png_bytes() -> &'static [u8] {
+    include_bytes!("../../icons/icon.png")
+}
+
+/// Garantit `entities/ecosystem-icon.png` (copie l'icône embarquée si absent).
+pub fn ensure_ecosystem_icon_png(data_dir: &Path) -> Result<std::path::PathBuf, String> {
+    let dir = entities_dir(data_dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(ECOSYSTEM_ICON_FILENAME);
+    if !path.is_file() {
+        fs::write(&path, default_icon_png_bytes()).map_err(|e| e.to_string())?;
+    }
+    Ok(path)
+}
+
 /// Décode un data-URI image en octets bruts.
 pub fn decode_data_uri(data_uri: &str) -> Result<Vec<u8>, String> {
     let uri = data_uri.trim();

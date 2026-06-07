@@ -13,10 +13,23 @@ export interface EntityCreateAction {
   initial_data: Record<string, unknown>;
 }
 
+export interface ChatDisplayColumn {
+  key: string;
+  label: string;
+}
+
+export interface ChatDisplayBlock {
+  kind: "table" | "list" | string;
+  entityKey?: string;
+  columns: ChatDisplayColumn[];
+  rows: Record<string, unknown>[];
+}
+
 export interface AiChatReply {
   conversation_id: string;
   message: string;
   tool_results: AiToolResult[];
+  display_blocks?: ChatDisplayBlock[];
   open_entity_create?: EntityCreateAction;
 }
 

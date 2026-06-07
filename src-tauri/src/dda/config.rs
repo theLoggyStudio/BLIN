@@ -220,11 +220,16 @@ pub struct FieldFormMeta {
     pub max_files: Option<u32>,
     #[serde(default)]
     pub accept: Option<String>,
-    /// Liaison vers une autre entité (`entity_ref`).
+    /// Liaison vers une autre entité (`entity_embed` / `entity_ref` en UI).
     #[serde(default)]
     pub ref_entity: Option<String>,
     #[serde(default)]
     pub relation_exclusive_parent: Option<bool>,
+    #[serde(default)]
+    pub relation_multiple: Option<bool>,
+    /// Groupe d'embarquement parent (champs dupliqués depuis entité fille).
+    #[serde(default)]
+    pub embed_parent: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -236,7 +241,10 @@ pub struct VisibleWhen {
 
 /// Colonne réelle SQLite (exclut champs UI : hidden, detail_link).
 pub fn is_persisted_field(field: &FieldDef) -> bool {
-    field.field_type != "hidden" && field.field_type != "detail_link"
+    field.field_type != "hidden"
+        && field.field_type != "detail_link"
+        && field.field_type != "entity_embed"
+        && field.field_type != "entity_embed_list"
 }
 
 impl ScreenConfigFile {

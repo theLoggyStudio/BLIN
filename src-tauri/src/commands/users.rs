@@ -21,6 +21,11 @@ pub struct UpdateUserRequest {
     pub actif: bool,
 }
 
+#[derive(Deserialize)]
+pub struct UserIdPayload {
+    pub id: String,
+}
+
 #[tauri::command]
 pub fn users_list(state: State<'_, AppState>) -> Result<Vec<UserRow>, String> {
     state.desktop_sessions.require_privilege("users:voir")?;
@@ -61,6 +66,17 @@ pub fn users_update(
         payload.actif,
     )
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn users_reset_password(
+    state: State<'_, AppState>,
+    payload: UserIdPayload,
+) -> Result<UserRow, String> {
+    state.desktop_sessions.require_privilege("users:modifier")?;
+    let db = state.db.lock();
+    db.reset_user_password_force_change(&payload.id, "user123")
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

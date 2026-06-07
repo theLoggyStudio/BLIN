@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/items/Button";
+import { CollapsiblePanel } from "@/items/CollapsiblePanel";
 import { Select } from "@/items/Select";
 import { StatChart, type StatChartMultiDatum, type StatChartSeriesDef, type StatChartType } from "@/items/StatChart";
-import { Text } from "@/items/Text";
+import { isOrphanEntityKey } from "@/lib/orphanEntities";
 import {
   abscissaFields,
   aggregateNeedsValueField,
@@ -74,7 +75,9 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
     try {
       const reg = await invoke<EntityRegistryResponse>("entity_registry_get");
       setEntities(
-        reg.entities.map((e) => ({
+        reg.entities
+          .filter((e) => !isOrphanEntityKey(e.nom))
+          .map((e) => ({
           value: e.nom,
           label: e.label?.trim() || e.nom,
         })),
@@ -194,36 +197,40 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
       : STAT_AGGREGATE_OPTIONS.find((o) => o.value === series[0]?.aggregate)?.label ?? "Ordonnée";
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <Text variant="label">Statistiques</Text>
-          <Text variant="muted" className="mt-1 text-xs">
-            Choisissez l&apos;abscisse et l&apos;ordonnée, le type de graphe, et comparez jusqu&apos;à{" "}
-            {MAX_SERIES} entités (courbes ou barres de couleurs différentes).
-          </Text>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <CollapsiblePanel
+      title="Statistiques"
+      subtitle={`Choisissez l'abscisse et l'ordonnée, le type de graphe, et comparez jusqu'à ${MAX_SERIES} entités (courbes ou barres de couleurs différentes).`}
+      defaultOpen={false}
+      headerAction={
+        <Button size="sm" variant="ghost" disabled={loading} onClick={() => void refreshChart()}>
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          <span className="sr-only">Actualiser</span>
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap justify-end gap-2">
           <Select
             label="Type de graphe"
             value={chartType}
             onChange={(e) => setChartType(e.target.value as StatChartType)}
             options={CHART_TYPES}
           />
-          <Button size="sm" variant="secondary" disabled={loading} onClick={() => void refreshChart()}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Actualiser
-          </Button>
+          <div className="flex items-end">
+            <Button size="sm" variant="secondary" disabled={loading} onClick={() => void refreshChart()}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Actualiser
+            </Button>
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <p className="text-sm text-primary" role="alert">
-          {error}
-        </p>
-      )}
+        {error && (
+          <p className="text-sm text-primary" role="alert">
+            {error}
+          </p>
+        )}
 
-      <div className="space-y-3">
+        <div className="space-y-3">
         {series.map((s, index) => {
           const cfg = configs[s.entityKey];
           const xOpts = cfg
@@ -325,6 +332,7 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
         yLabel={yLabel}
         height={320}
       />
-    </div>
+      </div>
+    </CollapsiblePanel>
   );
 }

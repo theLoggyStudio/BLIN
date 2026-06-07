@@ -55,6 +55,7 @@ pub fn sync_entity_table(
     db: &Database,
     ent: &EntityDef,
     previous: Option<&EntityDef>,
+    registry: &super::registry::EntityRegistry,
 ) -> Result<(), String> {
     let table = table_name(&ent.nom);
     db.conn
@@ -73,6 +74,12 @@ pub fn sync_entity_table(
     for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
         if is_compteur_attr(attr) {
             for col in compteur::all_sql_columns(attr) {
+                if !desired.contains(&col) {
+                    desired.push(col);
+                }
+            }
+        } else if attr.attr_type == "entity" {
+            for (col, _) in super::embed::sql_columns_for_entity_attr(attr, &registry) {
                 if !desired.contains(&col) {
                     desired.push(col);
                 }
@@ -105,6 +112,25 @@ pub fn sync_entity_table(
             }
             continue;
         }
+        if attr.attr_type == "entity" {
+            for (col, col_type) in super::embed::sql_columns_for_entity_attr(attr, &registry) {
+                if table_has_column(db, &table, &col)? {
+                    continue;
+                }
+                let not_null = if attr.required && col_type == "TEXT" {
+                    " NOT NULL DEFAULT ''"
+                } else {
+                    ""
+                };
+                db.conn
+                    .execute(
+                        &format!("ALTER TABLE {table} ADD COLUMN {col} {col_type}{not_null}"),
+                        [],
+                    )
+                    .map_err(|e| format!("ALTER {table}.{col} : {e}"))?;
+            }
+            continue;
+        }
         let col = attr_column(attr);
         if table_has_column(db, &table, &col)? {
             continue;
@@ -127,24 +153,12 @@ pub fn sync_entity_table(
         let prev_cols: Vec<String> = prev
             .attributs
             .iter()
-            .flat_map(|a| {
-                if is_compteur_attr(a) {
-                    compteur::all_sql_columns(a).into_iter().collect::<Vec<_>>()
-                } else {
-                    vec![attr_column(a)]
-                }
-            })
+            .flat_map(|a| columns_for_attr_flat(a, &registry))
             .collect();
         let new_cols: Vec<String> = ent
             .attributs
             .iter()
-            .flat_map(|a| {
-                if is_compteur_attr(a) {
-                    compteur::all_sql_columns(a).into_iter().collect::<Vec<_>>()
-                } else {
-                    vec![attr_column(a)]
-                }
-            })
+            .flat_map(|a| columns_for_attr_flat(a, &registry))
             .collect();
         for col in prev_cols {
             if !new_cols.contains(&col) {
@@ -169,7 +183,11 @@ pub fn sync_entity_table(
         }
     }
 
-    super::record_validation::ensure_validation_status_column(db, ent)?;
+    super::record_signature::ensure_signature_status_column(db, ent)?;
+    super::record_signature::prune_signature_status_column(db, ent)?;
+    super::child_table::sync_fille_tables_for_registry(db, registry)?;
+    drop_legacy_embed_columns(db, &table, ent, registry)?;
+    drop_parasite_columns(db, &table)?;
 
     db.conn
         .execute(
@@ -185,6 +203,68 @@ pub fn sync_entity_table(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Colonnes orphelines (modèle FK / UI) à retirer des tables entités.
+const PARASITE_COLUMNS: &[&str] = &["_detail"];
+
+fn drop_parasite_columns(db: &Database, table: &str) -> Result<(), String> {
+    for col in PARASITE_COLUMNS {
+        if !table_has_column(db, table, col)? {
+            continue;
+        }
+        let sql = format!("ALTER TABLE {table} DROP COLUMN {col}");
+        if let Err(e) = db.conn.execute(&sql, []) {
+            eprintln!("DROP COLUMN {table}.{col} : {e}");
+        }
+    }
+    Ok(())
+}
+
+/// Ancien modèle : colonne nue `client` / `article` (FK) en plus des colonnes embarquées.
+fn drop_legacy_embed_columns(
+    db: &Database,
+    table: &str,
+    ent: &EntityDef,
+    registry: &super::registry::EntityRegistry,
+) -> Result<(), String> {
+    for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
+        if attr.attr_type != "entity" || attr.relation_multiple {
+            continue;
+        }
+        if super::embed::resolve_child(registry, attr).is_none() {
+            continue;
+        }
+        let bare = attr_column(attr);
+        if !table_has_column(db, table, &bare)? {
+            continue;
+        }
+        let sql = format!("ALTER TABLE {table} DROP COLUMN {bare}");
+        if let Err(e) = db.conn.execute(&sql, []) {
+            eprintln!("DROP COLUMN {table}.{bare} : {e}");
+        }
+    }
+    Ok(())
+}
+
+fn columns_for_attr_flat(
+    attr: &EntityAttribute,
+    registry: &super::registry::EntityRegistry,
+) -> Vec<String> {
+    if is_compteur_attr(attr) {
+        compteur::all_sql_columns(attr).into_iter().collect()
+        } else if attr.attr_type == "entity" {
+            if attr.relation_multiple {
+                vec![]
+            } else {
+                super::embed::sql_columns_for_entity_attr(attr, registry)
+                    .into_iter()
+                    .map(|(c, _)| c)
+                    .collect()
+            }
+    } else {
+        vec![attr_column(attr)]
+    }
 }
 
 pub fn attr_column(attr: &EntityAttribute) -> String {

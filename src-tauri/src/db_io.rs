@@ -1220,31 +1220,120 @@ impl Database {
         Ok(())
     }
 
-    /// Insère un modèle « Liste » pour l'écran s'il n'existe pas encore (ne remplace pas les modèles utilisateur).
-    pub fn ensure_list_print_model_for_screen(
+    /// Nom unique pour `document_print_models.name` (contrainte globale, pas par écran).
+    pub fn disambiguate_print_model_name(
+        &self,
+        base: &str,
+        screen_key: &str,
+    ) -> Result<String, DbError> {
+        let taken: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM document_print_models WHERE name = ?1",
+            params![base],
+            |r| r.get(0),
+        )?;
+        if taken == 0 {
+            return Ok(base.to_string());
+        }
+        let same_screen: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM document_print_models WHERE name = ?1 AND screen_key = ?2",
+            params![base, screen_key],
+            |r| r.get(0),
+        )?;
+        if same_screen > 0 {
+            return Ok(base.to_string());
+        }
+        let alt = format!("{base} ({screen_key})");
+        let alt_taken: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM document_print_models WHERE name = ?1",
+            params![alt],
+            |r| r.get(0),
+        )?;
+        if alt_taken == 0 {
+            return Ok(alt);
+        }
+        Ok(alt)
+    }
+
+    /// Renomme les modèles dont le nom global est en doublon (contrainte UNIQUE sur `name`).
+    pub fn dedupe_print_model_names(&self) -> Result<u32, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT name FROM document_print_models GROUP BY name HAVING COUNT(*) > 1",
+        )?;
+        let dup_names: Vec<String> = stmt
+            .query_map([], |row| row.get(0))?
+            .flatten()
+            .collect();
+
+        let mut renamed = 0u32;
+        for name in dup_names {
+            let mut rows_stmt = self.conn.prepare(
+                "SELECT id, screen_key FROM document_print_models WHERE name = ?1 ORDER BY created_at ASC",
+            )?;
+            let rows: Vec<(String, String)> = rows_stmt
+                .query_map(params![name], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .flatten()
+                .collect();
+            for (id, screen_key) in rows.into_iter().skip(1) {
+                let unique = self.disambiguate_print_model_name(&name, &screen_key)?;
+                if unique == name {
+                    continue;
+                }
+                self.conn.execute(
+                    "UPDATE document_print_models SET name = ?1, updated_at = datetime('now') WHERE id = ?2",
+                    params![unique, id],
+                )?;
+                renamed += 1;
+            }
+        }
+        Ok(renamed)
+    }
+
+    /// Met à jour ou insère un modèle auto DDA (HTML/CSS) — rafraîchit l'apparence à chaque sync.
+    pub fn sync_auto_print_model(
         &self,
         screen_key: &str,
         name: &str,
         description: &str,
         html_content: &str,
         css_content: &str,
+        kind_hint: &str,
     ) -> Result<(), DbError> {
-        let exists: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM document_print_models WHERE screen_key = ?1 AND name LIKE '%Liste%'",
-            params![screen_key],
-            |r| r.get(0),
-        )?;
-        if exists > 0 {
+        use crate::print_seed::AUTO_PRINT_DESCRIPTION_PREFIX;
+        use rusqlite::OptionalExtension;
+
+        let like_desc = format!("{AUTO_PRINT_DESCRIPTION_PREFIX}%");
+        let like_name = format!("%{kind_hint}%");
+        let existing_id: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM document_print_models
+                 WHERE screen_key = ?1
+                   AND (description LIKE ?2 OR name LIKE ?3 OR description LIKE '%généré DDA%')
+                 ORDER BY created_at ASC LIMIT 1",
+                params![screen_key, like_desc, like_name],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        if let Some(id) = existing_id {
+            self.conn.execute(
+                "UPDATE document_print_models
+                 SET html_content = ?1, css_content = ?2, description = ?3, updated_at = ?4
+                 WHERE id = ?5",
+                params![html_content, css_content, description, &now, id],
+            )?;
             return Ok(());
         }
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        let unique_name = self.disambiguate_print_model_name(name, screen_key)?;
         let id = uuid::Uuid::new_v4().to_string();
         self.conn.execute(
             "INSERT INTO document_print_models (id, name, description, html_content, css_content, screen_key, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id,
-                name,
+                unique_name,
                 description,
                 html_content,
                 css_content,
@@ -1254,6 +1343,18 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+
+    /// Insère un modèle « Liste » pour l'écran s'il n'existe pas encore (ne remplace pas les modèles utilisateur).
+    pub fn ensure_list_print_model_for_screen(
+        &self,
+        screen_key: &str,
+        name: &str,
+        description: &str,
+        html_content: &str,
+        css_content: &str,
+    ) -> Result<(), DbError> {
+        self.sync_auto_print_model(screen_key, name, description, html_content, css_content, "Liste")
     }
 
     /// Modèle liste tabulaire pour un écran (priorité au nom « Liste »).

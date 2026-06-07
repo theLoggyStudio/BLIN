@@ -33,7 +33,9 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
          1) Confirmer l'entité cible (nom exact du registre).\n\
          2) Indiquer que l'interface affiche liste + formulaire modal (champs = attributs).\n\
          3) CRUD via outils DDA : dda_list, dda_get, dda_create, dda_update, dda_delete avec screen_key = nom entité.\n\
-         4) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\n",
+         4) Liste dans le chat : « liste les {entité} » ou « liste les {entité} avec nom, prix » — tableau HTML read-only + bouton ouvrir écran.\n\
+         5) Jointures : si l'utilisateur cite une entité liée (entity ref), inclure la colonne libellé de l'entité cible (voir MASTER_entities_relations.txt).\n\
+         6) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\n",
     );
 
     if stock::registry_has_stock(registry) {
@@ -51,6 +53,9 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
     fs::write(dir.join("MASTER_entities_schema.txt"), &schema).map_err(|e| e.to_string())?;
     fs::write(dir.join("MASTER_entities_tools.txt"), &tools).map_err(|e| e.to_string())?;
 
+    let relations = format_relations_catalog(registry);
+    fs::write(dir.join("MASTER_entities_relations.txt"), &relations).map_err(|e| e.to_string())?;
+
     if stock::registry_has_stock(registry) {
         fs::write(dir.join("MASTER_stock_module.txt"), STOCK_MODULE_SCHEMA)
             .map_err(|e| e.to_string())?;
@@ -64,6 +69,12 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
     for ent in &registry.entities {
         let s = format_entity_schema(ent, registry);
         fs::write(dir.join(format!("{}_entity_schema.txt", ent.nom)), s).map_err(|e| e.to_string())?;
+        let rel = format_entity_relations(ent, registry);
+        fs::write(
+            dir.join(format!("{}_entity_relations.txt", ent.nom)),
+            rel,
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -146,6 +157,66 @@ fn format_entity_tools(ent: &EntityDef) -> String {
         );
     }
     format!(
-        "Entité {key} :\n  dda_list {{ screen_key: \"{key}\", filters: {{}} }}\n  dda_get {{ screen_key: \"{key}\", id }}\n  dda_create {{ screen_key: \"{key}\", data: {{...attributs}} }}\n  dda_update {{ screen_key: \"{key}\", id, data }}\n  dda_delete {{ screen_key: \"{key}\", id }}\n"
+        "Entité {key} :\n  dda_list {{ screen_key: \"{key}\", filters: {{}} }}\n  dda_get {{ screen_key: \"{key}\", id }}\n  dda_create {{ screen_key: \"{key}\", data: {{...attributs}} }}\n  dda_update {{ screen_key: \"{key}\", id, data }}\n  dda_delete {{ screen_key: \"{key}\", id }}\n  entity_export_csv {{ entity_key: \"{key}\" }} — CSV (;), 1ère ligne = noms des champs\n  entity_import_csv {{ entity_key: \"{key}\", csv }} — import CSV uniquement ; si entité non précisée, demander laquelle\n  Chat liste : « liste les {key} » puis choix colonnes ; « avec <entité liée> » pour jointure.\n  Export multi-entités : appeler entity_export_csv pour chaque entité demandée.\n"
     )
+}
+
+fn format_entity_relations(ent: &EntityDef, registry: &EntityRegistry) -> String {
+    let mut s = format!(
+        "=== RELATIONS — entité « {} » ===\n\
+         Trigger auto à la création / sauvegarde du registre.\n\
+         Jointures possibles (liaisons entity, one-to-one / many-to-one) :\n",
+        ent.nom
+    );
+    let mut any = false;
+    for attr in &ent.attributs {
+        if attr.attr_type != "entity" {
+            continue;
+        }
+        let Some(ref_key) = attr.r#ref.as_deref().map(str::trim).filter(|x| !x.is_empty()) else {
+            continue;
+        };
+        any = true;
+        let multiple = attr.relation_multiple;
+        let card = if multiple {
+            "one-to-many (liste JSON)"
+        } else {
+            "many-to-one (FK id)"
+        };
+        let ref_label = registry
+            .find(ref_key)
+            .and_then(|e| e.label.clone())
+            .unwrap_or_else(|| ref_key.to_string());
+        s.push_str(&format!(
+            "  - champ « {} » ({}) → entité « {} » ({}) — colonne SQLite `{}`\n\
+             Jointure chat : « liste les {} avec {} » affiche `{}` + libellé `{}`.\n",
+            attr.nom,
+            card,
+            ref_key,
+            ref_label,
+            super::schema::attr_column(attr),
+            ent.nom,
+            ref_key,
+            attr.nom,
+            ref_key
+        ));
+    }
+    if !any {
+        s.push_str("  (aucune liaison entity)\n");
+    }
+    s
+}
+
+fn format_relations_catalog(registry: &EntityRegistry) -> String {
+    let mut s = String::from(
+        "=== BLIN — CATALOGUE JOINTURES ENTITÉS (auto, trigger registre) ===\n\
+         Généré à chaque apply_registry / création d'entité.\n\
+         Utilisation chat : listes read-only avec colonnes demandées + jointures implicites.\n\
+         Fichiers par entité : {nom}_entity_relations.txt\n\n",
+    );
+    for ent in &registry.entities {
+        s.push_str(&format_entity_relations(ent, registry));
+        s.push('\n');
+    }
+    s
 }

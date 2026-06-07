@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::dda;
 use crate::db::Database;
 use crate::entity::{config, knowledge, registry, relations, schema, suggestions};
+use crate::print_template::auto_print_description;
 use crate::sync_progress::SyncReporter;
 
 use super::generated_config_dir;
@@ -48,6 +49,11 @@ pub fn apply_registry(
         db.conn
             .execute(&format!("DROP TABLE IF EXISTS {table}"), [])
             .map_err(|e| e.to_string())?;
+        let _ = db.conn.execute(
+            "DELETE FROM document_print_models WHERE screen_key = ?1",
+            rusqlite::params![removed.as_str()],
+        );
+        let _ = super::stock::purge_stock_for_entity(db, removed);
         let path = gen_dir.join(format!("{removed}.json"));
         if path.is_file() {
             let _ = fs::remove_file(&path);
@@ -61,11 +67,11 @@ pub fn apply_registry(
         if let Some(rep) = progress {
             rep.tick(format!("{label} — schéma SQLite"), Some(&ent.nom), "schema");
         }
-        schema::sync_entity_table(db, ent, prev)?;
+        schema::sync_entity_table(db, ent, prev, &registry)?;
         if ent.nom == super::tache_visibility::TACHE_ENTITY_KEY {
             super::tache_visibility::ensure_visibility_columns(db)?;
         }
-        let cfg = config::build_screen_config(ent);
+        let cfg = config::build_screen_config(ent, &registry);
         let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
         if let Some(rep) = progress {
             rep.tick(format!("{label} — configuration DDA"), Some(&ent.nom), "config");
@@ -78,12 +84,14 @@ pub fn apply_registry(
             crate::print_template::build_list_print_html(&cfg)
         };
         let list_name = format!("Liste — {label}");
-        let _ = db.ensure_list_print_model_for_screen(
+        let list_desc = auto_print_description("liste", &ent.nom);
+        let _ = db.sync_auto_print_model(
             &ent.nom,
             &list_name,
-            &format!("Export PDF tabulaire — variable {{{}}}", crate::print_template::table_token_for_entity(&ent.nom)),
+            &list_desc,
             &list_html,
             crate::print_template::LIST_CSS,
+            "Liste",
         );
         synced.push(ent.nom.clone());
     }
@@ -96,5 +104,14 @@ pub fn apply_registry(
         rep.tick("Suggestions tableau de bord", None, "suggestions");
     }
     suggestions::write_dashboard_suggestions_trigger(data_dir, &registry)?;
+    for orphan in super::registry::ORPHAN_ENTITY_KEYS {
+        let _ = db.conn.execute(
+            "DELETE FROM document_print_models WHERE screen_key = ?1",
+            rusqlite::params![orphan],
+        );
+        super::stock::purge_stock_for_entity(db, orphan)?;
+    }
+    let _ = db.dedupe_print_model_names();
+    let _ = super::validation::reconcile_signature_tasks(db, data_dir);
     Ok(synced)
 }

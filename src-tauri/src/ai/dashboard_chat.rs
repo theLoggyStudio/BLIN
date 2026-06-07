@@ -2,9 +2,10 @@
 
 use uuid::Uuid;
 
-use crate::ai::agent::{ChatReply, EntityCreateAction};
+use crate::ai::agent::{ChatDisplayBlock, ChatReply, EntityCreateAction};
 use crate::ai::intent_filters::{extract_web_search_query, wants_internet_research_intent};
 use crate::entity::create_draft;
+use crate::entity::list_preview::{self, parse_display_from_message};
 use crate::entity::registry;
 use crate::privileges::has_privilege;
 use crate::ai::llama_server::{ChatMessage, LlamaServer};
@@ -36,19 +37,19 @@ pub fn answer_practical(
 
     if let Some(result) = try_translate_previous_reply(db, &conv_id, user_message) {
         return match result {
-            Ok(msg) => store_assistant_raw(db, &conv_id, &msg, vec![], None),
-            Err(e) => store_assistant_raw(db, &conv_id, &e, vec![], None),
+            Ok(msg) => store_assistant_raw(db, &conv_id, &msg, vec![], None, vec![]),
+            Err(e) => store_assistant_raw(db, &conv_id, &e, vec![], None, vec![]),
         };
     }
 
     let core = core_message(user_message);
 
     if let Some(msg) = try_quick_answer(&core) {
-        return store_assistant(db, &conv_id, user_message, &msg, vec![], None);
+        return store_assistant(db, &conv_id, user_message, &msg, vec![], None, vec![]);
     }
 
-    if let Ok(registry) = registry::load(&db.data_dir) {
-        if let Some(draft) = create_draft::match_create_draft(user_message, &registry) {
+    if let Ok(reg) = registry::load(&db.data_dir) {
+        if let Some(draft) = create_draft::match_create_draft(user_message, &reg) {
             let priv_key = format!("{}:creer", draft.entity_key);
             if has_privilege(&user.privileges, &priv_key) {
                 let action = EntityCreateAction {
@@ -62,9 +63,15 @@ pub fn answer_practical(
                     &draft.assistant_message,
                     vec![],
                     Some(action),
+                    vec![],
                 );
             }
         }
+    }
+
+    if let Ok(Some((raw_msg, blocks))) = list_preview::try_list_preview(db, user, &conv_id, user_message)
+    {
+        return store_assistant_raw(db, &conv_id, &raw_msg, vec![], None, blocks);
     }
 
     if web_search::is_enabled(&db.data_dir) && wants_internet_research_intent(&core) {
@@ -73,19 +80,19 @@ pub fn answer_practical(
             Ok(result) => {
                 let msg = web_search::synthesize_answer(db, &core, &result)
                     .unwrap_or_else(|_| web_search::format_results_message(&result));
-                return store_assistant(db, &conv_id, user_message, &msg, vec![], None);
+                return store_assistant(db, &conv_id, user_message, &msg, vec![], None, vec![]);
             }
             Err(e) => {
                 let err_msg = format!(
                     "Je n'ai pas pu effectuer la recherche Internet ({e}). Vérifiez votre connexion ou réessayez."
                 );
-                return store_assistant(db, &conv_id, user_message, &err_msg, vec![], None);
+                return store_assistant(db, &conv_id, user_message, &err_msg, vec![], None, vec![]);
             }
         }
     }
 
     let msg = lightweight_llm_reply(db, &conv_id, &core)?;
-    store_assistant(db, &conv_id, user_message, &msg, vec![], None)
+    store_assistant(db, &conv_id, user_message, &msg, vec![], None, vec![])
 }
 
 fn store_assistant(
@@ -95,9 +102,17 @@ fn store_assistant(
     msg: &str,
     tool_results: Vec<crate::ai::tools::ToolResult>,
     open_entity_create: Option<EntityCreateAction>,
+    display_blocks: Vec<ChatDisplayBlock>,
 ) -> Result<ChatReply, String> {
     let final_msg = finalize_with_translation(user_message_full, msg)?;
-    store_assistant_raw(db, conv_id, &final_msg, tool_results, open_entity_create)
+    store_assistant_raw(
+        db,
+        conv_id,
+        &final_msg,
+        tool_results,
+        open_entity_create,
+        display_blocks,
+    )
 }
 
 fn store_assistant_raw(
@@ -106,13 +121,20 @@ fn store_assistant_raw(
     msg: &str,
     tool_results: Vec<crate::ai::tools::ToolResult>,
     open_entity_create: Option<EntityCreateAction>,
+    display_blocks: Vec<ChatDisplayBlock>,
 ) -> Result<ChatReply, String> {
     db.ai_add_message(conv_id, "assistant", msg)
         .map_err(|e| e.to_string())?;
+    let (visible, blocks) = if display_blocks.is_empty() {
+        parse_display_from_message(msg)
+    } else {
+        (parse_display_from_message(msg).0, display_blocks)
+    };
     Ok(ChatReply {
         conversation_id: conv_id.to_string(),
-        message: msg.to_string(),
+        message: visible,
         tool_results,
+        display_blocks: blocks,
         open_entity_create,
     })
 }

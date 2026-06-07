@@ -14,32 +14,30 @@ import { SyncProgressBar } from "@/items/SyncProgressBar";
 import type { EntitySyncProgress } from "@/types/syncProgress";
 import type {
   EntityAttribute,
-  EntityAttributeType,
   EntityDef,
   EntityRegistry,
   EntityRegistryResponse,
 } from "@/types/entity";
 import type { RoleRow } from "@/types/users";
-import {
-  applyAiSuggestionsVisibility,
-  qualifiesForAiSuggestions,
-} from "@/lib/entityAiSuggestions";
+import { useAlert } from "@/contexts/AlertContext";
+import { isOrphanEntityKey } from "@/lib/orphanEntities";
 
 const ATTR_TYPES: { value: string; label: string }[] = [
-  { value: "string", label: "Texte (string)" },
-  { value: "number", label: "Nombre (number)" },
-  { value: "stock", label: "Quantité (stock)" },
-  { value: "compteur", label: "Compteur auto (libellé + date + n°)" },
-  { value: "integer", label: "Entier (integer)" },
-  { value: "float", label: "Décimal (float)" },
   { value: "boolean", label: "Booléen" },
+  { value: "compteur", label: "Compteur auto (libellé + date + n°)" },
   { value: "date", label: "Date" },
   { value: "datetime", label: "Date/heure" },
-  { value: "time", label: "Heure (time)" },
   { value: "email", label: "E-mail" },
-  { value: "photo", label: "Photo (fichier image)" },
-  { value: "enum", label: "Liste (enum — options ci-dessous)" },
   { value: "entity", label: "Liaison entité" },
+  { value: "enum", label: "Liste (enum — options ci-dessous)" },
+  { value: "float", label: "Décimal (float)" },
+  { value: "integer", label: "Entier (integer)" },
+  { value: "matricule", label: "Matricule (manuel + date + n° quotidien)" },
+  { value: "number", label: "Nombre (number)" },
+  { value: "photo", label: "Photo (fichier image)" },
+  { value: "stock", label: "Quantité (stock)" },
+  { value: "string", label: "Texte (string)" },
+  { value: "time", label: "Heure (time)" },
 ];
 
 const EXAMPLE_JSON =
@@ -51,19 +49,22 @@ function emptyEntity(): EntityDef {
     label: "",
     description: "",
     ai_suggestions: true,
-    requires_validation: false,
-    validator_role_ids: [],
-    is_session: false,
+    requires_signature: false,
+    signatory_role_ids: [],
+    is_session: true,
     attributs: [],
   };
 }
 
-function entityShowsInAiSuggestions(ent: EntityDef): boolean {
-  return ent.ai_suggestions !== false;
-}
-
 function emptyAttr(): EntityAttribute {
-  return { nom: "", type: "string", label: "", required: false };
+  return {
+    nom: "",
+    type: "string",
+    label: "",
+    required: false,
+    relation_multiple: false,
+    relation_exclusive_parent: true,
+  };
 }
 
 function withRegistryMeta(
@@ -84,22 +85,21 @@ interface EntityPanelProps {
 
 /** Panneau Paramètres — registre des entités métier (JSON + éditeur structuré). */
 export function EntityPanel({ onSaved }: EntityPanelProps) {
+  const { showSuccess, showError, showWarning, showInfo } = useAlert();
   const [registry, setRegistry] = useState<EntityRegistry>({ entities: [] });
   const [jsonText, setJsonText] = useState(EXAMPLE_JSON);
   const [viewJson, setViewJson] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncProgress, setSyncProgress] = useState<EntitySyncProgress | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [entityModal, setEntityModal] = useState<EntityDef | null>(null);
   const [entityIndex, setEntityIndex] = useState<number | null>(null);
+  const [entityValidationAttempted, setEntityValidationAttempted] = useState(false);
   const [logoFileName, setLogoFileName] = useState<string | null>(null);
   const [roles, setRoles] = useState<RoleRow[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
       const res = await invoke<EntityRegistryResponse>("entity_registry_get");
       setRegistry({
@@ -111,11 +111,11 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
       });
       setJsonText(res.json || EXAMPLE_JSON);
     } catch (e) {
-      setError(String(e));
+      showError(String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     void load();
@@ -147,13 +147,12 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
 
   const onLogoFile = (file: File | undefined) => {
     if (!file) return;
-    setError(null);
     if (file.size > 5 * 1024 * 1024) {
-      setError("Image trop volumineuse (maximum 5 Mo).");
+      showWarning("Image trop volumineuse (maximum 5 Mo).");
       return;
     }
     if (!file.type.startsWith("image/")) {
-      setError("Choisissez un fichier image (PNG, JPEG, WebP, GIF).");
+      showWarning("Choisissez un fichier image (PNG, JPEG, WebP, GIF).");
       return;
     }
     const reader = new FileReader();
@@ -162,9 +161,11 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
       if (typeof result !== "string") return;
       setRegistry((r) => withRegistryMeta(r, { logo: result, logo_url: undefined }));
       setLogoFileName(file.name);
-      setMessage("Logo chargé — cliquez sur « Enregistrer écosystème / logo » pour le conserver.");
+      showInfo(
+        "Logo chargé — cliquez sur « Enregistrer écosystème / logo » pour le conserver.",
+      );
     };
-    reader.onerror = () => setError("Impossible de lire le fichier image.");
+    reader.onerror = () => showError("Impossible de lire le fichier image.");
     reader.readAsDataURL(file);
   };
 
@@ -177,26 +178,20 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
       step: "start",
       done: false,
     });
-    setMessage(null);
-    setError(null);
     try {
-      const normalized = {
-        ...next,
-        entities: applyAiSuggestionsVisibility(next.entities),
-      };
       const synced = await invoke<string[]>("entity_registry_save", {
-        payload: { registry: normalized },
+        payload: { registry: next },
       });
-      setRegistry(normalized);
-      setJsonText(JSON.stringify(normalized, null, 2));
+      setRegistry(next);
+      setJsonText(JSON.stringify(next, null, 2));
       const autoNote =
         synced.length > 0
           ? `Synchronisé : ${synced.join(", ")}. Les entités liées manquantes sont créées automatiquement.`
           : "Registre enregistré.";
-      setMessage(autoNote);
+      showSuccess(autoNote);
       await onSaved?.();
     } catch (e) {
-      setError(String(e));
+      showError(String(e));
       setSyncProgress(null);
     } finally {
       setSaving(false);
@@ -212,51 +207,56 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
       }
       void persist(parsed);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      showError(e instanceof Error ? e.message : String(e));
     }
   };
 
   const openCreateEntity = () => {
     setEntityIndex(null);
+    setEntityValidationAttempted(false);
     setEntityModal(emptyEntity());
   };
 
   const openEditEntity = (index: number) => {
     setEntityIndex(index);
+    setEntityValidationAttempted(false);
     setEntityModal({ ...registry.entities[index], attributs: [...registry.entities[index].attributs] });
   };
 
   const entityRefOptions = (currentEntityNom: string) => {
     const self = currentEntityNom.trim().toLowerCase().replace(/\s+/g, "_");
     return registry.entities
-      .filter((e) => e.nom !== self)
+      .filter((e) => e.nom !== self && !isOrphanEntityKey(e.nom))
       .map((e) => ({ value: e.nom, label: e.label ?? e.nom }));
   };
 
   const saveEntityModal = () => {
+    setEntityValidationAttempted(true);
     if (!entityModal?.nom.trim()) {
-      setError("Le nom de l'entité est obligatoire.");
+      showWarning("Le nom de l'entité est obligatoire.");
       return;
     }
     if (
-      entityModal.requires_validation &&
-      (!entityModal.validator_role_ids || entityModal.validator_role_ids.length === 0)
+      entityModal.requires_signature &&
+      (!entityModal.signatory_role_ids || entityModal.signatory_role_ids.length === 0)
     ) {
-      setError("Sélectionnez au moins un rôle valideur pour une entité à valider.");
+      showWarning("Sélectionnez au moins un rôle signataire pour une entité à signer.");
       return;
     }
     if (
-      entityModal.requires_validation &&
+      entityModal.requires_signature &&
       !entityModal.attributs.some((a) => Boolean(a.required))
     ) {
-      setError(
-        "Une entité à valider doit comporter au moins un attribut « À remplir obligatoirement ».",
+      showWarning(
+        "Une entité à signer doit comporter au moins un attribut « À remplir obligatoirement ».",
       );
       return;
     }
     for (const attr of entityModal.attributs) {
       if (attr.type === "entity" && !attr.ref?.trim()) {
-        setError(`L'attribut « ${attr.nom || "?"} » de type liaison doit cibler une entité (ref).`);
+        showWarning(
+          `L'attribut « ${attr.nom || "?"} » de type liaison doit cibler une entité (ref).`,
+        );
         return;
       }
     }
@@ -265,32 +265,27 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
       nom,
       label: entityModal.label?.trim() || entityModal.nom.trim(),
       description: entityModal.description?.trim() || undefined,
-      ai_suggestions: false,
-      requires_validation: Boolean(entityModal.requires_validation),
-      validator_role_ids: entityModal.requires_validation
-        ? [...(entityModal.validator_role_ids ?? [])]
+      ai_suggestions: Boolean(entityModal.ai_suggestions),
+      requires_signature: Boolean(entityModal.requires_signature),
+      signatory_role_ids: entityModal.requires_signature
+        ? [...(entityModal.signatory_role_ids ?? [])]
         : [],
-      is_session: Boolean(entityModal.is_session),
+      is_session: true,
       attributs: entityModal.attributs
         .filter((a) => a.nom.trim())
         .map((a) => ({
           ...a,
           nom: a.nom.trim().toLowerCase().replace(/\s+/g, "_"),
           required: Boolean(a.required),
+          relation_multiple: a.type === "entity" ? Boolean(a.relation_multiple) : undefined,
           ref:
             a.type === "entity"
               ? (a.ref?.trim().toLowerCase().replace(/\s+/g, "_") ?? undefined)
               : undefined,
+          relation_exclusive_parent: a.type === "entity" ? true : undefined,
         })),
     };
-    const peerEntities =
-      entityIndex === null
-        ? [...registry.entities]
-        : registry.entities.map((e, i) => (i === entityIndex ? draftEnt : e));
-    const ent: EntityDef = {
-      ...draftEnt,
-      ai_suggestions: qualifiesForAiSuggestions(draftEnt, peerEntities),
-    };
+    const ent: EntityDef = { ...draftEnt };
     const next = withRegistryMeta(registry, { entities: [...registry.entities] });
     if (entityIndex === null) {
       next.entities.push(ent);
@@ -298,6 +293,7 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
       next.entities[entityIndex] = ent;
     }
     setEntityModal(null);
+    setEntityValidationAttempted(false);
     void persist(next);
   };
 
@@ -317,6 +313,11 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
       render: (r) => String(r.attributs.length),
     },
     {
+      key: "ai_suggestions",
+      header: "Suggestions IA",
+      render: (r) => (r.ai_suggestions ? "Oui" : "—"),
+    },
+    {
       key: "actions",
       header: "",
       render: (r) => (
@@ -334,7 +335,7 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
 
   const tableData = registry.entities
     .map((e, i) => ({ ...e, _index: i }))
-    .filter((e) => e.nom !== "stock");
+    .filter((e) => e.nom !== "stock" && !isOrphanEntityKey(e.nom));
 
   return (
     <div className="space-y-4">
@@ -416,12 +417,6 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
 
       <SyncProgressBar progress={syncProgress} active={saving} />
 
-      {(message || error) && (
-        <p className={`text-sm ${error ? "text-primary" : "text-secondary"}`} role="status">
-          {error ?? message}
-        </p>
-      )}
-
       {loading ? (
         <p className="text-sm text-muted">Chargement…</p>
       ) : viewJson ? (
@@ -448,7 +443,10 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
 
       <Modal
         open={entityModal !== null}
-        onClose={() => setEntityModal(null)}
+        onClose={() => {
+          setEntityValidationAttempted(false);
+          setEntityModal(null);
+        }}
         title={entityIndex === null ? "Nouvelle entité" : "Modifier l'entité"}
         size="lg"
       >
@@ -471,83 +469,58 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
               onChange={(e) => setEntityModal({ ...entityModal, description: e.target.value })}
               className="min-h-[72px] sm:col-span-2"
             />
-            <div className="rounded-lg border border-border bg-surface-elevated/50 px-3 py-2 sm:col-span-2">
-              <p className="text-sm font-medium text-foreground">
-                Suggestions IA (barre « Gérer … ») :{" "}
-                {qualifiesForAiSuggestions(
-                  {
-                    ...entityModal,
-                    nom: entityModal.nom.trim().toLowerCase().replace(/\s+/g, "_"),
-                  } as EntityDef,
-                  entityIndex === null
-                    ? registry.entities
-                    : registry.entities.map((e, i) =>
-                        i === entityIndex
-                          ? ({ ...entityModal, nom: entityModal.nom } as EntityDef)
-                          : e,
-                      ),
-                )
-                  ? "oui"
-                  : "non"}
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                Automatique : oui seulement si le formulaire lie une entité avec suggestions
-                désactivées (ex. <code className="text-secondary">users</code>). Recalculé à
-                l&apos;enregistrement du registre.
-              </p>
-            </div>
             <label className="flex cursor-pointer items-center gap-3 sm:col-span-2">
               <input
                 type="checkbox"
-                checked={Boolean(entityModal.requires_validation)}
+                checked={Boolean(entityModal.requires_signature)}
                 onChange={(e) =>
                   setEntityModal({
                     ...entityModal,
-                    requires_validation: e.target.checked,
-                    validator_role_ids: e.target.checked
-                      ? entityModal.validator_role_ids ?? []
+                    requires_signature: e.target.checked,
+                    signatory_role_ids: e.target.checked
+                      ? entityModal.signatory_role_ids ?? []
                       : [],
                   })
                 }
                 className="h-4 w-4 rounded border-border accent-secondary"
               />
-              <span className="text-sm text-foreground">Entité à valider</span>
+              <span className="text-sm text-foreground">Entité à signer</span>
             </label>
             <label className="flex cursor-pointer items-center gap-3 sm:col-span-2">
               <input
                 type="checkbox"
-                checked={Boolean(entityModal.is_session)}
+                checked={Boolean(entityModal.ai_suggestions)}
                 onChange={(e) =>
                   setEntityModal({
                     ...entityModal,
-                    is_session: e.target.checked,
+                    ai_suggestions: e.target.checked,
                   })
                 }
                 className="h-4 w-4 rounded border-border accent-secondary"
               />
-              <span className="text-sm text-foreground">Entité session (contexte métier)</span>
+              <span className="text-sm text-foreground">Ajouter à la Suggestions IA</span>
             </label>
-            {entityModal.is_session && (
-              <p className="text-xs text-muted sm:col-span-2">
-                Chaque enregistrement peut devenir la session active (sidebar). Les entités liées
-                via un attribut <code className="text-secondary">entity</code> vers cette session sont
-                filtrées et préremplies automatiquement.
-              </p>
-            )}
-            {entityModal.requires_validation && (
-              <div className="space-y-2 rounded-lg border border-border p-3 sm:col-span-2">
-                <Text variant="label">Rôles valideurs</Text>
+            {entityModal.requires_signature && (
+              <div
+                className={`space-y-2 rounded-lg border p-3 sm:col-span-2 ${
+                  entityValidationAttempted &&
+                  (!entityModal.signatory_role_ids || entityModal.signatory_role_ids.length === 0)
+                    ? "border-primary bg-primary/10"
+                    : "border-border"
+                }`}
+              >
+                <Text variant="label">Rôles signataires</Text>
                 <Text variant="muted" className="text-xs">
-                  Trigger automatique : à chaque création d&apos;un enregistrement, une tâche
-                  « validation » privée est générée pour chaque rôle sélectionné (entité Tâche
-                  requise). Les validateurs contrôlent les attributs marqués obligatoires.
+                  Trigger automatique : à chaque création d&apos;un objet, une tâche « signature »
+                  privée est générée pour chaque rôle sélectionné (entité Tâche requise). Un seul
+                  signataire agréé suffit pour signer l&apos;objet.
                 </Text>
                 {roles.length === 0 ? (
                   <p className="text-sm text-muted">Aucun rôle — créez des rôles dans Paramètres.</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {roles.map((role) => {
-                      const checked = (entityModal.validator_role_ids ?? []).includes(role.id);
+                      const checked = (entityModal.signatory_role_ids ?? []).includes(role.id);
                       return (
                         <label
                           key={role.id}
@@ -557,13 +530,13 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                             type="checkbox"
                             checked={checked}
                             onChange={(e) => {
-                              const current = entityModal.validator_role_ids ?? [];
+                              const current = entityModal.signatory_role_ids ?? [];
                               const next = e.target.checked
                                 ? [...current, role.id]
                                 : current.filter((id) => id !== role.id);
                               setEntityModal({
                                 ...entityModal,
-                                validator_role_ids: next,
+                                signatory_role_ids: next,
                               });
                             }}
                             className="h-4 w-4 rounded border-border accent-secondary"
@@ -575,6 +548,13 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                     })}
                   </div>
                 )}
+                {entityValidationAttempted &&
+                  (!entityModal.signatory_role_ids ||
+                    entityModal.signatory_role_ids.length === 0) && (
+                    <p className="text-xs text-primary">
+                      Sélection obligatoire : cochez au moins un rôle signataire.
+                    </p>
+                  )}
               </div>
             )}
             <Text variant="label" className="sm:col-span-2">
@@ -601,6 +581,10 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                       ...attr,
                       type,
                       ref: type === "entity" ? attr.ref ?? "" : undefined,
+                      relation_multiple:
+                        type === "entity" ? Boolean(attr.relation_multiple) : undefined,
+                      relation_exclusive_parent:
+                        type === "entity" ? true : undefined,
                       enum_options: type === "enum" ? attr.enum_options ?? [] : undefined,
                     };
                     setEntityModal({ ...entityModal, attributs });
@@ -627,19 +611,45 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                   />
                 )}
                 {attr.type === "entity" && (
-                  <Select
-                    label="Entité liée (ref)"
-                    value={attr.ref ?? ""}
-                    onChange={(e) => {
-                      const attributs = [...entityModal.attributs];
-                      attributs[idx] = { ...attr, ref: e.target.value };
-                      setEntityModal({ ...entityModal, attributs });
-                    }}
-                    options={[
-                      { value: "", label: "— Choisir —" },
-                      ...entityRefOptions(entityModal.nom),
-                    ]}
-                  />
+                  <div className="space-y-2 sm:col-span-2">
+                    <Select
+                      label="Entité liée (ref)"
+                      value={attr.ref ?? ""}
+                      onChange={(e) => {
+                        const attributs = [...entityModal.attributs];
+                        attributs[idx] = { ...attr, ref: e.target.value };
+                        setEntityModal({ ...entityModal, attributs });
+                      }}
+                      options={[
+                        { value: "", label: "— Choisir —" },
+                        ...entityRefOptions(entityModal.nom),
+                      ]}
+                    />
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(attr.relation_multiple)}
+                        onChange={(e) => {
+                          const attributs = [...entityModal.attributs];
+                          attributs[idx] = {
+                            ...attr,
+                            relation_multiple: e.target.checked,
+                            relation_exclusive_parent: true,
+                          };
+                          setEntityModal({ ...entityModal, attributs });
+                        }}
+                        className="h-4 w-4 rounded border-border accent-secondary"
+                      />
+                      <span className="text-sm text-foreground">
+                        Liste de {attr.ref?.trim() || "l'entité liée"}
+                      </span>
+                    </label>
+                    <p className="text-xs text-muted sm:col-span-2">
+                      Coché : plusieurs copies embarquées (one-to-many). Décoché : une seule copie
+                      des champs fille dans cette fiche (one-to-one). Les valeurs sont dupliquées —
+                      pas de liaison par identifiant.
+                    </p>
+                  </div>
                 )}
                 <Input
                   label="Libellé"
@@ -682,10 +692,11 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                   <span className="text-sm text-foreground">À remplir obligatoirement</span>
                 </label>
                 )}
-                {attr.type === "compteur" && (
+                {(attr.type === "compteur" || attr.type === "matricule") && (
                   <p className="text-xs text-muted sm:col-span-2">
-                    Compteur : libellé, date du jour (jjmmaaaa) et numéro générés automatiquement à
-                    la création (champs visibles en lecture seule).
+                    {attr.type === "matricule"
+                      ? "Matricule : saisie manuelle + date du jour (jjmmaaaa) + numéro quotidien auto."
+                      : "Compteur : libellé, date du jour (jjmmaaaa) et numéro générés automatiquement à la création (champs visibles en lecture seule)."}
                   </p>
                 )}
                 <div className="flex items-end">

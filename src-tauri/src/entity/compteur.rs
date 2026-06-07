@@ -9,9 +9,10 @@ use super::schema::{attr_column, table_name};
 use crate::db::Database;
 
 pub const COMPTEUR_ATTR_TYPE: &str = "compteur";
+pub const MATRICULE_ATTR_TYPE: &str = "matricule";
 
 pub fn is_compteur_attr(attr: &EntityAttribute) -> bool {
-    attr.attr_type == COMPTEUR_ATTR_TYPE
+    attr.attr_type == COMPTEUR_ATTR_TYPE || attr.attr_type == MATRICULE_ATTR_TYPE
 }
 
 pub fn column_libelle(attr: &EntityAttribute) -> String {
@@ -54,6 +55,17 @@ fn libelle_value(attr: &EntityAttribute, ent: &EntityDef) -> String {
         })
 }
 
+fn explicit_libelle_from_data(data: &Map<String, Value>, attr: &EntityAttribute) -> Option<String> {
+    data.get(&column_libelle(attr)).and_then(|v| v.as_str()).and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    })
+}
+
 fn next_numero(
     db: &Database,
     table: &str,
@@ -87,7 +99,11 @@ pub fn apply_compteurs_on_create(
     let today = today_jjmmaaaa();
 
     for attr in ent.attributs.iter().filter(|a| is_compteur_attr(a)) {
-        let libelle = libelle_value(attr, ent);
+        let libelle = if attr.attr_type == MATRICULE_ATTR_TYPE {
+            explicit_libelle_from_data(data, attr).unwrap_or_else(|| libelle_value(attr, ent))
+        } else {
+            libelle_value(attr, ent)
+        };
         let numero = next_numero(
             db,
             &table,
@@ -118,6 +134,8 @@ mod tests {
             label: Some("Référence".into()),
             required: false,
             r#ref: None,
+            relation_multiple: false,
+            relation_exclusive_parent: true,
             default: None,
             enum_options: None,
         };

@@ -1,0 +1,411 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Plus } from "lucide-react";
+import { FieldRenderer } from "@/engine/FieldRenderer";
+import { EntityRelationCreateModal } from "@/items/EntityRelationCreateModal";
+import { EntityRelationPickOrCreateModal } from "@/items/EntityRelationPickOrCreateModal";
+import { Button } from "@/items/Button";
+import { CollapsiblePanel } from "@/items/CollapsiblePanel";
+import { Input } from "@/items/Input";
+import { Select } from "@/items/Select";
+import type { RelationSelectOption } from "@/types/entity";
+import type { FieldDef, ScreenRow, ValidationIssue } from "@/types/screen";
+
+const NO_OPTIONS_ALERT =
+  "Aucun enregistrement disponible — créez-en un nouveau via le bouton « Créer ».";
+
+function parseEmbedListValue(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.filter((v) => v && typeof v === "object") as Record<string, unknown>[];
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((v) => v && typeof v === "object") as Record<string, unknown>[];
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function rowLabel(row: Record<string, unknown>): string {
+  for (const key of ["libelle", "nom", "titre", "reference", "intitule"]) {
+    const v = row[key];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  const first = Object.values(row).find((v) => v != null && String(v).trim());
+  return first != null ? String(first).trim() : "Élément";
+}
+
+interface EntityEmbedGroupProps {
+  field: FieldDef;
+  allFields: FieldDef[];
+  values: ScreenRow;
+  readOnly?: boolean;
+  screenKey: string;
+  uploadDraftId: string;
+  storageFolders?: string[];
+  excludeRecordId?: string;
+  onChange: (key: string, value: unknown) => void;
+  onBatchChange?: (updates: Record<string, unknown>) => void;
+  onBlur?: (key: string) => void;
+  fieldErrors?: Record<string, ValidationIssue>;
+  fieldWarnings?: Record<string, ValidationIssue>;
+}
+
+/** One-to-one : champs dupliqués de l'entité fille dans la table mère. */
+export function EntityEmbedGroup({
+  field,
+  allFields,
+  values,
+  readOnly,
+  screenKey,
+  uploadDraftId,
+  storageFolders,
+  excludeRecordId,
+  onChange,
+  onBatchChange,
+  onBlur,
+  fieldErrors,
+  fieldWarnings,
+}: EntityEmbedGroupProps) {
+  const refEntity = field.form?.refEntity?.trim() ?? "";
+  const childFields = useMemo(
+    () => allFields.filter((f) => f.form?.embedParent === field.key),
+    [allFields, field.key],
+  );
+  const [options, setOptions] = useState<RelationSelectOption[]>([]);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [selectKey, setSelectKey] = useState(0);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const loadOptions = useCallback(async () => {
+    if (!refEntity) return;
+    try {
+      const rows = await invoke<RelationSelectOption[]>("entity_relation_options", {
+        payload: {
+          screen_key: screenKey,
+          field_key: field.key,
+          exclude_record_id: excludeRecordId ?? null,
+        },
+      });
+      setOptions(rows);
+      setOptionsError(null);
+    } catch (e) {
+      setOptions([]);
+      setOptionsError(
+        e instanceof Error ? e.message : "Impossible de charger les enregistrements liés.",
+      );
+    }
+  }, [screenKey, field.key, excludeRecordId, refEntity]);
+
+  useEffect(() => {
+    void loadOptions();
+  }, [loadOptions]);
+
+  const applyCopied = async (recordId: string) => {
+    const copied = await invoke<Record<string, unknown>>("entity_embed_values_from_record", {
+      payload: {
+        screen_key: screenKey,
+        field_key: field.key,
+        record_id: recordId,
+      },
+    });
+    if (onBatchChange) {
+      onBatchChange(copied);
+    } else {
+      for (const [k, v] of Object.entries(copied)) {
+        onChange(k, v);
+      }
+    }
+  };
+
+  const tryPick = async (option: RelationSelectOption) => {
+    if (!option.value) return;
+    await applyCopied(option.value);
+    setSelectKey((k) => k + 1);
+    setPickOpen(false);
+  };
+
+  const handleCreated = async (row: ScreenRow) => {
+    const id = row.id != null ? String(row.id) : "";
+    if (!id) return;
+    await applyCopied(id);
+    void loadOptions();
+    setCreateOpen(false);
+  };
+
+  return (
+    <>
+    <CollapsiblePanel
+      title={field.label}
+      subtitle="Copie embarquée (one-to-one) — indépendante des autres liaisons"
+      defaultOpen
+      headerAction={
+        !readOnly && refEntity ? (
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" type="button" onClick={() => setPickOpen(true)}>
+              Choisir
+            </Button>
+            <Button size="sm" variant="outline" type="button" onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Créer
+            </Button>
+          </div>
+        ) : undefined
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-muted">
+          Choisissez un enregistrement existant : ses champs sont copiés ici (pas de liaison par ID).
+          Replier ce bloc n&apos;affecte pas les autres liaisons (ex. articles).
+        </p>
+        {!readOnly && refEntity && options.some((o) => o.value) && (
+          <Select
+            key={selectKey}
+            label={`Choisir — ${field.label}`}
+            value=""
+            onChange={(e) => {
+              const id = e.target.value;
+              if (!id) return;
+              const opt = options.find((o) => o.value === id);
+              if (opt) void tryPick(opt);
+            }}
+            options={[
+              { value: "", label: `— Choisir un ${refEntity} —` },
+              ...options.filter((o) => o.value).map((o) => ({ value: o.value, label: o.label })),
+            ]}
+          />
+        )}
+        {!readOnly && refEntity && options.filter((o) => o.value).length === 0 && (
+          <p className="text-xs text-amber-400" role="status">
+            {NO_OPTIONS_ALERT}
+          </p>
+        )}
+        {childFields.map((childField) => (
+          <FieldRenderer
+            key={childField.key}
+            field={childField}
+            allFields={allFields}
+            values={values}
+            onChange={onChange}
+            onBatchChange={onBatchChange}
+            onBlur={onBlur}
+            readOnly={readOnly}
+            fieldError={fieldErrors?.[childField.key]}
+            fieldWarning={fieldWarnings?.[childField.key]}
+            screenKey={screenKey}
+            uploadDraftId={uploadDraftId}
+            storageFolders={storageFolders}
+            excludeRecordId={excludeRecordId}
+          />
+        ))}
+      </div>
+    </CollapsiblePanel>
+
+      {pickOpen && (
+        <EntityRelationPickOrCreateModal
+          entityKey={refEntity}
+          open={pickOpen}
+          onClose={() => setPickOpen(false)}
+          options={options}
+          excludeIds={[]}
+          embedMode
+          onSelected={(id) => void tryPick({ value: id, label: id })}
+          onOptionsRefresh={() => void loadOptions()}
+        />
+      )}
+      {refEntity && (
+        <EntityRelationCreateModal
+          entityKey={refEntity}
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(row) => void handleCreated(row)}
+        />
+      )}
+    </>
+  );
+}
+
+interface EntityEmbedListEditorProps {
+  field: FieldDef;
+  value: unknown;
+  readOnly?: boolean;
+  screenKey: string;
+  excludeRecordId?: string;
+  fieldError?: ValidationIssue;
+  onChange: (key: string, value: unknown) => void;
+  onBlur?: (key: string) => void;
+}
+
+/** One-to-many : tableau JSON de copies embarquées. */
+export function EntityEmbedListEditor({
+  field,
+  value,
+  readOnly,
+  screenKey,
+  excludeRecordId,
+  fieldError,
+  onChange,
+  onBlur,
+}: EntityEmbedListEditorProps) {
+  const refEntity = field.form?.refEntity?.trim() ?? "";
+  const rows = parseEmbedListValue(value);
+  const [options, setOptions] = useState<RelationSelectOption[]>([]);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [pickOpen, setPickOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!refEntity) return;
+    try {
+      const fetched = await invoke<RelationSelectOption[]>("entity_relation_options", {
+        payload: {
+          screen_key: screenKey,
+          field_key: field.key,
+          exclude_record_id: excludeRecordId ?? null,
+        },
+      });
+      setOptions(fetched);
+      setOptionsError(null);
+    } catch (e) {
+      setOptions([]);
+      setOptionsError(
+        e instanceof Error ? e.message : "Impossible de charger les enregistrements liés.",
+      );
+    }
+  }, [screenKey, field.key, excludeRecordId, refEntity]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const persist = (next: Record<string, unknown>[]) => {
+    onChange(field.key, JSON.stringify(next));
+    onBlur?.(field.key);
+  };
+
+  const appendFromRecord = async (recordId: string) => {
+    const child = await invoke<Record<string, unknown>>("entity_embed_child_from_record", {
+      payload: {
+        screen_key: screenKey,
+        field_key: field.key,
+        record_id: recordId,
+      },
+    });
+    persist([...rows, child]);
+  };
+
+  const tryPick = async (option: RelationSelectOption) => {
+    if (!option.value) return;
+    await appendFromRecord(option.value);
+    setPickOpen(false);
+  };
+
+  const listSubtitle =
+    refEntity === "articles"
+      ? "Plusieurs articles embarqués"
+      : refEntity === "demande_dachat"
+        ? "Demandes d'achat embarquées"
+        : refEntity
+          ? `Éléments embarqués (${refEntity})`
+          : "Liste embarquée (one-to-many)";
+
+  const rowEditKeys = useMemo(() => {
+    const keys = ["nom", "qte", "libelle"] as const;
+    return keys.filter(
+      (k) => refEntity === "articles" || rows.some((r) => r[k] !== undefined && r[k] !== null),
+    );
+  }, [refEntity, rows]);
+
+  const updateRow = (idx: number, key: string, val: string) => {
+    const next = rows.map((r, i) => (i === idx ? { ...r, [key]: val } : r));
+    persist(next);
+  };
+
+  return (
+    <>
+    <CollapsiblePanel
+      title={field.label}
+      subtitle={listSubtitle}
+      defaultOpen
+      headerAction={
+        !readOnly && refEntity ? (
+          <Button size="sm" variant="secondary" type="button" onClick={() => setPickOpen(true)}>
+            Ajouter
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className="space-y-2">
+        {optionsError && (
+          <p className="text-sm text-primary" role="alert">
+            {optionsError}
+          </p>
+        )}
+        {!refEntity && (
+          <p className="text-sm text-primary" role="alert">
+            Entité liée introuvable dans la configuration.
+          </p>
+        )}
+        {fieldError?.message && (
+          <p className="text-sm text-primary" role="alert">
+            {fieldError.message}
+          </p>
+        )}
+        {rows.length === 0 && (
+          <p className="text-xs text-muted">Aucune ligne — cliquez sur « Ajouter ».</p>
+        )}
+        {rows.map((row, idx) => (
+          <div
+            key={`embed-row-${idx}`}
+            className="flex flex-col gap-2 rounded-md border border-border bg-background px-3 py-2 sm:flex-row sm:items-start sm:justify-between"
+          >
+            <div className="min-w-0 flex-1 space-y-2">
+              {!readOnly && rowEditKeys.length > 0 ? (
+                rowEditKeys.map((key) => (
+                  <Input
+                    key={`${idx}-${key}`}
+                    label={key === "qte" ? "Quantité" : key === "nom" ? "Nom" : "Libellé"}
+                    value={String(row[key] ?? "")}
+                    onChange={(e) => updateRow(idx, key, e.target.value)}
+                    onBlur={() => onBlur?.(field.key)}
+                  />
+                ))
+              ) : (
+                <span className="text-sm text-foreground">{rowLabel(row)}</span>
+              )}
+            </div>
+            {!readOnly && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => persist(rows.filter((_, i) => i !== idx))}
+              >
+                Retirer
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+    </CollapsiblePanel>
+      {pickOpen && refEntity && (
+        <EntityRelationPickOrCreateModal
+          entityKey={refEntity}
+          open={pickOpen}
+          onClose={() => setPickOpen(false)}
+          options={options}
+          excludeIds={[]}
+          embedMode
+          onSelected={(id) => void tryPick({ value: id, label: id })}
+          onOptionsRefresh={() => void load()}
+        />
+      )}
+    </>
+  );
+}

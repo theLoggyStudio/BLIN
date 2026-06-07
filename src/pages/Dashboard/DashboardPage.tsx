@@ -21,6 +21,8 @@ import {
 import { useEntityBranding } from "@/hooks/useEntityBranding";
 import { randomDelayMs } from "@/lib/randomDelay";
 import { sortEntitySuggestionsByPhrase } from "@/lib/entitySuggestions";
+import { parseAssistantChatContent } from "@/lib/chatDisplayParse";
+import { pushLoggyAlert } from "@/contexts/AlertContext";
 import type { AiChatReply, AiStoredMessage } from "@/types/ai";
 import type { EntityCreateDraft, EntitySuggestion } from "@/types/entity";
 import type { ScreenRow } from "@/types/screen";
@@ -39,11 +41,26 @@ function bumpConversationsList() {
 function messagesToThread(messages: AiStoredMessage[]): DashboardChatEntry[] {
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m, i) => ({
-      id: `hist-${i}-${m.role}`,
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
+    .map((m, i) => {
+      if (m.role === "assistant") {
+        const parsed = parseAssistantChatContent(m.content);
+        return {
+          id: `hist-${i}-${m.role}`,
+          role: "assistant" as const,
+          content: parsed.text || null,
+          displayBlocks: parsed.displayBlocks,
+        };
+      }
+      return {
+        id: `hist-${i}-${m.role}`,
+        role: "user" as const,
+        content: m.content,
+      };
+    });
+}
+
+function wantsListInChat(text: string): boolean {
+  return /\b(liste|lister|listes|list|listing|affiche la liste|donne la liste)\b/i.test(text);
 }
 
 /** Tableau de bord — barre de commande + gestion dynamique des entités (sans fenêtre IA flottante). */
@@ -143,7 +160,7 @@ export function DashboardPage() {
         setCommand("");
         setActiveEntity(null);
       } catch (e) {
-        window.alert(String(e));
+        pushLoggyAlert(String(e), "danger");
       }
     },
     [setConversationId],
@@ -284,6 +301,7 @@ export function DashboardPage() {
       setConversationId(reply.conversation_id);
       patchAssistant(assistantId, {
         content: reply.message.trim(),
+        displayBlocks: reply.display_blocks ?? [],
         loading: false,
       });
       applyCreateActionFromReply(reply);
@@ -360,7 +378,7 @@ export function DashboardPage() {
     }
 
     const matched = await resolveEntityKey(text);
-    if (matched && !mustQueue) {
+    if (matched && !mustQueue && !wantsListInChat(text)) {
       await openEntityWithTransition(matched, text);
       return;
     }
@@ -418,7 +436,10 @@ export function DashboardPage() {
         <div className="dashboard-chat-shell">
           <div className="dashboard-chat-messages">
             <div className="dashboard-chat-messages-inner">
-              <DashboardChatThread entries={thread} />
+              <DashboardChatThread
+                entries={thread}
+                onOpenEntityFromChat={(entityKey) => openEntityWorkspace(entityKey)}
+              />
             </div>
           </div>
           <footer className="dashboard-chat-footer">

@@ -64,6 +64,76 @@ pub fn validate_screen_data(
         report.merge(validate_tache_link_fields(data));
         report.merge(validate_tache_visibility_fields(data));
     }
+    if !for_filter {
+        report.merge(validate_embed_fields(cfg, data));
+    }
+    report
+}
+
+fn validate_embed_fields(cfg: &ScreenConfigFile, data: &Map<String, Value>) -> ValidationReport {
+    let mut report = ValidationReport::ok();
+    for field in &cfg.fields {
+        if field.field_type == "entity_embed" {
+            let mut any = false;
+            for child in &cfg.fields {
+                if child.form.as_ref().and_then(|m| m.embed_parent.as_deref())
+                    != Some(field.key.as_str())
+                {
+                    continue;
+                }
+                if !is_field_visible(child, data) {
+                    continue;
+                }
+                let v = data.get(&child.key).or_else(|| data.get(&child.column));
+                if !is_empty_value(v) {
+                    any = true;
+                }
+                if child.required && is_empty_value(v) {
+                    report.errors.push(ValidationIssue {
+                        field: child.key.clone(),
+                        label: child.label.clone(),
+                        level: "error".into(),
+                        code: "required".into(),
+                        message: format!("« {} » est obligatoire.", child.label),
+                        fix_hint: None,
+                    });
+                }
+            }
+            if field.required && !any {
+                report.errors.push(ValidationIssue {
+                    field: field.key.clone(),
+                    label: field.label.clone(),
+                    level: "error".into(),
+                    code: "required".into(),
+                    message: format!(
+                        "« {} » : choisissez ou renseignez au moins un champ.",
+                        field.label
+                    ),
+                    fix_hint: None,
+                });
+            }
+        }
+        if field.field_type == "entity_embed_list" && field.required {
+            let v = data.get(&field.key).or_else(|| data.get(&field.column));
+            let empty_list = match v {
+                None | Some(Value::Null) => true,
+                Some(Value::String(s)) => s.trim().is_empty() || s.trim() == "[]",
+                Some(Value::Array(a)) => a.is_empty(),
+                _ => false,
+            };
+            if empty_list {
+                report.errors.push(ValidationIssue {
+                    field: field.key.clone(),
+                    label: field.label.clone(),
+                    level: "error".into(),
+                    code: "required".into(),
+                    message: format!("« {} » : ajoutez au moins un élément.", field.label),
+                    fix_hint: None,
+                });
+            }
+        }
+    }
+    report.valid = report.errors.is_empty();
     report
 }
 
@@ -96,43 +166,55 @@ fn validate_tache_visibility_fields(data: &Map<String, Value>) -> ValidationRepo
     report
 }
 
-/// Liens validation / déstockage : champs obligatoires selon `type_tache`.
+/// Liens signature / déstockage : champs obligatoires selon `type_tache`.
 fn validate_tache_link_fields(data: &Map<String, Value>) -> ValidationReport {
     let type_tache = data
         .get("type_tache")
         .and_then(|v| v.as_str())
         .unwrap_or("generale");
-    if type_tache != "validation" && type_tache != "destockage" {
+    if type_tache != "signature" && type_tache != "destockage" {
         return ValidationReport::ok();
     }
     let mut report = ValidationReport::ok();
-    for (key, label) in [
-        ("entite_a_valider", "Entité à valider"),
-        ("enregistrement_id", "ID enregistrement"),
-    ] {
-        let value = data.get(key);
-        if is_empty_value(value) {
-            report.errors.push(ValidationIssue {
-                field: key.into(),
-                label: label.into(),
-                level: "error".into(),
-                code: "required".into(),
-                message: format!(
-                    "« {label} » est obligatoire pour une tâche de type « {type_tache} »."
-                ),
-                fix_hint: None,
-            });
-        }
+    let entity_key = data
+        .get("entite_a_signer")
+        .or_else(|| data.get("entite_a_valider"));
+    let record_id = data.get("enregistrement_id");
+    if is_empty_value(entity_key) {
+        report.errors.push(ValidationIssue {
+            field: "entite_a_signer".into(),
+            label: "Entité à signer".into(),
+            level: "error".into(),
+            code: "required".into(),
+            message: format!(
+                "« Entité à signer » est obligatoire pour une tâche de type « {type_tache} »."
+            ),
+            fix_hint: None,
+        });
     }
-    if type_tache == "validation" {
-        let value = data.get("role_validateur");
+    if is_empty_value(record_id) {
+        report.errors.push(ValidationIssue {
+            field: "enregistrement_id".into(),
+            label: "ID enregistrement".into(),
+            level: "error".into(),
+            code: "required".into(),
+            message: format!(
+                "« ID enregistrement » est obligatoire pour une tâche de type « {type_tache} »."
+            ),
+            fix_hint: None,
+        });
+    }
+    if type_tache == "signature" {
+        let value = data
+            .get("role_signataire")
+            .or_else(|| data.get("role_validateur"));
         if is_empty_value(value) {
             report.errors.push(ValidationIssue {
-                field: "role_validateur".into(),
-                label: "Rôle valideur".into(),
+                field: "role_signataire".into(),
+                label: "Rôle signataire".into(),
                 level: "error".into(),
                 code: "required".into(),
-                message: "« Rôle valideur » est obligatoire pour une tâche de validation.".into(),
+                message: "« Rôle signataire » est obligatoire pour une tâche de signature.".into(),
                 fix_hint: None,
             });
         }
@@ -507,4 +589,96 @@ pub fn format_validation_knowledge(cfg: &ScreenConfigFile) -> String {
 
 pub fn validation_error_json(report: &ValidationReport) -> String {
     serde_json::to_string(report).unwrap_or_else(|_| report.errors[0].message.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dda::config::{
+        FieldDef, FieldFormMeta, FieldListMeta, ListLayout, ScreenConfigFile, ScreenLayout,
+        ScreenMeta,
+    };
+    use serde_json::json;
+
+    fn embed_list_field(required: bool) -> FieldDef {
+        FieldDef {
+            key: "article".into(),
+            column: "article".into(),
+            field_type: "entity_embed_list".into(),
+            label: "Articles".into(),
+            required,
+            default: None,
+            options: vec![],
+            list: Some(FieldListMeta {
+                enabled: false,
+                sortable: false,
+            }),
+            filter: None,
+            form: Some(FieldFormMeta {
+                col_span: Some(2),
+                placeholder: None,
+                min: None,
+                step: None,
+                read_only: None,
+                auto_generated: None,
+                storage_folder: None,
+                max_files: None,
+                accept: None,
+                ref_entity: Some("articles".into()),
+                relation_exclusive_parent: Some(true),
+                relation_multiple: Some(true),
+                embed_parent: None,
+            }),
+            visible_when: None,
+            validation: None,
+        }
+    }
+
+    fn minimal_cfg(field: FieldDef) -> ScreenConfigFile {
+        ScreenConfigFile {
+            screen: ScreenMeta {
+                key: "demande_dachat".into(),
+                label: "DA".into(),
+                label_plural: None,
+                icon: None,
+                route: "/entite/demande_dachat".into(),
+                system: false,
+                ai_editable: false,
+                table: "ent_demande_dachat".into(),
+                primary_key: "id".into(),
+                label_field: "id".into(),
+                default_order_by: None,
+                privileges: crate::dda::config::ScreenPrivileges {
+                    view: "demande_dachat:voir".into(),
+                    create: "demande_dachat:creer".into(),
+                    update: "demande_dachat:modifier".into(),
+                    delete: "demande_dachat:supprimer".into(),
+                    import: None,
+                    export: None,
+                },
+                print: None,
+                storage: None,
+            },
+            layout: ScreenLayout {
+                list: ListLayout {
+                    title: "DA".into(),
+                    subtitle: None,
+                    actions: vec![],
+                    row_click: None,
+                },
+                forms: None,
+            },
+            fields: vec![field],
+        }
+    }
+
+    #[test]
+    fn required_embed_list_rejects_empty() {
+        let cfg = minimal_cfg(embed_list_field(true));
+        let mut data = Map::new();
+        data.insert("article".into(), json!("[]"));
+        let report = validate_screen_data(&cfg, &data, false);
+        assert!(!report.valid);
+        assert!(report.errors.iter().any(|e| e.code == "required"));
+    }
 }

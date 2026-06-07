@@ -1208,6 +1208,25 @@ impl Database {
         self.get_user(id)
     }
 
+    pub fn reset_user_password_force_change(
+        &self,
+        user_id: &str,
+        new_password: &str,
+    ) -> Result<UserRow, DbError> {
+        let password_hash = hash(new_password, DEFAULT_COST)
+            .map_err(|e| DbError::Message(format!("Hash : {e}")))?;
+        let affected = self.conn.execute(
+            "UPDATE users
+             SET password_hash = ?1, must_change_password = 1
+             WHERE id = ?2 AND actif = 1",
+            params![password_hash, user_id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::Message("Utilisateur introuvable ou inactif.".into()));
+        }
+        self.get_user(user_id)
+    }
+
     pub fn get_user(&self, id: &str) -> Result<UserRow, DbError> {
         self.conn.query_row(
             "SELECT u.id, u.nom, u.email, r.nom, r.id, u.actif FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?1",

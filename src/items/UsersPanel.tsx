@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Pencil, Plus, UserPlus } from "lucide-react";
+import { KeyRound, Pencil, Plus, UserPlus } from "lucide-react";
 import { Guard } from "@/components/Guard";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
@@ -142,6 +142,25 @@ export function UsersPanel() {
     }
   };
 
+  const resetPassword = async (user: UserRow) => {
+    const ok = window.confirm(
+      `Réinitialiser le mot de passe de ${user.nom} à "user123" ?\nÀ sa prochaine connexion, l'utilisateur devra définir un nouveau mot de passe.`,
+    );
+    if (!ok) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await invoke<UserRow>("users_reset_password", { payload: { id: user.id } });
+      setMessage(`Mot de passe réinitialisé pour ${user.nom} (temporaire : user123).`);
+      await load();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const columns: Column<UserRow>[] = [
     { key: "nom", header: "Nom", sortable: true },
     { key: "email", header: "E-mail", sortable: true },
@@ -158,20 +177,35 @@ export function UsersPanel() {
     {
       key: "_actions",
       header: "",
-      className: "w-16",
+      className: "w-28",
       render: (row) => (
         <Guard privilege="users:modifier">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Modifier"
-            onClick={(e) => {
-              e.stopPropagation();
-              void loadRoles().then(() => openEdit(row));
-            }}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Modifier"
+              title="Modifier"
+              onClick={(e) => {
+                e.stopPropagation();
+                void loadRoles().then(() => openEdit(row));
+              }}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Réinitialiser mot de passe"
+              title='Réinitialiser à "user123"'
+              onClick={(e) => {
+                e.stopPropagation();
+                void resetPassword(row);
+              }}
+            >
+              <KeyRound className="h-4 w-4 text-primary" />
+            </Button>
+          </div>
         </Guard>
       ),
     },

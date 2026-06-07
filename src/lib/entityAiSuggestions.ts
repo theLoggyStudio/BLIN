@@ -1,4 +1,5 @@
 import type { EntityDef } from "@/types/entity";
+import { isOrphanEntityKey } from "@/lib/orphanEntities";
 
 const SYSTEM_HIDDEN = new Set(["stock", "tache"]);
 
@@ -10,7 +11,9 @@ export function qualifiesForAiSuggestions(
   ent: EntityDef,
   registry: EntityDef[],
 ): boolean {
-  if (SYSTEM_HIDDEN.has(ent.nom)) return false;
+  if (SYSTEM_HIDDEN.has(ent.nom) || isOrphanEntityKey(ent.nom)) return false;
+  const hasEntityLink = ent.attributs.some((a) => a.type === "entity");
+  if (!hasEntityLink) return true;
   return ent.attributs.some((attr) => {
     if (attr.type !== "entity") return false;
     const ref = attr.ref?.trim();
@@ -23,6 +26,6 @@ export function qualifiesForAiSuggestions(
 export function applyAiSuggestionsVisibility(entities: EntityDef[]): EntityDef[] {
   return entities.map((ent) => ({
     ...ent,
-    ai_suggestions: qualifiesForAiSuggestions(ent, entities),
+    ai_suggestions: ent.is_session ? true : qualifiesForAiSuggestions(ent, entities),
   }));
 }

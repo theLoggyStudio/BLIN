@@ -1,3 +1,4 @@
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::ai::config::project_root;
@@ -32,11 +33,30 @@ pub struct EntityCreateAction {
     pub initial_data: serde_json::Value,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatDisplayColumn {
+    pub key: String,
+    pub label: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatDisplayBlock {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_key: Option<String>,
+    pub columns: Vec<ChatDisplayColumn>,
+    pub rows: Vec<Map<String, Value>>,
+}
+
 #[derive(serde::Serialize)]
 pub struct ChatReply {
     pub conversation_id: String,
     pub message: String,
     pub tool_results: Vec<ToolResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub display_blocks: Vec<ChatDisplayBlock>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_entity_create: Option<EntityCreateAction>,
 }
@@ -65,6 +85,7 @@ impl<'a> Agent<'a> {
             conversation_id: conv_id.to_string(),
             message: final_msg,
             tool_results,
+            display_blocks: vec![],
             open_entity_create: None,
         })
     }

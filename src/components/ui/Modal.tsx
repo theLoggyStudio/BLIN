@@ -1,4 +1,5 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./Button";
@@ -20,9 +21,13 @@ const sizeClasses = {
   "2xl": "max-w-[min(96vw,72rem)]",
 };
 
+/** Compteur global pour empiler les modales (sélection client/article dans un formulaire, etc.). */
+let modalStackDepth = 0;
+
 /**
  * Overlay div (pas de &lt;dialog showModal&gt;) — les pickers date/heure
  * et certains champs ne fonctionnent pas correctement dans un dialog natif sous WebView2/Tauri.
+ * Rendu via portail sur document.body pour éviter les blocages dans un parent overflow.
  */
 export function Modal({
   open,
@@ -33,11 +38,16 @@ export function Modal({
   footer,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const [stackLevel, setStackLevel] = useState(0);
 
   useEffect(() => {
     if (!open) return;
+    modalStackDepth += 1;
+    const level = modalStackDepth;
+    setStackLevel(level);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && level === modalStackDepth) onClose();
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -45,6 +55,7 @@ export function Modal({
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      modalStackDepth = Math.max(0, modalStackDepth - 1);
     };
   }, [open, onClose]);
 
@@ -52,12 +63,15 @@ export function Modal({
     return null;
   }
 
-  return (
+  const zBase = 200 + stackLevel * 20;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: zBase }}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-title"
+      aria-labelledby={titleId}
     >
       <button
         type="button"
@@ -68,13 +82,14 @@ export function Modal({
       <div
         ref={panelRef}
         className={cn(
-          "relative z-[201] flex w-full max-h-[min(90dvh,calc(100vh-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-2xl",
+          "relative flex w-full max-h-[min(90dvh,calc(100vh-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-2xl",
           sizeClasses[size],
         )}
+        style={{ zIndex: zBase + 1 }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
-          <h2 id="modal-title" className="text-lg font-semibold text-foreground">
+          <h2 id={titleId} className="text-lg font-semibold text-foreground">
             {title}
           </h2>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fermer">
@@ -88,6 +103,7 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ClipboardCopy } from "lucide-react";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
@@ -6,6 +7,7 @@ import { Modal } from "@/items/Modal";
 import { Text } from "@/items/Text";
 import { useIsAppAdmin } from "@/hooks/useIsAppAdmin";
 import { buildEntityRegistryAiPrompt } from "@/lib/entityRegistryAiPrompt";
+import type { RoleRow } from "@/types/users";
 
 interface EntityRegistryPromptButtonProps {
   ecosysteme?: string;
@@ -21,6 +23,7 @@ export function EntityRegistryPromptButton({
   const [open, setOpen] = useState(false);
   const [domain, setDomain] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
 
   if (!isAdmin) {
     return null;
@@ -38,12 +41,20 @@ export function EntityRegistryPromptButton({
       return;
     }
     setFeedback(null);
-    const text = buildEntityRegistryAiPrompt({
-      currentEcosystem: ecosysteme,
-      currentSlogan: slogan,
-      domainHint,
-    });
+    setCopying(true);
     try {
+      let roles: RoleRow[] = [];
+      try {
+        roles = await invoke<RoleRow[]>("users_list_roles");
+      } catch {
+        roles = [];
+      }
+      const text = buildEntityRegistryAiPrompt({
+        currentEcosystem: ecosysteme,
+        currentSlogan: slogan,
+        domainHint,
+        roles,
+      });
       await navigator.clipboard.writeText(text);
       setFeedback("Prompt copié — collez-le dans votre IA.");
       window.setTimeout(() => {
@@ -52,6 +63,8 @@ export function EntityRegistryPromptButton({
       }, 1200);
     } catch {
       setFeedback("Impossible de copier — autorisez le presse-papiers.");
+    } finally {
+      setCopying(false);
     }
   };
 
@@ -88,7 +101,7 @@ export function EntityRegistryPromptButton({
               </Button>
               <Button
                 type="button"
-                disabled={!domain.trim()}
+                disabled={!domain.trim() || copying}
                 onClick={() => void copyPrompt()}
               >
                 <ClipboardCopy className="h-4 w-4" />

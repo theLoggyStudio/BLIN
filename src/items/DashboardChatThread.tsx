@@ -1,10 +1,13 @@
 import { cn } from "@/lib/utils";
 import { ChatLinkifiedText } from "@/items/ChatLinkifiedText";
+import { ChatAiDisplay } from "@/items/ChatAiDisplay";
+import type { ChatDisplayBlock } from "@/types/ai";
 
 export interface DashboardChatEntry {
   id: string;
   role: "user" | "assistant";
   content: string | null;
+  displayBlocks?: ChatDisplayBlock[];
   loading?: boolean;
   /** Spinner centré (ouverture écran entité). */
   entityLoader?: boolean;
@@ -13,10 +16,15 @@ export interface DashboardChatEntry {
 interface DashboardChatThreadProps {
   entries: DashboardChatEntry[];
   className?: string;
+  onOpenEntityFromChat?: (entityKey: string) => void;
 }
 
 /** Fil de discussion centré (bulles utilisateur + Loggy). */
-export function DashboardChatThread({ entries, className }: DashboardChatThreadProps) {
+export function DashboardChatThread({
+  entries,
+  className,
+  onOpenEntityFromChat,
+}: DashboardChatThreadProps) {
   if (entries.length === 0) {
     return (
       <div className={cn("dashboard-chat-empty", className)} aria-hidden>
@@ -56,6 +64,12 @@ export function DashboardChatThread({ entries, className }: DashboardChatThreadP
                   <span className="loggy-chat-dot" />
                 </p>
               ) : null}
+              {entry.displayBlocks && entry.displayBlocks.length > 0 && (
+                <ChatAiDisplay
+                  blocks={entry.displayBlocks}
+                  onOpenEntity={onOpenEntityFromChat}
+                />
+              )}
             </div>
             {entry.entityLoader && (
               <div className="dashboard-chat-center-loader mx-auto" aria-hidden />

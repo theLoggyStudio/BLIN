@@ -1,4 +1,4 @@
-import { FileDown, Plus, RefreshCw } from "lucide-react";
+import { FileDown, FileUp, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/items/Button";
 import { Text } from "@/items/Text";
 import { Guard } from "@/components/Guard";
@@ -10,6 +10,9 @@ interface ScreenHeaderProps {
   privileges: ScreenPrivileges;
   onCreate?: () => void;
   onRefresh?: () => void;
+  onPrintListPdf?: () => void;
+  onImportCsv?: () => void;
+  onExportCsv?: () => void;
   loading?: boolean;
 }
 
@@ -19,6 +22,8 @@ export function ScreenHeader({
   onCreate,
   onRefresh,
   onPrintListPdf,
+  onImportCsv,
+  onExportCsv,
   loading,
 }: ScreenHeaderProps) {
   const actions = layout.actions ?? [];
@@ -35,7 +40,23 @@ export function ScreenHeader({
           </div>
         )}
       </div>
-      <div className="flex gap-2 shrink-0">
+      <div className="flex flex-wrap gap-2 shrink-0">
+        {actions.includes("export") && onExportCsv && privileges.export && (
+          <Guard privilege={privileges.export as Privilege}>
+            <Button variant="secondary" size="sm" onClick={onExportCsv} disabled={loading}>
+              <FileDown className="h-4 w-4" />
+              Exporter
+            </Button>
+          </Guard>
+        )}
+        {actions.includes("import") && onImportCsv && privileges.import && (
+          <Guard privilege={privileges.import as Privilege}>
+            <Button variant="secondary" size="sm" onClick={onImportCsv} disabled={loading}>
+              <FileUp className="h-4 w-4" />
+              Importer
+            </Button>
+          </Guard>
+        )}
         {onPrintListPdf && (
           <Guard privilege={privileges.view}>
             <Button variant="secondary" size="sm" onClick={onPrintListPdf} disabled={loading}>

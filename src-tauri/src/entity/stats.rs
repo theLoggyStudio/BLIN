@@ -2,6 +2,7 @@ use rusqlite::Row;
 
 use super::registry::{EntityAttribute, EntityDef};
 use super::schema::{attr_column, table_name};
+use crate::dda::config::ScreenConfigFile;
 use crate::db::Database;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,10 +56,26 @@ fn find_attr<'a>(ent: &'a EntityDef, key: &str) -> Result<&'a EntityAttribute, S
         .ok_or_else(|| format!("Attribut « {key} » introuvable."))
 }
 
+fn resolve_group_column(cfg: &ScreenConfigFile, ent: &EntityDef, key: &str) -> Result<String, String> {
+    if let Some(f) = cfg
+        .fields
+        .iter()
+        .find(|f| f.key == key || f.column == key)
+    {
+        return Ok(f.column.clone());
+    }
+    let attr = find_attr(ent, key)?;
+    Ok(attr_column(attr))
+}
+
+fn is_numeric_field_type(field_type: &str) -> bool {
+    matches!(field_type, "number" | "integer" | "float" | "stock")
+}
+
 fn is_numeric_attr(attr: &EntityAttribute) -> bool {
     matches!(
         attr.attr_type.as_str(),
-        "number" | "integer" | "float"
+        "number" | "integer" | "float" | "stock"
     )
 }
 
@@ -69,14 +86,14 @@ pub struct EntityStatRow {
 
 pub fn query_entity_stats(
     db: &Database,
+    cfg: &ScreenConfigFile,
     ent: &EntityDef,
     group_by: &str,
     op: AggregateOp,
     value_field: Option<&str>,
 ) -> Result<Vec<EntityStatRow>, String> {
     let table = table_name(&ent.nom);
-    let group_attr = find_attr(ent, group_by)?;
-    let group_col = attr_column(group_attr);
+    let group_col = resolve_group_column(cfg, ent, group_by)?;
 
     let (select_expr, order_sql) = match op {
         AggregateOp::Count => (
@@ -87,14 +104,18 @@ pub fn query_entity_stats(
             let vf = value_field.ok_or_else(|| {
                 "Champ ordonnée requis pour somme / moyenne / min / max.".to_string()
             })?;
-            let val_attr = find_attr(ent, vf)?;
-            if !is_numeric_attr(val_attr) {
+            let val_col = resolve_group_column(cfg, ent, vf)?;
+            let numeric = cfg
+                .fields
+                .iter()
+                .find(|f| f.key == vf || f.column == vf)
+                .map(|f| is_numeric_field_type(&f.field_type))
+                .unwrap_or_else(|| find_attr(ent, vf).map(|a| is_numeric_attr(a)).unwrap_or(false));
+            if !numeric {
                 return Err(format!(
-                    "L'attribut « {} » n'est pas numérique (ordonnée).",
-                    val_attr.nom
+                    "Le champ « {vf} » n'est pas numérique (ordonnée)."
                 ));
             }
-            let val_col = attr_column(val_attr);
             let agg = match op {
                 AggregateOp::Sum => format!("SUM(COALESCE({val_col}, 0))"),
                 AggregateOp::Avg => format!("AVG(COALESCE({val_col}, 0))"),

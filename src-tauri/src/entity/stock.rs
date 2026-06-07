@@ -35,8 +35,8 @@ pub fn stock_entity_def() -> EntityDef {
             "Suivi des quantités et articles périssables — généré automatiquement.".into(),
         ),
         ai_suggestions: false,
-        requires_validation: false,
-        validator_role_ids: vec![],
+        requires_signature: false,
+        signatory_role_ids: vec![],
         is_session: false,
         attributs: vec![
             EntityAttribute {
@@ -45,6 +45,8 @@ pub fn stock_entity_def() -> EntityDef {
                 label: Some("Entité source".into()),
                 required: true,
                 r#ref: None,
+                relation_multiple: false,
+                relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
             },
@@ -54,6 +56,8 @@ pub fn stock_entity_def() -> EntityDef {
                 label: Some("ID enregistrement".into()),
                 required: true,
                 r#ref: None,
+                relation_multiple: false,
+                relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
             },
@@ -63,6 +67,8 @@ pub fn stock_entity_def() -> EntityDef {
                 label: Some("Libellé".into()),
                 required: true,
                 r#ref: None,
+                relation_multiple: false,
+                relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
             },
@@ -72,6 +78,8 @@ pub fn stock_entity_def() -> EntityDef {
                 label: Some("Quantité".into()),
                 required: true,
                 r#ref: None,
+                relation_multiple: false,
+                relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
             },
@@ -81,6 +89,8 @@ pub fn stock_entity_def() -> EntityDef {
                 label: Some("Article périssable".into()),
                 required: false,
                 r#ref: None,
+                relation_multiple: false,
+                relation_exclusive_parent: true,
                 default: Some(json!(false)),
                 enum_options: None,
             },
@@ -90,6 +100,8 @@ pub fn stock_entity_def() -> EntityDef {
                 label: Some("Date de péremption".into()),
                 required: false,
                 r#ref: None,
+                relation_multiple: false,
+                relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
             },
@@ -393,7 +405,7 @@ fn complete_open_destock_tasks(db: &Database, stock_id: &str) -> Result<(), Stri
     db.conn
         .execute(
             &format!(
-                "UPDATE {tache_table} SET statut = 'terminee' WHERE type_tache = ?1 AND entite_a_valider = ?2 AND enregistrement_id = ?3 AND statut != 'terminee'"
+                "UPDATE {tache_table} SET statut = 'terminee' WHERE type_tache = ?1 AND (entite_a_signer = ?2 OR entite_a_valider = ?2) AND enregistrement_id = ?3 AND statut != 'terminee'"
             ),
             params![DESTOCK_TYPE, STOCK_ENTITY_KEY, stock_id],
         )
@@ -471,7 +483,7 @@ fn maybe_spawn_destock_task(db: &Database, data_dir: &Path, row: &Map<String, Va
 
     let exists: i64 = db.conn.query_row(
         &format!(
-            "SELECT COUNT(*) FROM {tache_table} WHERE type_tache = ?1 AND entite_a_valider = ?2 AND enregistrement_id = ?3 AND statut != 'terminee'"
+            "SELECT COUNT(*) FROM {tache_table} WHERE type_tache = ?1 AND (entite_a_signer = ?2 OR entite_a_valider = ?2) AND enregistrement_id = ?3 AND statut != 'terminee'"
         ),
         params![DESTOCK_TYPE, STOCK_ENTITY_KEY, stock_id],
         |r| r.get(0),
@@ -521,7 +533,7 @@ fn insert_destock_task(
         super::tache_visibility::COL_VISIBILITE.into(),
         json!(super::tache_visibility::VIS_PUBLIQUE),
     );
-    data.insert("entite_a_valider".into(), json!(STOCK_ENTITY_KEY));
+    data.insert("entite_a_signer".into(), json!(STOCK_ENTITY_KEY));
     data.insert("enregistrement_id".into(), json!(stock_id));
 
     let mut columns = vec!["id".to_string(), "created_at".to_string()];
@@ -569,6 +581,19 @@ fn fetch_stock_row(db: &Database, id: &str) -> Result<Map<String, Value>, String
             row_to_map,
         )
         .map_err(|e| e.to_string())
+}
+
+/// Supprime les lignes d'inventaire liées à une entité retirée du registre (ex. « atricles »).
+pub fn purge_stock_for_entity(db: &Database, source_key: &str) -> Result<(), String> {
+    let table = table_name(STOCK_ENTITY_KEY);
+    if !table_exists(db, &table)? {
+        return Ok(());
+    }
+    let _ = db.conn.execute(
+        &format!("DELETE FROM {table} WHERE entite_source = ?1"),
+        rusqlite::params![source_key],
+    );
+    Ok(())
 }
 
 fn table_exists(db: &Database, table: &str) -> Result<bool, String> {

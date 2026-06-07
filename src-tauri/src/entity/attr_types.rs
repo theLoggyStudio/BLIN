@@ -46,6 +46,7 @@ pub fn normalize_attr_type(raw: &str) -> String {
         "heure" => "time".into(),
         "stock" | "quantite_stock" => "stock".into(),
         "compteur" | "counter" | "compteur_auto" => "compteur".into(),
+        "matricule" | "serial" | "code_auto" => "matricule".into(),
         _ => t,
     }
 }
@@ -61,5 +62,11 @@ pub fn normalize_attribute(attr: &mut EntityAttribute) {
         if r.trim().is_empty() {
             attr.r#ref = None;
         }
+    }
+    if attr.attr_type != "entity" {
+        attr.relation_multiple = false;
+        attr.relation_exclusive_parent = true;
+    } else {
+        attr.relation_exclusive_parent = true;
     }
 }

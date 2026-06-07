@@ -1,11 +1,34 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import { DEFAULT_FICHE_CSS } from "@/lib/print/defaultCss";
 
 const A4_W_MM = 210;
 const A4_H_MM = 297;
 
+/** Isole le rendu PDF du thème sombre de l'application. */
+const PRINT_ISOLATION_CSS = `
+html, body, .print-root { margin: 0; background: #ffffff !important; color: #1a1a1a !important; }
+.print-root .doc, .print-root .page, .print-root .fiche,
+.print-root .doc-body, .print-root .fiche-body,
+.print-root .fiche-field, .print-root .fiche-value, .print-root .fiche-label,
+.print-root .lh-contact, .print-root .data-table td {
+  color: #1a1a1a !important;
+  background: transparent;
+}
+.print-root .fiche-label, .print-root .lh-office-title { color: #2563eb !important; }
+.print-root .lh-date, .print-root .doc-sub, .print-root .fiche-meta, .print-root .lh-office {
+  color: #525252 !important;
+}
+.print-root .lh-logo, .print-root .lh-icon, .print-root .data-table th {
+  color: #ffffff !important;
+}
+.print-root .lh-logo, .print-root .lh-header-line, .print-root .lh-bottom-bar, .print-root .lh-icon {
+  background: #2563eb !important;
+}
+`;
+
 /**
- * Exporte un document HTML/CSS en PDF (logique inspirée de Loma).
+ * Exporte un document HTML/CSS en PDF.
  */
 export async function exportHtmlToPdf(
   html: string,
@@ -14,12 +37,13 @@ export async function exportHtmlToPdf(
 ): Promise<void> {
   const host = document.createElement("div");
   host.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:794px;background:#fff;z-index:-1;";
+    "position:fixed;left:-10000px;top:0;width:794px;background:#fff;color:#1a1a1a;z-index:-1;";
   const style = document.createElement("style");
-  style.textContent = `${css}
+  const mergedCss = `${DEFAULT_FICHE_CSS}\n${css}\n${PRINT_ISOLATION_CSS}
 @page { size: A4; margin: 12mm; }
-body { margin: 0; background: #fff; }
+body { margin: 0; background: #fff; color: #1a1a1a; }
 `;
+  style.textContent = mergedCss;
   const body = document.createElement("div");
   body.className = "print-root";
   body.innerHTML = html;

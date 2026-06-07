@@ -5,6 +5,15 @@ use crate::entity::registry::EntityRegistry;
 use crate::privileges::has_privilege;
 use crate::session::SessionUser;
 
+fn humanize_suggestion_label(nom: &str) -> String {
+    let s = nom.replace('_', " ");
+    let mut chars = s.chars();
+    match chars.next() {
+        None => nom.to_string(),
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EntitySuggestion {
     pub key: String,
@@ -27,13 +36,20 @@ pub fn catalog_path(data_dir: &Path) -> std::path::PathBuf {
 pub fn build_catalog(registry: &EntityRegistry) -> DashboardSuggestionsCatalog {
     let mut items = Vec::new();
     for ent in &registry.entities {
+        if super::registry::is_orphan_entity_key(&ent.nom) {
+            continue;
+        }
         if !ent.ai_suggestions {
             continue;
         }
-        let label = ent.label.clone().unwrap_or_else(|| ent.nom.clone());
+        let label = ent
+            .label
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| humanize_suggestion_label(&ent.nom));
         items.push(EntitySuggestion {
             key: ent.nom.clone(),
-            phrase: format!("Gérer {label}"),
+            phrase: format!("Gérer les {label}"),
             label,
             privilege: format!("{}:voir", ent.nom),
         });

@@ -1,10 +1,10 @@
-//! Tâches de validation — trigger système à chaque `create_row` (entité `requires_validation`).
+//! Tâches de signature — trigger système à chaque `create_row` (entité `requires_signature`).
 
 use chrono::Utc;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
-use super::record_validation;
+use super::record_signature;
 use super::registry::EntityDef;
 use super::schema::{attr_column, table_has_column, table_name};
 use crate::db::Database;
@@ -12,20 +12,22 @@ use crate::dda::crud;
 
 const TACHE_ENTITY_KEY: &str = "tache";
 
-/// Hook post-insert : tâches de validation obligatoires ; annule la création si échec.
+/// Hook post-insert : tâches de signature si l'objet n'est pas auto-signé ; annule la création si échec.
 pub fn after_entity_row_created(
     db: &Database,
     entity_key: &str,
     created_row: &Map<String, Value>,
 ) -> Result<(), String> {
-    match spawn_validation_tasks(db, &db.data_dir, entity_key, created_row) {
+    let registry = super::registry::load(&db.data_dir)?;
+    if !record_signature::entity_requires_signature(&registry, entity_key) {
+        return Ok(());
+    }
+    if record_signature::is_record_signed(db, entity_key, created_row.get("id").and_then(|v| v.as_str()).unwrap_or(""), &registry)? {
+        return Ok(());
+    }
+    match spawn_signature_tasks(db, &db.data_dir, entity_key, created_row) {
         Ok(_) => Ok(()),
         Err(e) => {
-            let registry = super::registry::load(&db.data_dir)?;
-            if !record_validation::entity_requires_validation(&registry, entity_key) {
-                eprintln!("Tâches de validation (non bloquant) : {e}");
-                return Ok(());
-            }
             let id = created_row
                 .get("id")
                 .and_then(|v| v.as_str())
@@ -36,15 +38,15 @@ pub fn after_entity_row_created(
                 }
             }
             Err(format!(
-                "Création annulée : les tâches de validation n'ont pas pu être générées ({e}). \
+                "Création annulée : les tâches de signature n'ont pas pu être générées ({e}). \
                  Vérifiez que l'entité « tache » existe dans le registre."
             ))
         }
     }
 }
 
-/// Une tâche privée par rôle valideur dès qu'un enregistrement est créé sur une entité « à valider ».
-pub fn spawn_validation_tasks(
+/// Une tâche privée par rôle signataire si l'objet créé n'est pas encore signé.
+pub fn spawn_signature_tasks(
     db: &Database,
     data_dir: &std::path::Path,
     source_entity_key: &str,
@@ -53,7 +55,7 @@ pub fn spawn_validation_tasks(
     if source_entity_key == TACHE_ENTITY_KEY {
         return Ok(Vec::new());
     }
-    if is_validation_task_row(created_row) {
+    if is_signature_task_row(created_row) {
         return Ok(Vec::new());
     }
 
@@ -61,13 +63,14 @@ pub fn spawn_validation_tasks(
     let Some(source) = registry.find(source_entity_key) else {
         return Ok(Vec::new());
     };
-    if !source.requires_validation || source.validator_role_ids.is_empty() {
+    if !source.requires_signature || source.signatory_role_ids.is_empty() {
         return Ok(Vec::new());
     }
 
     let Some(tache_ent) = registry.find(TACHE_ENTITY_KEY) else {
         return Err(
-            "Entité « tache » absente du registre — impossible de créer les validations.".into(),
+            "Entité « tache » absente du registre — impossible de créer les tâches de signature."
+                .into(),
         );
     };
 
@@ -80,13 +83,13 @@ pub fn spawn_validation_tasks(
     let roles = db.list_roles().map_err(|e| e.to_string())?;
 
     let mut created_task_ids = Vec::new();
-    for role_id in &source.validator_role_ids {
+    for role_id in &source.signatory_role_ids {
         let role_nom = roles
             .iter()
             .find(|r| &r.id == role_id)
             .map(|r| r.nom.as_str())
             .unwrap_or(role_id.as_str());
-        let libelle = format!("Valider {source_label} — {summary}");
+        let libelle = format!("Signer {source_label} — {summary}");
         let required_labels = required_attribute_labels(source);
         let champs_obligatoires = if required_labels.is_empty() {
             "—".to_string()
@@ -94,12 +97,12 @@ pub fn spawn_validation_tasks(
             required_labels.join(", ")
         };
         let description = format!(
-            "Validation requise pour l'entité « {source_label} » ({source_entity_key}).\n\
+            "Signature requise pour l'objet « {source_label} » ({source_entity_key}).\n\
              Enregistrement : {record_id}\n\
-             Rôle valideur : {role_nom}\n\
+             Rôle signataire : {role_nom}\n\
              Champs obligatoires à contrôler : {champs_obligatoires}"
         );
-        let task_id = insert_validation_task(
+        let task_id = insert_signature_task(
             db,
             tache_ent,
             &libelle,
@@ -111,6 +114,68 @@ pub fn spawn_validation_tasks(
         created_task_ids.push(task_id);
     }
     Ok(created_task_ids)
+}
+
+pub fn reconcile_signature_tasks(db: &Database, data_dir: &std::path::Path) -> Result<usize, String> {
+    let registry = super::registry::load(data_dir)?;
+    if registry.find(TACHE_ENTITY_KEY).is_none() {
+        return Ok(0);
+    }
+    let tache_table = table_name(TACHE_ENTITY_KEY);
+    if !table_has_column(db, &tache_table, "type_tache")? {
+        return Ok(0);
+    }
+
+    let mut created = 0usize;
+    for ent in &registry.entities {
+        if ent.nom == TACHE_ENTITY_KEY
+            || !record_signature::entity_requires_signature(&registry, &ent.nom)
+        {
+            continue;
+        }
+        let source_table = table_name(&ent.nom);
+        if !table_has_column(db, &source_table, record_signature::SIGNATURE_STATUS_COLUMN)? {
+            continue;
+        }
+        let sql = format!(
+            "SELECT id FROM {source_table} WHERE {} = ?1",
+            record_signature::SIGNATURE_STATUS_COLUMN
+        );
+        let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let ids: Vec<String> = stmt
+            .query_map(
+                rusqlite::params![record_signature::STATUS_NON_SIGNE],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .collect();
+
+        for record_id in ids {
+            let pending: i64 = db
+                .conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM {tache_table}
+                         WHERE type_tache = 'signature'
+                           AND entite_a_signer = ?1
+                           AND enregistrement_id = ?2
+                           AND statut != 'terminee'"
+                    ),
+                    rusqlite::params![ent.nom, record_id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if pending > 0 {
+                continue;
+            }
+            let cfg = super::load_screen_config(data_dir, &ent.nom)?;
+            let row = crud::get_row(db, &cfg, &record_id)?;
+            let n = spawn_signature_tasks(db, data_dir, &ent.nom, &row)?.len();
+            created += n;
+        }
+    }
+    Ok(created)
 }
 
 fn required_attribute_labels(ent: &EntityDef) -> Vec<String> {
@@ -127,10 +192,10 @@ fn required_attribute_labels(ent: &EntityDef) -> Vec<String> {
         .collect()
 }
 
-fn is_validation_task_row(row: &Map<String, Value>) -> bool {
+fn is_signature_task_row(row: &Map<String, Value>) -> bool {
     row.get("type_tache")
         .and_then(|v| v.as_str())
-        .map(|s| s == "validation")
+        .map(|s| s == "signature")
         .unwrap_or(false)
 }
 
@@ -170,7 +235,7 @@ fn record_summary(ent: &EntityDef, row: &Map<String, Value>) -> String {
         .unwrap_or_else(|| "nouvel enregistrement".into())
 }
 
-fn insert_validation_task(
+fn insert_signature_task(
     db: &Database,
     tache_ent: &EntityDef,
     libelle: &str,
@@ -189,14 +254,14 @@ fn insert_validation_task(
     data.insert("heure_debut".into(), json!("09:00"));
     data.insert("statut".into(), json!("a_faire"));
     data.insert("priorite".into(), json!("normale"));
-    data.insert("type_tache".into(), json!("validation"));
+    data.insert("type_tache".into(), json!("signature"));
     data.insert(
         super::tache_visibility::COL_VISIBILITE.into(),
         json!(super::tache_visibility::VIS_PRIVEE),
     );
-    data.insert("entite_a_valider".into(), json!(source_entity_key));
+    data.insert("entite_a_signer".into(), json!(source_entity_key));
     data.insert("enregistrement_id".into(), json!(record_id));
-    data.insert("role_validateur".into(), json!(role_id));
+    data.insert("role_signataire".into(), json!(role_id));
 
     let mut columns = vec!["id".to_string(), "created_at".to_string()];
     let mut placeholders = vec!["?1".to_string(), "?2".to_string()];
@@ -230,7 +295,7 @@ fn insert_validation_task(
     );
     db.conn
         .execute(&sql, rusqlite::params_from_iter(values.iter()))
-        .map_err(|e| format!("Création tâche de validation : {e}"))?;
+        .map_err(|e| format!("Création tâche de signature : {e}"))?;
 
     Ok(id)
 }
@@ -255,8 +320,9 @@ mod tests {
             label: None,
             description: None,
             ai_suggestions: true,
-            requires_validation: false,
-            validator_role_ids: vec![],
+            requires_signature: false,
+            signatory_role_ids: vec![],
+            is_session: false,
             attributs: vec![],
         };
         let mut row = Map::new();

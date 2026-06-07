@@ -12,6 +12,7 @@ import {
 } from "@/lib/print/listPrint";
 import { formatTableBlockToken } from "@/lib/print/templateVariables";
 import type { ScreenConfigFile, ScreenRow } from "@/types/screen";
+import { useAlert } from "@/contexts/AlertContext";
 
 interface PrintListPdfModalProps {
   open: boolean;
@@ -22,6 +23,7 @@ interface PrintListPdfModalProps {
 const STOCK_KEY = "stock";
 
 export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalProps) {
+  const { showSuccess, showError } = useAlert();
   const screenKey = config.screen.key;
   const listFields = useMemo(
     () =>
@@ -149,9 +151,12 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
           sousTitre.trim() ||
           defaultListPdfSubtitle(screenKey, filteredPreviewCount),
       });
+      showSuccess(`PDF liste généré pour « ${config.screen.label} ».`);
       onClose();
     } catch (e) {
-      setError(String(e));
+      const msg = String(e);
+      setError(msg);
+      showError(`Échec PDF liste : ${msg}`);
     } finally {
       setExporting(false);
     }

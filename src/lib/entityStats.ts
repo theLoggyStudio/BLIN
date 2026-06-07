@@ -21,14 +21,26 @@ export const SERIES_COLORS = [
   "#ec4899",
 ];
 
-const ABSCISSA_TYPES = new Set(["text", "select", "datetime", "boolean", "entity_ref"]);
-const NUMERIC_TYPES = new Set(["number"]);
+const ABSCISSA_TYPES = new Set([
+  "text",
+  "select",
+  "datetime",
+  "date",
+  "time",
+  "boolean",
+  "entity_ref",
+  "email",
+]);
+const NUMERIC_TYPES = new Set(["number", "stock", "compteur", "matricule"]);
 
 export function abscissaFields(cfg: ScreenConfigFile): FieldDef[] {
   return cfg.fields.filter(
     (f) =>
       f.type !== "hidden" &&
       f.type !== "detail_link" &&
+      f.type !== "entity_embed" &&
+      f.type !== "entity_embed_list" &&
+      !f.form?.embedParent &&
       f.key !== "id" &&
       f.key !== "created_at" &&
       ABSCISSA_TYPES.has(f.type),
@@ -39,6 +51,8 @@ export function numericFields(cfg: ScreenConfigFile): FieldDef[] {
   return cfg.fields.filter(
     (f) =>
       f.type !== "hidden" &&
+      f.type !== "detail_link" &&
+      !f.form?.embedParent &&
       f.key !== "id" &&
       f.key !== "created_at" &&
       NUMERIC_TYPES.has(f.type),

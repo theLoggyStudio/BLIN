@@ -193,6 +193,22 @@ impl Database {
         Ok(n > 0)
     }
 
+    pub fn ai_rename_conversation(
+        &self,
+        user_id: &str,
+        conversation_id: &str,
+        title: &str,
+    ) -> Result<bool, DbError> {
+        if !self.ai_conversation_owned_by(conversation_id, user_id)? {
+            return Ok(false);
+        }
+        let n = self.conn.execute(
+            "UPDATE ai_conversations SET title = ?1 WHERE id = ?2 AND user_id = ?3",
+            params![title, conversation_id, user_id],
+        )?;
+        Ok(n > 0)
+    }
+
     pub fn ai_delete_conversation(&self, user_id: &str, conversation_id: &str) -> Result<bool, DbError> {
         if !self.ai_conversation_owned_by(conversation_id, user_id)? {
             return Ok(false);

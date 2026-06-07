@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
 import { DataScreen } from "@/engine/DataScreen";
@@ -27,6 +27,18 @@ export function EntityWorkspace({
   const [rowCount, setRowCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const attributeCount = useMemo(() => {
+    if (!config) return 0;
+    return config.fields.filter(
+      (f) =>
+        f.type !== "hidden" &&
+        f.type !== "detail_link" &&
+        f.type !== "entity_embed" &&
+        f.type !== "entity_embed_list" &&
+        !f.form?.embedParent,
+    ).length;
+  }, [config]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,7 +102,7 @@ export function EntityWorkspace({
 
       <StatChartGrid columns={3}>
         <StatKpiCard label="Enregistrements" value={rowCount} />
-        <StatKpiCard label="Attributs" value={config.fields.length - 2} />
+        <StatKpiCard label="Attributs" value={attributeCount} />
         <StatKpiCard label="Table" value={config.screen.table} hint="SQLite dynamique" />
       </StatChartGrid>
 

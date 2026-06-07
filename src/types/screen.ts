@@ -79,6 +79,7 @@ export type FieldType =
   | "number"
   | "stock"
   | "compteur"
+  | "matricule"
   | "select"
   | "hidden"
   | "date"
@@ -88,6 +89,9 @@ export type FieldType =
   | "image"
   | "images"
   | "entity_ref"
+  | "entity_ref_list"
+  | "entity_embed"
+  | "entity_embed_list"
   | "detail_link";
 
 export interface FieldValidation {
@@ -138,6 +142,9 @@ export interface FieldDef {
     accept?: string;
     refEntity?: string;
     relationExclusiveParent?: boolean;
+    relationMultiple?: boolean;
+    /** Champ dupliqué depuis une entité fille embarquée. */
+    embedParent?: string;
   };
   visibleWhen?: { field: string; equals: string | number | boolean };
   validation?: FieldValidation;

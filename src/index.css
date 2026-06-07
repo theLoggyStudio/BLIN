@@ -302,6 +302,7 @@
     min-width: 0;
     padding: 0.65rem 0.5rem 0.65rem 0.75rem;
     text-align: left;
+    cursor: pointer;
     transition: color 0.15s ease;
   }
 
@@ -319,6 +320,31 @@
     font-weight: 600;
     line-height: 1.35;
     color: rgb(245 245 245);
+    cursor: text;
+  }
+
+  .sidebar-session-card--renaming {
+    border-color: rgb(77 182 172 / 0.45);
+  }
+
+  .sidebar-session-card-rename-input {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0.2rem 0.35rem;
+    border-radius: 0.35rem;
+    border: 1px solid rgb(77 182 172 / 0.55);
+    background: rgb(0 0 0 / 0.35);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: rgb(245 245 245);
+    outline: none;
+  }
+
+  .sidebar-session-card-rename-input:focus {
+    border-color: rgb(77 182 172 / 0.9);
+    box-shadow: 0 0 0 2px rgb(77 182 172 / 0.2);
   }
 
   .sidebar-session-card-meta {
@@ -473,6 +499,44 @@
 
   .loggy-chat-loader {
     @apply ml-1 h-8 w-8 animate-spin rounded-full border-2 border-secondary border-t-transparent;
+  }
+
+  .loggy-alert-stack {
+    @apply fixed bottom-4 left-4 z-[3000] flex max-h-[min(70vh,32rem)] w-[min(100vw-2rem,20rem)] flex-col-reverse gap-2 overflow-y-auto pointer-events-none p-1;
+  }
+
+  .loggy-alert-bubble {
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  }
+
+  .loggy-alert-enter {
+    animation: loggy-alert-slide-in 0.32s ease-out forwards;
+  }
+
+  .loggy-alert-exit {
+    animation: loggy-alert-slide-out 0.28s ease-in forwards;
+  }
+
+  @keyframes loggy-alert-slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes loggy-alert-slide-out {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
   }
 
   .collapsible-panel-header {

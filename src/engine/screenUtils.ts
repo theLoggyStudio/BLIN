@@ -1,4 +1,6 @@
 import type { FieldDef, ScreenRow } from "@/types/screen";
+import { entityRowDisplayLabel } from "@/lib/entityRowLabel";
+import { formatDateFr, formatDateTimeFr, formatTimeFr } from "@/lib/formatDateTime";
 import { parseImagesValue } from "./mediaUtils";
 
 function fieldValuesMatch(current: unknown, expected: unknown): boolean {
@@ -17,7 +19,15 @@ export function isFieldVisible(field: FieldDef, values: ScreenRow): boolean {
 
 export function rowLabel(row: ScreenRow, labelField: string): string {
   const v = row[labelField];
-  return v != null ? String(v) : "—";
+  if (v != null && String(v).trim()) {
+    const s = String(v).trim();
+    if (s.startsWith("[") || s.startsWith("{")) {
+      const fromEmbed = entityRowDisplayLabel(row);
+      if (fromEmbed !== "—") return fromEmbed;
+    }
+    return s;
+  }
+  return entityRowDisplayLabel(row);
 }
 
 export function formatCellValue(field: FieldDef | undefined, value: unknown): string {
@@ -29,6 +39,13 @@ export function formatCellValue(field: FieldDef | undefined, value: unknown): st
     return n > 0 ? `${n} photo${n > 1 ? "s" : ""}` : "—";
   }
   if (value == null || value === "") return "—";
+  if (field?.type === "date") return formatDateFr(value);
+  if (field?.type === "time") return formatTimeFr(value);
+  if (field?.type === "datetime") return formatDateTimeFr(value);
   if (typeof value === "number") return String(value);
-  return String(value);
+  const asText = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(asText) || /T\d{2}:\d{2}/.test(asText)) {
+    return formatDateTimeFr(asText);
+  }
+  return asText;
 }

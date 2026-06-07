@@ -271,6 +271,35 @@ pub fn ai_conversation_messages(
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Deserialize)]
+pub struct AiRenameConversationPayload {
+    pub conversation_id: String,
+    pub title: String,
+}
+
+#[tauri::command]
+pub fn ai_rename_conversation(
+    state: State<'_, AppState>,
+    payload: AiRenameConversationPayload,
+) -> Result<(), String> {
+    let session = state.desktop_sessions.require_privilege("ai:utiliser")?;
+    let title = payload.title.trim();
+    if title.is_empty() {
+        return Err("Le titre ne peut pas être vide.".into());
+    }
+    if title.len() > 200 {
+        return Err("Le titre est trop long (200 caractères max).".into());
+    }
+    let db = state.db.lock();
+    let ok = db
+        .ai_rename_conversation(&session.user.id, &payload.conversation_id, title)
+        .map_err(|e| e.to_string())?;
+    if !ok {
+        return Err("Conversation introuvable.".into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn ai_delete_conversation(
     state: State<'_, AppState>,

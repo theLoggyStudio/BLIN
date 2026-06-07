@@ -35,7 +35,7 @@ const DEFAULT_REGISTRY_JSON: &str = r#"{
         },
         {
           "nom": "type_tache",
-          "type": "enum[validation,generale,destockage]",
+          "type": "enum[signature,generale,destockage]",
           "label": "Type",
           "required": false,
           "default": "generale"
@@ -53,9 +53,9 @@ const DEFAULT_REGISTRY_JSON: &str = r#"{
           "label": "Rôles autorisés (personnalisé)",
           "required": false
         },
-        { "nom": "entite_a_valider", "type": "string", "label": "Entité à valider", "required": false },
+        { "nom": "entite_a_signer", "type": "string", "label": "Entité à signer", "required": false },
         { "nom": "enregistrement_id", "type": "string", "label": "ID enregistrement", "required": false },
-        { "nom": "role_validateur", "type": "string", "label": "Rôle valideur", "required": false }
+        { "nom": "role_signataire", "type": "string", "label": "Rôle signataire", "required": false }
       ]
     }
   ]

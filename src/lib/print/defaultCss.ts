@@ -1,48 +1,61 @@
-/** CSS fiche A4 — aligné sur `print_seed.rs` / charte Blin. */
-export const DEFAULT_FICHE_CSS = `.page, .fiche {
-  font-family: "Segoe UI", system-ui, sans-serif;
+/** CSS impression — en-tête professionnel (aligné sur `print_seed.rs`). */
+export const DEFAULT_FICHE_CSS = `
+*, *::before, *::after { box-sizing: border-box; }
+.doc, .page, .fiche {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   width: 754px;
-  box-sizing: border-box;
-  margin: 0;
-  padding: 16px 18px;
-  color: #0a0a0a;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 28px 32px 0;
+  color: #1a1a1a;
+  background: #ffffff;
+  font-size: 13px;
+  line-height: 1.5;
 }
-.fiche-head {
-  padding: 14px 18px;
-  margin-bottom: 18px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #dc2626 0%, #2563eb 55%, #06b6d4 100%);
-  color: #fafafa;
+.lh-header { display: flex; align-items: stretch; gap: 0; margin-bottom: 28px; }
+.lh-logo {
+  flex: 0 0 auto; min-width: 140px; padding: 14px 20px;
+  background: #2563eb; color: #ffffff; font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; text-align: center;
 }
-.fiche-head h1 { margin: 0; font-size: 20px; font-weight: 700; }
-.fiche-meta { margin: 6px 0 0; font-size: 11px; opacity: 0.9; }
-.fiche-field { margin: 0 0 10px; font-size: 13px; line-height: 1.45; }
-.fiche-label { color: #262626; }
-.fiche-value { color: #171717; }
-.fiche-foot {
-  margin-top: 20px;
-  padding-top: 10px;
-  border-top: 1px solid #e5e5e5;
-  font-size: 10px;
-  color: #737373;
-  text-align: center;
+.lh-header-line { flex: 1; align-self: center; height: 4px; background: #2563eb; }
+.lh-title-row {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 16px; margin-bottom: 6px;
 }
-.data-table-wrap { width: 100%; max-width: 100%; }
-.data-table {
-  width: 100%;
-  min-width: 100%;
-  table-layout: auto;
-  border-collapse: collapse;
-  font-size: 11px;
+.doc-title, .fiche-title {
+  margin: 0; font-size: 22px; font-weight: 700; color: #1a1a1a;
+  border-bottom: 3px solid #2563eb; padding-bottom: 8px; flex: 1;
 }
+.lh-date { margin: 0 0 8px; font-size: 12px; color: #525252; white-space: nowrap; }
+.doc-sub, .fiche-meta { margin: 0 0 20px; font-size: 12px; color: #525252; }
+.doc-body, .fiche-body { color: #1a1a1a; margin-bottom: 32px; }
+.fiche-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.fiche-field { margin: 0; padding: 10px 0; border-bottom: 1px solid #e5e5e5; color: #1a1a1a; }
+.fiche-field--full { grid-column: 1 / -1; }
+.fiche-label {
+  display: block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: #2563eb; margin-bottom: 4px;
+}
+.fiche-value { display: block; color: #1a1a1a; font-size: 13px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 11px; color: #1a1a1a; }
 .data-table th, .data-table td {
-  border: 1px solid #d4d4d4;
-  padding: 7px 9px;
-  text-align: left;
-  word-break: break-word;
+  border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; color: #1a1a1a;
 }
-.data-table th {
-  background: linear-gradient(180deg, #f5f5f5 0%, #e5e5e5 100%);
-  font-weight: 600;
+.data-table th { background: #2563eb; color: #ffffff; font-weight: 600; }
+.data-table tr:nth-child(even) td { background: #f8fafc; }
+.lh-footer { margin-top: 36px; }
+.lh-footer-rule { height: 1px; background: #cbd5e1; margin-bottom: 16px; }
+.lh-office-title {
+  margin: 0 0 4px; font-size: 11px; font-weight: 700; color: #2563eb;
+  text-transform: uppercase; letter-spacing: 0.05em;
 }
-.data-table tr:nth-child(even) td { background: #fafafa; }`;
+.lh-office { margin: 0 0 14px; font-size: 12px; color: #525252; }
+.lh-contacts { display: flex; flex-wrap: wrap; gap: 20px 32px; margin-bottom: 20px; }
+.lh-contact { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: #1a1a1a; }
+.lh-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; background: #2563eb; color: #ffffff; font-size: 10px;
+}
+.lh-bottom-bar { height: 12px; background: #2563eb; margin: 0 -32px; width: calc(100% + 64px); }
+`;

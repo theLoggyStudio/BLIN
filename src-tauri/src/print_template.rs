@@ -2,12 +2,11 @@
 
 use crate::dda::config::{FieldDef, ScreenConfigFile};
 use crate::entity::registry::EntityDef;
-use crate::print_seed::{LIST_PRINT_CSS, PRINT_CSS};
+use crate::print_seed::{AUTO_PRINT_DESCRIPTION_PREFIX, LETTERHEAD_FOOTER, LETTERHEAD_HEADER};
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub const FICHE_CSS: &str = PRINT_CSS;
-pub const LIST_CSS: &str = LIST_PRINT_CSS;
+pub use crate::print_seed::{FICHE_CSS, LIST_PRINT_CSS as LIST_CSS};
 
 /// Nom de variable tableau dans les modèles : `eleve` → `eleves`, `cour` → `cours`, `stock` → `stock`.
 pub fn table_token_for_entity(entity_nom: &str) -> String {
@@ -27,69 +26,102 @@ pub fn table_token_for_entity(entity_nom: &str) -> String {
     format!("{n}s")
 }
 
-/// HTML fiche avec un placeholder `{{nom_attribut}}` par champ métier.
+pub fn auto_print_description(kind: &str, screen_key: &str) -> String {
+    format!("{AUTO_PRINT_DESCRIPTION_PREFIX} — {kind} — écran {screen_key}")
+}
+
+/// HTML fiche objet unique — en-tête type courrier professionnel.
 pub fn build_fiche_html_from_config(cfg: &ScreenConfigFile) -> String {
-    let title = &cfg.screen.label;
+    let title = escape_html_attr(&cfg.screen.label);
     let key = &cfg.screen.key;
     let mut html = format!(
-        r#"<article class="fiche">
-  <header class="fiche-head">
-    <h1>{title}</h1>
-    <p class="fiche-meta">Écran : {key}</p>
-  </header>
-  <section class="fiche-body">"#
+        r#"<article class="fiche doc">
+{header}
+  <div class="lh-title-row">
+    <h1 class="fiche-title">{title}</h1>
+    <p class="lh-date">{{{{date.aujourdhui}}}}</p>
+  </div>
+  <p class="fiche-meta">Fiche — {key}</p>
+  <section class="fiche-body">
+    <div class="fiche-grid">"#,
+        header = LETTERHEAD_HEADER,
+        title = title,
+        key = key,
     );
     for field in printable_fields(cfg) {
+        let full = field.field_type == "entity_embed_list"
+            || field.form.as_ref().and_then(|m| m.col_span).unwrap_or(1) >= 2;
         html.push_str(&format!(
-            r#"<p class="fiche-field" data-field="{}"><strong class="fiche-label">{} :</strong> <span class="fiche-value">{{{{{key}.{field}}}}}</span></p>"#,
-            field.key,
-            escape_html_attr(&field.label),
-            key = key,
-            field = field.key
+            r#"<div class="fiche-field{full_class}" data-field="{key_attr}">
+        <span class="fiche-label">{label}</span>
+        <span class="fiche-value">{{{{{screen}.{field_key}}}}}</span>
+      </div>"#,
+            full_class = if full { " fiche-field--full" } else { "" },
+            key_attr = field.key,
+            label = escape_html_attr(&field.label),
+            screen = key,
+            field_key = field.key,
         ));
     }
     html.push_str(
-        r#"  </section>
-  <footer class="fiche-foot"><span>{{date.aujourdhui}}</span> — {{date.heure}}</footer>
-</article>"#,
+        r#"    </div>
+  </section>
+"#,
     );
+    html.push_str(LETTERHEAD_FOOTER);
+    html.push_str("\n</article>");
     html
 }
 
 pub fn build_fiche_html_from_entity(ent: &EntityDef) -> String {
-    let label = ent.label.as_deref().unwrap_or(&ent.nom);
+    let label = escape_html_attr(ent.label.as_deref().unwrap_or(&ent.nom));
     let mut html = format!(
-        r#"<article class="fiche">
-  <header class="fiche-head">
-    <h1>{}</h1>
-  </header>
-  <section class="fiche-body">"#,
-        escape_html_attr(label)
+        r#"<article class="fiche doc">
+{header}
+  <div class="lh-title-row">
+    <h1 class="fiche-title">{label}</h1>
+    <p class="lh-date">{{{{date.aujourdhui}}}}</p>
+  </div>
+  <section class="fiche-body">
+    <div class="fiche-grid">"#,
+        header = LETTERHEAD_HEADER,
+        label = label,
     );
     for attr in &ent.attributs {
         if crate::entity::attr_types::is_reserved_attribute(attr) {
             continue;
         }
-        let lbl = attr.label.as_deref().unwrap_or(&attr.nom);
+        let lbl = escape_html_attr(attr.label.as_deref().unwrap_or(&attr.nom));
         html.push_str(&format!(
-            r#"<p class="fiche-field"><strong class="fiche-label">{} :</strong> <span class="fiche-value">{{{{{table}.{field}}}}}</span></p>"#,
-            escape_html_attr(lbl),
+            r#"<div class="fiche-field">
+        <span class="fiche-label">{lbl}</span>
+        <span class="fiche-value">{{{{{table}.{field}}}}}</span>
+      </div>"#,
+            lbl = lbl,
             table = ent.nom,
-            field = attr.nom
+            field = attr.nom,
         ));
     }
     html.push_str(
-        r#"  </section>
-  <footer class="fiche-foot"><span>{{date.aujourdhui}}</span> — {{date.heure}}</footer>
-</article>"#,
+        r#"    </div>
+  </section>
+"#,
     );
+    html.push_str(LETTERHEAD_FOOTER);
+    html.push_str("\n</article>");
     html
 }
 
 fn printable_fields<'a>(cfg: &'a ScreenConfigFile) -> Vec<&'a FieldDef> {
     cfg.fields
         .iter()
-        .filter(|f| f.field_type != "hidden" && f.field_type != "detail_link")
+        .filter(|f| {
+            f.field_type != "hidden"
+                && f.field_type != "detail_link"
+                && f.field_type != "entity_embed"
+                && f.field_type != "entity_embed_list"
+                && f.form.as_ref().and_then(|m| m.embed_parent.as_ref()).is_none()
+        })
         .collect()
 }
 
@@ -98,6 +130,16 @@ fn escape_html_attr(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+pub fn apply_document_placeholders(html: &str, societe_nom: &str, societe_slogan: &str) -> String {
+    let mut out = html.to_string();
+    let now = chrono::Local::now();
+    out = out.replace("{{date.aujourdhui}}", &now.format("%d/%m/%Y").to_string());
+    out = out.replace("{{date.heure}}", &now.format("%H:%M").to_string());
+    out = out.replace("{{societe.nom}}", &escape_html_attr(societe_nom));
+    out = out.replace("{{societe.slogan}}", &escape_html_attr(societe_slogan));
+    out
 }
 
 pub fn substitute_row(
@@ -115,9 +157,7 @@ pub fn substitute_row(
         if field.field_type == "hidden" || field.field_type == "detail_link" {
             continue;
         }
-        let raw = row
-            .get(&field.key)
-            .or_else(|| row.get(&field.column));
+        let raw = row.get(&field.key).or_else(|| row.get(&field.column));
         let display = escape_html_attr(&value_to_display(raw, &field.field_type));
         let token = format!("{{{{{}}}}}", field.key);
         out = out.replace(&token, &display);
@@ -135,27 +175,32 @@ pub fn substitute_row(
     out
 }
 
-/// HTML modèle liste : variable tableau `{{eleves}}`, `{{stock}}`, etc.
+/// HTML modèle liste — même en-tête professionnel.
 pub fn build_list_print_html(cfg: &ScreenConfigFile) -> String {
     let token = table_token_for_entity(&cfg.screen.key);
     let placeholder = format!("{{{{{token}}}}}");
     format!(
-        r#"<div class="page">
-  <header class="brand-header">
-    <div>
-      <p class="brand-name">{{{{societe.nom}}}}</p>
-      <p class="brand-tag">{{{{societe.slogan}}}}</p>
-    </div>
-    <div class="brand-meta">
-      <p>{{{{date.aujourdhui}}}}</p>
-      <p>{{{{date.heure}}}}</p>
-    </div>
+        r#"<div class="doc page">
+  <header class="lh-header">
+    <div class="lh-logo">{{{{societe.nom}}}}</div>
+    <div class="lh-header-line"></div>
   </header>
-  <h1>{{{{titre}}}}</h1>
-  <p class="sub">{{{{sousTitre}}}}</p>
-  <div class="liste data-table-wrap">{placeholder}</div>
-  <footer class="foot">
-    <span>{{{{societe.nom}}}}</span> — document généré localement
+  <div class="lh-title-row">
+    <h1 class="doc-title">{{{{titre}}}}</h1>
+    <p class="lh-date">{{{{date.aujourdhui}}}}</p>
+  </div>
+  <p class="doc-sub">{{{{sousTitre}}}}</p>
+  <main class="doc-body liste data-table-wrap">{placeholder}</main>
+  <footer class="lh-footer">
+    <div class="lh-footer-rule"></div>
+    <p class="lh-office-title">Coordonnées</p>
+    <p class="lh-office">{{{{societe.slogan}}}}</p>
+    <div class="lh-contacts">
+      <span class="lh-contact"><span class="lh-icon">☎</span> Document interne</span>
+      <span class="lh-contact"><span class="lh-icon">✉</span> {{{{societe.nom}}}}</span>
+      <span class="lh-contact"><span class="lh-icon">◉</span> {{{{date.heure}}}}</span>
+    </div>
+    <div class="lh-bottom-bar"></div>
   </footer>
 </div>"#
     )
@@ -167,27 +212,31 @@ pub fn build_list_print_html(cfg: &ScreenConfigFile) -> String {
     .replace("{{{{sousTitre}}}}", "{{sousTitre}}")
 }
 
-/// Modèle liste dédié stock (filtre entité source documenté dans le sous-titre).
 pub fn build_stock_list_print_html() -> String {
-    r#"<div class="page">
-  <header class="brand-header">
-    <div>
-      <p class="brand-name">{{societe.nom}}</p>
-      <p class="brand-tag">{{societe.slogan}}</p>
-    </div>
-    <div class="brand-meta">
-      <p>{{date.aujourdhui}}</p>
-      <p>{{date.heure}}</p>
-    </div>
+    r#"<div class="doc page">
+  <header class="lh-header">
+    <div class="lh-logo">{{societe.nom}}</div>
+    <div class="lh-header-line"></div>
   </header>
-  <h1>{{titre}}</h1>
-  <p class="sub">{{sousTitre}}</p>
-  <div class="liste data-table-wrap">{{stock}}</div>
-  <footer class="foot">
-    <span>{{societe.nom}}</span> — inventaire — document généré localement
+  <div class="lh-title-row">
+    <h1 class="doc-title">{{titre}}</h1>
+    <p class="lh-date">{{date.aujourdhui}}</p>
+  </div>
+  <p class="doc-sub">{{sousTitre}}</p>
+  <main class="doc-body liste data-table-wrap">{{stock}}</main>
+  <footer class="lh-footer">
+    <div class="lh-footer-rule"></div>
+    <p class="lh-office-title">Coordonnées</p>
+    <p class="lh-office">{{societe.slogan}}</p>
+    <div class="lh-contacts">
+      <span class="lh-contact"><span class="lh-icon">☎</span> Document interne</span>
+      <span class="lh-contact"><span class="lh-icon">✉</span> {{societe.nom}}</span>
+      <span class="lh-contact"><span class="lh-icon">◉</span> {{date.heure}}</span>
+    </div>
+    <div class="lh-bottom-bar"></div>
   </footer>
 </div>"#
-    .to_string()
+        .to_string()
 }
 
 pub fn render_data_table_html(
@@ -277,6 +326,8 @@ fn value_to_display(value: Option<&Value>, field_type: &str) -> String {
                 "[Image]".to_string()
             } else if s.is_empty() {
                 "—".to_string()
+            } else if (s.starts_with('[') || s.starts_with('{')) && s.len() > 80 {
+                format!("{} caractères (JSON)", s.len())
             } else {
                 s.clone()
             }

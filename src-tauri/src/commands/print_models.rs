@@ -8,8 +8,8 @@ use crate::dda::crud;
 use crate::db_io::{PrintModelDetail, PrintModelRow};
 use crate::entity;
 use crate::print_template::{
-    build_fiche_html_from_config, render_data_table_html, substitute_list_document, substitute_row,
-    table_token_for_entity, FICHE_CSS, LIST_CSS,
+    apply_document_placeholders, build_fiche_html_from_config, render_data_table_html,
+    substitute_list_document, substitute_row, table_token_for_entity, FICHE_CSS, LIST_CSS,
 };
 use crate::AppState;
 
@@ -153,6 +153,8 @@ pub fn print_row_render(
         &cfg.fields,
         &cfg.screen.key,
     );
+    let (societe_nom, societe_slogan) = crate::entity::branding::load_branding(&db.data_dir);
+    let html_body = apply_document_placeholders(&html_body, &societe_nom, &societe_slogan);
     let file_label = row
         .get(&cfg.screen.label_field)
         .or_else(|| row.get(&cfg.screen.primary_key))
@@ -165,14 +167,14 @@ pub fn print_row_render(
 
     Ok(PrintRowRenderResponse {
         html: html_body,
-        css: if model.css_content.trim().is_empty() {
-            FICHE_CSS.to_string()
-        } else {
-            model.css_content.clone()
-        },
+        css: merge_fiche_css(&model.css_content),
         file_name: format!("Fiche-{}.pdf", sanitize_file_name(&file_label)),
         model_name: model.name,
     })
+}
+
+fn merge_fiche_css(_stored: &str) -> String {
+    FICHE_CSS.to_string()
 }
 
 #[derive(Serialize)]

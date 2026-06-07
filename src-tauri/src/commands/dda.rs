@@ -10,7 +10,7 @@ use crate::dda::{
     media::{absolute_path, decode_base64, delete_media, save_media},
     validation::{validate_screen_data, ValidationReport},
 };
-use crate::entity::record_validation;
+use crate::entity::record_signature::{self, RowUserContext};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -125,7 +125,7 @@ pub fn dda_list(
     require_view(&state, &cfg)?;
     let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
-    let role_id = record_validation::user_role_id(&db, &session.user.id)?;
+    let role_id = record_signature::user_role_id(&db, &session.user.id)?;
     let opts = ListRowsOptions {
         viewer_role_id: Some(role_id.as_str()),
         viewer_privileges: &session.user.privileges,
@@ -139,7 +139,7 @@ pub fn dda_get(state: State<'_, AppState>, payload: DdaIdPayload) -> Result<Map<
     require_view(&state, &cfg)?;
     let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
-    let role_id = record_validation::user_role_id(&db, &session.user.id)?;
+    let role_id = record_signature::user_role_id(&db, &session.user.id)?;
     let opts = ListRowsOptions {
         viewer_role_id: Some(role_id.as_str()),
         viewer_privileges: &session.user.privileges,
@@ -154,12 +154,18 @@ pub fn dda_create(
 ) -> Result<Map<String, Value>, String> {
     let cfg = load_cfg(&state, &payload.screen_key)?;
     require_create(&state, &cfg)?;
+    let session = state.desktop_sessions.require_session()?;
     if payload.screen_key == crate::entity::stock::STOCK_ENTITY_KEY {
         crate::entity::stock::validate_stock_row(&payload.data)?;
     }
     let db = state.db.lock();
     let data_dir = db.data_dir.clone();
-    let row = crud::create_row(&db, &cfg, &payload.data)?;
+    let role_id = record_signature::user_role_id(&db, &session.user.id)?;
+    let user_ctx = RowUserContext {
+        role_id: Some(role_id.as_str()),
+        privileges: &session.user.privileges,
+    };
+    let row = crud::create_row_with_user(&db, &cfg, &payload.data, Some(user_ctx))?;
     if payload.screen_key == crate::entity::stock::STOCK_ENTITY_KEY {
         crate::entity::stock::after_stock_row_saved(&db, &data_dir, &row)?;
     } else if let Err(e) = crate::entity::stock::sync_lines_from_source(
@@ -187,7 +193,7 @@ pub fn dda_update(
     let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
     let data_dir = db.data_dir.clone();
-    let role_id = record_validation::user_role_id(&db, &session.user.id)?;
+    let role_id = record_signature::user_role_id(&db, &session.user.id)?;
     let opts = ListRowsOptions {
         viewer_role_id: Some(role_id.as_str()),
         viewer_privileges: &session.user.privileges,

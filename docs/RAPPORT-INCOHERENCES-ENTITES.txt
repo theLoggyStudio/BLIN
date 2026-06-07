@@ -1,0 +1,195 @@
+RAPPORT D'INCOHÉRENCES — ENTITÉS BLIN
+=====================================
+Date : 2026-06-04
+Source : tests registre, SQLite, configs DDA générées, code frontend/backend
+Note : aucune correction appliquée — liste numérotée pour suivi
+
+──────────────────────────────────────────────────────────────────────────────
+CRITIQUE
+──────────────────────────────────────────────────────────────────────────────
+
+✅1. Champs obligatoires ignorés sur les liaisons embed
+   - Registre : demande_dachat.article et client → required: true
+   - Registre : commande.da → required: true
+   - DDA généré : tous les headers entity_embed / entity_embed_list → required: false
+   - Conséquence : création possible d'une DA sans article ou d'une commande sans DA
+
+✅2. Entité fantôme « atricles » (typo)
+   - Présente dans le registre, table ent_atricles, config DDA, privilèges, modèles d'impression
+   - Plus aucune liaison métier ne la référence (demande_dachat.article → articles)
+   - Donnée dupliquée : « article01 » existe dans articles ET atricles
+
+✅3. Bouton « Détail » / fiche relationnelle inadaptée au mode embed
+   - entity_relation_detail ne construit des panneaux fils que pour entity_ref
+   - Toutes les liaisons actuelles sont en entity_embed / entity_embed_list
+   - Clic « Détail » sur une DA : panneau parent seulement, colonne article en JSON brut
+
+✅4. hasRelations incorrect dans DataScreen.tsx
+   - Ne détecte que type === entity_ref
+   - demande_dachat et commande : clic ligne → modal détail plat au lieu de vue multi-panneaux
+   - Le bouton « Détail » n'affiche pas les embeds de façon structurée
+
+✅5. Session métier (commande) incompatible avec le mode embed
+   - commande.is_session: true mais le champ da stocke une copie JSON, pas un ID
+   - Préremplissage / filtrage session attend un UUID, pas une copie embarquée
+
+✅6. commande : validation activée sans contenu validable
+   - requires_validation: true (role-admin, role-directeur)
+   - Seul attribut da non requis en DDA → commande créable vide, workflow de validation creux
+
+──────────────────────────────────────────────────────────────────────────────
+MOYEN
+──────────────────────────────────────────────────────────────────────────────
+
+✅7. Navigation : articles, client, atricles absents de la barre de commande
+   - Suggestions dashboard : seulement demande_dachat et commande
+   - Pas de bouton « Gérer articles » ou « Gérer client » visible
+
+✅8. Libellés demande_dachat vides ou techniques
+   - Registre : label null sur l'entité et attributs article / client
+   - DDA : titres « Nouveau — demande_dachat », liste « demande_dachat »
+   - Suggestion dashboard : « Gérer les demande_dachat » (grammaire incorrecte)
+
+✅9. Liste commande illisible
+   - labelField: id → affichera des UUID au lieu d'un libellé métier
+
+✅10. Liste articles peu lisible à la création
+    - labelField: matricule_numero → numéro vide tant que le matricule n'est pas généré
+    - La liste affiche surtout 1, 2, 3… plutôt que le nom de l'article
+
+✅11. statut_validation en base mais invisible à l'écran
+    - Colonnes sur ent_demande_dachat et ent_commande
+    - Aucun champ statut_validation dans les configs DDA
+    - demande_dachat : requires_validation false au registre mais colonne encore présente
+
+✅12. Colonnes legacy SQLite vs modèle embed
+    - ent_demande_dachat : colonnes client et article (TEXT) plus client_nom, etc.
+    - DA existante : client vide, article en JSON — colonnes legacy inutilisées
+
+✅13. Pas de validation du contenu embarqué (liste articles dans DA)
+    - articles.nom et articles.qte requis au registre
+    - Aucune validation du JSON embarqué à l'ajout dans demande_dachat
+
+✅14. Embed list : pas d'édition inline
+    - Boutons Ajouter / Retirer seulement
+    - Impossible de corriger nom ou quantité embarqués sans supprimer et réajouter
+
+✅15. Comportement liste incohérent entre entités
+    - articles : clic ligne → édition
+    - demande_dachat / commande : clic ligne → détail lecture seule
+
+✅16. Modèles d'impression dupliqués / ambigus
+    - Fiche articles (atricles) vs Fiche articles (articles)
+    - Liste — articles vs Liste — articles (articles)
+    - Risque de choisir le mauvais modèle à l'impression
+
+✅17. ai_suggestions vs règle documentée (.cursorrules)
+    - Règle : suggestion si liaison vers entité ai_suggestions: false
+    - commande apparaît car is_session: true force ai_suggestions: true
+
+✅18. Aucun filtre de liste activé
+    - Sur les 7 configs DDA : 0 filtre enabled: true
+    - Pas de barre de filtre sur les listes entités
+
+✅19. Tâches de validation absentes en base
+    - 0 tâche auto (type validation) — cohérent si DA sans validation, à retester si réactivation
+
+✅20. EntityPanel affiche atricles mais masque seulement stock
+    - Entité fantôme éditable dans Paramètres → Entités
+    - entityRefOptions propose articles ET atricles sans avertissement
+
+✅21. Session métier : sélecteur commande affichera des UUID
+    - BusinessSessionBar utilise libelle/nom/titre mais commande n'a que da (embed) et id
+
+✅22. Modèle embed vs entity_ref — double implémentation
+    - config.rs mappe entity → entity_ref mais génère toujours entity_embed*
+    - Code entity_ref / EntityRefSelect jamais exercé avec les configs actuelles
+
+✅23. Validation groupe client embed partielle
+    - client_nom hérite required: true du fils client.nom
+    - Pas de contrôle « au moins un champ client rempli » si sélection embed échoue
+
+✅24. Defaults « nom », « qte », « adr » préremplissent les formulaires
+    - Valeurs littérales de test propagées registre → DDA → champs embed client_*
+
+✅25. Dashboard suggestions : grammaire
+    - « Gérer les Commande » (accord incorrect)
+    - « Gérer les demande_dachat » (libellé technique)
+
+──────────────────────────────────────────────────────────────────────────────
+MINEUR
+──────────────────────────────────────────────────────────────────────────────
+
+✅26. Pluriels incorrects dans configs DDA
+    - articless, Atricless, demande_dachats
+
+✅27. KPI « Attributs » dans EntityWorkspace trompeur
+    - Compte fields.length - 2 (inclut embed, hidden, _detail) → chiffre gonflé
+
+✅28. Sous-titre embed list hardcodé
+    - « plusieurs articles possibles » affiché aussi sur commande.da (liste de DA)
+
+29. Code mort / commentaires trompeurs
+    - entity_ref supporté mais non utilisé
+    - Commentaire refEntity dit entity_ref alors que configs portent entity_embed
+
+30. Privilèges dupliqués en SQLite
+    - Chaque privilège entité apparaît 2× par rôle (bruit audit, sans impact apparent)
+
+✅31. Tests automatisés insuffisants
+    - 8 tests Rust entity (intent, compteur, bootstrap…)
+    - Aucun test E2E embed, validation DA, boutons modales
+
+✅32. Filtres session / CRUD : entité atricles synchronisée inutilement
+    - Table, privilèges, triggers, knowledge IA pour une entité orpheline
+
+✅33. Impression fiche DA : template « Fiche demande_dachat » vs ancien « Fiche DA »
+    - Nom dépend du label registre (null → technique)
+
+✅34. Colonne _detail parasite sur tables entités
+    - Présente en SQLite, type detail_link, usage limité avec mode embed
+
+✅35. ent_client / ent_articles sans statut_validation
+    - commande et demande_dachat l'ont ; incohérence si validation réactivée sur DA
+
+✅36. Stock : 5 entrées miroir articles OK mais atricles non reflété
+    - Cohérent (stock lié à articles) — atricles reste hors flux stock
+
+✅37. EntityStatsPanel : propose atricles dans comparaison multi-entités
+    - Entité fantôme incluse dans les stats sans valeur métier
+
+✅38. rowClick detail + bouton Détail redondants sur demande_dachat
+    - Deux chemins détail (modal plat vs relation detail) tous deux incomplets pour embed
+
+✅39. aiEditable: false sur toutes les configs malgré ai_suggestions: true
+    - Pas de lien entre flags registre ai_suggestions et DDA aiEditable
+
+✅40. Matricule compteur embarqué dans JSON article DA
+    - Copie inclut matricule_jjmmaaaa, matricule_numero, etc. — lourd / peu lisible en détail
+
+──────────────────────────────────────────────────────────────────────────────
+SCÉNARIOS MANUELS À REJOUER (non automatisés)
+──────────────────────────────────────────────────────────────────────────────
+
+✅41. Nouvelle DA → client seul → Créer → doit refuser (risque : passe)
+
+✅42. Nouvelle commande → sans DA → Créer → doit refuser (risque : passe)
+
+✅43. Clic « Détail » sur DA → doit montrer Client + Articles structurés (actuel : JSON)
+
+✅44. Barre commande → « Gérer articles » → doit ouvrir articles (actuel : absent)
+
+✅45. Paramètres → Entités → atricles ne devrait pas apparaître (actuel : visible)
+
+✅46. Session métier → choisir commande → libellé lisible (actuel : UUID si enregistrements)
+
+✅47. Client replier → Ajouter article → article cliquable (modales — à reverifier en UI)
+
+✅48. Créer article via modale embed depuis DA → doit apparaître dans liste articles (OK en principe)
+
+✅49. Supprimer entité atricles du registre → tables/print/privileges orphelins à nettoyer
+
+✅50. Resynchroniser registre après corrections → vérifier UNIQUE document_print_models.name
+
+──────────────────────────────────────────────────────────────────────────────
+FIN DU RAPPORT — 50 points numérotés

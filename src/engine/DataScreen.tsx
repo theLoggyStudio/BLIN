@@ -6,6 +6,7 @@ import { Button } from "@/items/Button";
 import { FilterBar } from "@/items/FilterBar";
 import { FieldRenderer } from "@/engine/FieldRenderer";
 import { EntityRelationDetail } from "@/engine/EntityRelationDetail";
+import { EntitySignatureModal } from "@/items/EntitySignatureModal";
 import { Modal } from "@/items/Modal";
 import { Offpanel } from "@/items/Offpanel";
 import { ScreenHeader } from "@/items/ScreenHeader";
@@ -14,15 +15,19 @@ import { TableImageCell } from "@/items/TableImageCell";
 import { formatCellValue } from "@/engine/screenUtils";
 import {
   issuesByField,
+  parseEmbedListValue,
   parseValidationReportFromError,
   validateScreenForm,
 } from "@/engine/validation";
 import { ValidationBanner } from "@/items/ValidationBanner";
 import type { Privilege } from "@/types/auth";
 import { PrintListPdfModal } from "@/items/PrintListPdfModal";
+import { EntityCsvImportModal } from "@/items/EntityCsvImportModal";
 import { printEntityRowPdf } from "@/lib/print/rowPrint";
+import { exportEntityCsv } from "@/lib/entityCsv";
+import { useAlert } from "@/contexts/AlertContext";
 import type { ReactNode } from "react";
-import { BUSINESS_SESSION_CHANGED_EVENT } from "@/constants/events";
+import { BUSINESS_SESSION_CHANGED_EVENT, ENTITY_CSV_IMPORT_OPEN_EVENT } from "@/constants/events";
 import type { ScreenConfigFile, ScreenRow, ValidationIssue } from "@/types/screen";
 
 interface DataScreenProps {
@@ -46,7 +51,13 @@ export function DataScreen({
   const pk = config.screen.primaryKey;
 
   const hasRelations = useMemo(
-    () => config.fields.some((f) => f.type === "entity_ref"),
+    () =>
+      config.fields.some(
+        (f) =>
+          f.type === "entity_ref" ||
+          f.type === "entity_embed" ||
+          f.type === "entity_embed_list",
+      ),
     [config.fields],
   );
 
@@ -67,6 +78,33 @@ export function DataScreen({
   }>({ errors: [], warnings: [] });
   const uploadDraftIdRef = useRef(crypto.randomUUID());
   const initialCreateAppliedRef = useRef(false);
+  const [entitySignatureTarget, setEntitySignatureTarget] = useState<{
+    entityKey: string;
+    recordId: string;
+  } | null>(null);
+  const { showSuccess, showError, showInfo } = useAlert();
+
+  const isAutoSignatureTask = useCallback(
+    (row: ScreenRow) => {
+      if (screenKey !== "tache") return false;
+      const type = String(row.type_tache ?? "");
+      const entityKey = String(row.entite_a_signer ?? row.entite_a_valider ?? "").trim();
+      const recordId = String(row.enregistrement_id ?? "").trim();
+      return (
+        (type === "signature" || type === "validation") &&
+        entityKey !== "" &&
+        recordId !== ""
+      );
+    },
+    [screenKey],
+  );
+
+  const openEntitySignatureFromTask = useCallback((row: ScreenRow) => {
+    const entityKey = String(row.entite_a_signer ?? row.entite_a_valider ?? "").trim();
+    const recordId = String(row.enregistrement_id ?? "").trim();
+    if (!entityKey || !recordId) return;
+    setEntitySignatureTarget({ entityKey, recordId });
+  }, []);
 
   const filterFields = useMemo(
     () => config.fields.filter((f) => f.filter?.enabled),
@@ -124,6 +162,17 @@ export function DataScreen({
     return () => window.removeEventListener(BUSINESS_SESSION_CHANGED_EVENT, onSession);
   }, [load]);
 
+  useEffect(() => {
+    const onImportOpen = (e: Event) => {
+      const key = (e as CustomEvent<{ entityKey?: string }>).detail?.entityKey;
+      if (key && key !== screenKey) return;
+      setCsvImportOpen(true);
+      showInfo(`Import CSV pour « ${config.screen.label} » — déposez votre fichier ci-dessous.`);
+    };
+    window.addEventListener(ENTITY_CSV_IMPORT_OPEN_EVENT, onImportOpen);
+    return () => window.removeEventListener(ENTITY_CSV_IMPORT_OPEN_EVENT, onImportOpen);
+  }, [screenKey, config.screen.label, showInfo]);
+
   const openRelationDetail = (row: ScreenRow) => {
     const id = String(row[pk] ?? "");
     if (id) setRelationDetailId(id);
@@ -158,6 +207,10 @@ export function DataScreen({
           }
           if (f.type === "entity_ref") {
             return raw != null && String(raw).trim() ? String(raw) : "—";
+          }
+          if (f.type === "entity_embed_list") {
+            const rows = parseEmbedListValue(raw);
+            return rows.length > 0 ? `${rows.length} élément(s)` : "—";
           }
           return formatCellValue(f, raw);
         },
@@ -223,6 +276,10 @@ export function DataScreen({
   }, [initialCreateValues, openCreateWith, onInitialCreateApplied]);
 
   const openRow = (row: ScreenRow, mode: "edit" | "detail") => {
+    if (isAutoSignatureTask(row)) {
+      openEntitySignatureFromTask(row);
+      return;
+    }
     if (mode === "detail" && hasRelations) {
       openRelationDetail(row);
       return;
@@ -262,19 +319,27 @@ export function DataScreen({
         });
       }
       closeForm();
+      showSuccess(
+        formMode === "create"
+          ? "Enregistrement créé avec succès."
+          : "Enregistrement mis à jour.",
+      );
       await load();
     } catch (e) {
       const parsed = parseValidationReportFromError(e);
       if (parsed) {
         setFormValidation({ errors: parsed.errors, warnings: parsed.warnings });
       } else {
-        setError(String(e));
+        const msg = String(e);
+        setError(msg);
+        showError(msg);
       }
     }
   };
 
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [printListOpen, setPrintListOpen] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
 
   const printRow = async (row: ScreenRow) => {
     const id = String(row[pk] ?? "");
@@ -283,8 +348,11 @@ export function DataScreen({
     setError(null);
     try {
       await printEntityRowPdf(screenKey, id);
+      showSuccess("PDF généré et téléchargé.");
     } catch (e) {
-      setError(String(e));
+      const msg = String(e);
+      setError(msg);
+      showError(`Échec de la génération PDF : ${msg}`);
     } finally {
       setPrintingId(null);
     }
@@ -293,6 +361,22 @@ export function DataScreen({
   const rowActions = (row: ScreenRow) => (
     <div className="flex gap-1 justify-end">
       {extraRowActions?.(row, () => void load())}
+      {hasRelations && (
+        <Guard privilege={config.screen.privileges.view}>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Détail relations"
+            title="Voir les liaisons embarquées"
+            onClick={(e) => {
+              e.stopPropagation();
+              openRelationDetail(row);
+            }}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        </Guard>
+      )}
       <Guard privilege={config.screen.privileges.view}>
         <Button
           variant="ghost"
@@ -309,17 +393,19 @@ export function DataScreen({
         </Button>
       </Guard>
       <Guard privilege={config.screen.privileges.update as Privilege}>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="Modifier"
-          onClick={(e) => {
-            e.stopPropagation();
-            openRow(row, "edit");
-          }}
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
+        {!isAutoSignatureTask(row) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Modifier"
+            onClick={(e) => {
+              e.stopPropagation();
+              openRow(row, "edit");
+            }}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        )}
       </Guard>
       <Guard privilege={config.screen.privileges.delete as Privilege}>
         <Button
@@ -353,7 +439,9 @@ export function DataScreen({
   const detailLayout = config.layout.forms?.detail;
   const activeLayout =
     formMode === "create" ? createLayout : formMode === "edit" ? editLayout : detailLayout;
-  const formReadOnly = formMode === "detail" && (detailLayout?.readOnly ?? true);
+  const formReadOnly =
+    (formMode === "detail" && (detailLayout?.readOnly ?? true)) ||
+    (formMode === "edit" && isAutoSignatureTask(formValues));
   const excludeRecordId =
     formMode === "edit" && formValues[pk] != null ? String(formValues[pk]) : undefined;
 
@@ -374,8 +462,18 @@ export function DataScreen({
         <FieldRenderer
           key={field.key}
           field={field}
+          allFields={config.fields}
+          fieldErrorsMap={formErrorsMap}
+          fieldWarningsMap={formWarningsMap}
           values={formValues}
           onChange={setField}
+          onBatchChange={(updates) => {
+            setFormValues((prev) => {
+              const next = { ...prev, ...updates };
+              runFormValidation(next);
+              return next;
+            });
+          }}
           onBlur={() => runFormValidation(formValues)}
           readOnly={formReadOnly}
           fieldError={formErrorsMap[field.key]}
@@ -397,6 +495,8 @@ export function DataScreen({
         onCreate={openCreate}
         onRefresh={() => void load()}
         onPrintListPdf={() => setPrintListOpen(true)}
+        onImportCsv={() => setCsvImportOpen(true)}
+        onExportCsv={() => void exportEntityCsv(screenKey, config.screen.label)}
         loading={loading}
       />
 
@@ -404,6 +504,13 @@ export function DataScreen({
         open={printListOpen}
         onClose={() => setPrintListOpen(false)}
         config={config}
+      />
+      <EntityCsvImportModal
+        entityKey={screenKey}
+        entityLabel={config.screen.label}
+        open={csvImportOpen}
+        onClose={() => setCsvImportOpen(false)}
+        onImported={() => void load()}
       />
 
       <div className="mb-6 space-y-3">
@@ -486,14 +593,22 @@ export function DataScreen({
           title={editLayout.title}
           size="lg"
           footer={
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={closeForm}>
-                Annuler
-              </Button>
-              <Button onClick={() => void submitForm()}>
-                {editLayout.submitLabel ?? "Enregistrer"}
-              </Button>
-            </div>
+            !isAutoSignatureTask(formValues) ? (
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={closeForm}>
+                  Annuler
+                </Button>
+                <Button onClick={() => void submitForm()}>
+                  {editLayout.submitLabel ?? "Enregistrer"}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex justify-end">
+                <Button variant="ghost" onClick={closeForm}>
+                  Fermer
+                </Button>
+              </div>
+            )
           }
         >
           {formBody}
@@ -545,6 +660,19 @@ export function DataScreen({
           open={Boolean(relationDetailId)}
           onClose={() => setRelationDetailId(null)}
           title={detailLayout?.title ?? `Fiche — ${config.screen.label}`}
+        />
+      )}
+
+      {entitySignatureTarget && (
+        <EntitySignatureModal
+          entityKey={entitySignatureTarget.entityKey}
+          recordId={entitySignatureTarget.recordId}
+          open
+          onClose={() => setEntitySignatureTarget(null)}
+          onSigned={() => {
+            setEntitySignatureTarget(null);
+            void load();
+          }}
         />
       )}
     </div>

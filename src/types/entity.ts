@@ -7,6 +7,7 @@ export type EntityAttributeType =
   | "float"
   | "stock"
   | "compteur"
+  | "matricule"
   | "datetime"
   | "date"
   | "time"
@@ -23,6 +24,10 @@ export interface EntityAttribute {
   label?: string;
   required?: boolean;
   ref?: string | null;
+  /** Liaison multiple vers l'entité cible (saisie en tableau incrémentable). */
+  relation_multiple?: boolean;
+  /** Exclusif parent (one-to-one / one-to-many strict). */
+  relation_exclusive_parent?: boolean;
   default?: string | number | boolean | null;
   enum_options?: string[];
 }
@@ -33,9 +38,13 @@ export interface EntityDef {
   description?: string;
   /** Afficher dans les suggestions IA du tableau de bord (défaut : true). */
   ai_suggestions?: boolean;
-  /** Trigger système : tâches de validation auto à chaque création (une par rôle valideur). */
+  /** Trigger système : tâches de signature auto à chaque création (une par rôle signataire). */
+  requires_signature?: boolean;
+  /** @deprecated Alias legacy */
   requires_validation?: boolean;
-  /** Identifiants de rôles SQLite (ex. role-admin, role-directeur). */
+  /** Identifiants de rôles SQLite autorisés à signer (ex. role-admin, role-directeur). */
+  signatory_role_ids?: string[];
+  /** @deprecated Alias legacy */
   validator_role_ids?: string[];
   /** Contexte métier : chaque enregistrement peut être la session active (filtrage des liaisons). */
   is_session?: boolean;
@@ -136,22 +145,35 @@ export interface RelationDetailResponse {
 export interface RelationSelectOption {
   value: string;
   label: string;
-  /** `non_valide` | `valide` si l'entité cible exige une validation. */
-  validationStatus?: string | null;
 }
 
-export interface RecordValidationField {
+export interface SignatoryContact {
+  userId: string;
+  nom: string;
+  email: string;
+  roleId: string;
+  roleNom: string;
+}
+
+/** @deprecated Utiliser SignatoryContact */
+export type ValidatorContact = SignatoryContact;
+
+export interface RecordSignatureField {
   key: string;
   label: string;
   value: string;
 }
 
-export interface RecordValidationDetail {
+export interface RecordSignatureDetail {
   entityKey: string;
   entityLabel: string;
   recordId: string;
-  validated: boolean;
+  signed: boolean;
   canView: boolean;
-  canValidate: boolean;
-  fields: RecordValidationField[];
+  canSign: boolean;
+  fields: RecordSignatureField[];
+  signatoryContacts: SignatoryContact[];
 }
+
+/** @deprecated Utiliser RecordSignatureDetail */
+export type RecordValidationDetail = RecordSignatureDetail;
