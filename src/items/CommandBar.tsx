@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Send } from "lucide-react";
+import { Mic, Send } from "lucide-react";
 import { sortEntitySuggestionsByPhrase } from "@/lib/entitySuggestions";
+import { useSpeechInput } from "@/lib/useSpeechInput";
 import { cn } from "@/lib/utils";
 import type { EntitySuggestion } from "@/types/entity";
 
@@ -101,6 +102,17 @@ export function CommandBar({
   const blockInput = disabled || inputDisabled;
   const blockSend = disabled || sendDisabled;
   const showList = listOpen && filtered.length > 0 && !blockInput;
+
+  const speech = useSpeechInput(value, onChange);
+
+  useEffect(() => {
+    if (!speech.listening) return;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") speech.stop();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [speech.listening, speech.stop]);
 
   const userHistory = useMemo(
     () => inputHistory.map((m) => m.trim()).filter((m) => m.length > 0),
@@ -219,6 +231,7 @@ export function CommandBar({
         onSubmit={(e) => {
           e.preventDefault();
           setListOpen(false);
+          if (speech.listening) speech.stop();
           if (value.trim()) onSubmit();
         }}
       >
@@ -229,6 +242,7 @@ export function CommandBar({
           aria-disabled={blockInput}
           onChange={(e) => {
             if (blockInput) return;
+            if (speech.listening) speech.stop();
             if (activeLane !== null || userHistIndex !== -1 || assistantHistIndex !== -1) {
               resetToDraft();
             }
@@ -245,6 +259,26 @@ export function CommandBar({
           aria-autocomplete="list"
           role="combobox"
         />
+        {speech.supported && (
+          <button
+            type="button"
+            disabled={blockInput}
+            className={cn(
+              "command-bar-mic",
+              speech.listening && "command-bar-mic--active",
+              blockInput && "cursor-not-allowed opacity-50",
+            )}
+            aria-label={speech.listening ? "Arrêter la dictée" : "Dicter un message"}
+            aria-pressed={speech.listening}
+            onClick={() => {
+              if (blockInput) return;
+              setListOpen(false);
+              speech.toggle();
+            }}
+          >
+            <Mic className="h-4 w-4" />
+          </button>
+        )}
         <button
           type="submit"
           disabled={blockSend || !value.trim()}

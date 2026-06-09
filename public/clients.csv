@@ -1,0 +1,51 @@
+﻿reference|prenom|nom|age|ville|profession|email|telephone
+CLI-01|David|Laurent|62|Strasbourg|Comptable|david.laurent@mail.fr|06 70 52 20 78
+CLI-02|Chloe|Roux|27|Nantes|Cadre|chloe.roux@mail.fr|06 22 54 50 38
+CLI-03|Julie|Fournier|60|Tours|Medecin|julie.fournier@mail.fr|06 21 18 98 87
+CLI-04|Mathieu|Morel|49|Paris|Enseignant|mathieu.morel@mail.fr|06 53 44 65 99
+CLI-05|Christophe|Martinez|50|Nice|Consultant|christophe.martinez@mail.fr|06 98 84 68 26
+CLI-06|Anne|Roux|59|Toulouse|Retraite|anne.roux@mail.fr|06 97 89 99 25
+CLI-07|Hugo|Dupont|56|Clermont-Ferrand|Retraite|hugo.dupont@mail.fr|06 76 78 96 26
+CLI-08|Bruno|Moreau|27|Grenoble|Technicien|bruno.moreau@mail.fr|06 76 29 10 55
+CLI-09|Patricia|Girard|48|Clermont-Ferrand|Technicien|patricia.girard@mail.fr|06 93 78 38 30
+CLI-10|Philippe|Lambert|30|Nice|Retraite|philippe.lambert@mail.fr|06 41 53 14 90
+CLI-11|Michel|Morel|37|Nice|Avocat|michel.morel@mail.fr|06 63 69 83 63
+CLI-12|Francois|David|27|Dijon|Ingenieur|francois.david@mail.fr|06 56 16 12 18
+CLI-13|Lea|Vincent|22|Rennes|Cadre|lea.vincent@mail.fr|06 54 79 92 97
+CLI-14|Stephane|Dubois|41|Bordeaux|Retraite|stephane.dubois@mail.fr|06 35 24 94 21
+CLI-15|Catherine|Bernard|31|Paris|Artisan|catherine.bernard@mail.fr|06 97 55 12 32
+CLI-16|Laurent|Vincent|67|Rennes|Comptable|laurent.vincent@mail.fr|06 85 13 29 73
+CLI-17|Camille|Roux|31|Strasbourg|Agent immobilier|camille.roux@mail.fr|06 13 76 87 46
+CLI-18|Julien|Francois|46|Montpellier|Commercant|julien.francois@mail.fr|06 28 78 71 46
+CLI-19|Sylvie|Simon|46|Nice|Avocat|sylvie.simon@mail.fr|06 79 25 22 81
+CLI-20|Sylvie|Moreau|62|Clermont-Ferrand|Agent immobilier|sylvie.moreau@mail.fr|06 69 42 47 95
+CLI-21|David|Lambert|36|Saint-Etienne|Medecin|david.lambert@mail.fr|06 35 41 48 41
+CLI-22|Helene|David|33|Strasbourg|Ingenieur|helene.david@mail.fr|06 99 45 58 10
+CLI-23|Eric|Martinez|28|Bordeaux|Medecin|eric.martinez@mail.fr|06 65 39 72 60
+CLI-24|Pierre|Bertrand|41|Clermont-Ferrand|Ingenieur|pierre.bertrand@mail.fr|06 30 31 52 74
+CLI-25|Sophie|Petit|72|Clermont-Ferrand|Artisan|sophie.petit@mail.fr|06 96 69 91 91
+CLI-26|Eric|Thomas|35|Lyon|Cadre|eric.thomas@mail.fr|06 13 34 21 38
+CLI-27|Manon|Lambert|50|Toulouse|Artisan|manon.lambert@mail.fr|06 73 37 31 56
+CLI-28|Guillaume|Bernard|28|Marseille|Consultant|guillaume.bernard@mail.fr|06 56 61 89 13
+CLI-29|Audrey|Fournier|42|Tours|Technicien|audrey.fournier@mail.fr|06 25 77 71 69
+CLI-30|Lea|Andre|57|Reims|Agent immobilier|lea.andre@mail.fr|06 25 25 41 95
+CLI-31|Marie|David|40|Rennes|Avocat|marie.david@mail.fr|06 95 82 59 81
+CLI-32|Francois|Bertrand|31|Saint-Etienne|Infirmier|francois.bertrand@mail.fr|06 14 77 37 60
+CLI-33|Julie|Girard|45|Montpellier|Artisan|julie.girard@mail.fr|06 54 49 70 29
+CLI-34|Michel|Francois|69|Le Havre|Technicien|michel.francois@mail.fr|06 78 52 79 91
+CLI-35|Audrey|Roux|23|Tours|Enseignant|audrey.roux@mail.fr|06 28 90 83 49
+CLI-36|Marc|Morel|43|Lyon|Cadre|marc.morel@mail.fr|06 41 30 41 76
+CLI-37|Elodie|Girard|45|Strasbourg|Ingenieur|elodie.girard@mail.fr|06 74 61 96 64
+CLI-38|Chloe|Fournier|43|Angers|Artisan|chloe.fournier@mail.fr|06 67 92 92 34
+CLI-39|Nicolas|Vincent|49|Dijon|Technicien|nicolas.vincent@mail.fr|06 68 99 52 45
+CLI-40|Patricia|Bonnet|49|Lyon|Retraite|patricia.bonnet@mail.fr|06 53 96 41 22
+CLI-41|Camille|Fournier|62|Angers|Commercant|camille.fournier@mail.fr|06 54 92 79 71
+CLI-42|Emilie|David|38|Lille|Commercant|emilie.david@mail.fr|06 49 88 89 21
+CLI-43|Michel|Lefevre|45|Grenoble|Agent immobilier|michel.lefevre@mail.fr|06 17 56 19 11
+CLI-44|Patricia|Moreau|47|Toulouse|Medecin|patricia.moreau@mail.fr|06 26 73 97 63
+CLI-45|Caroline|Martinez|30|Strasbourg|Artisan|caroline.martinez@mail.fr|06 12 16 42 64
+CLI-46|Bruno|Garcia|56|Strasbourg|Commercant|bruno.garcia@mail.fr|06 33 38 47 43
+CLI-47|Lucas|Mercier|44|Grenoble|Comptable|lucas.mercier@mail.fr|06 93 39 85 69
+CLI-48|Stephane|Bonnet|46|Strasbourg|Architecte|stephane.bonnet@mail.fr|06 69 99 96 45
+CLI-49|Patricia|Laurent|71|Strasbourg|Comptable|patricia.laurent@mail.fr|06 33 75 70 77
+CLI-50|Guillaume|Roux|36|Toulouse|Technicien|guillaume.roux@mail.fr|06 28 80 57 79

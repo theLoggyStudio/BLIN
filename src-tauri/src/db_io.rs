@@ -1019,6 +1019,7 @@ impl Database {
     }
 
     pub fn migrate_v12(&self) -> Result<(), DbError> {
+        let _ = self.dedupe_print_model_names();
         self.ensure_all_screen_print_models()?;
         Ok(())
     }
@@ -1067,6 +1068,41 @@ impl Database {
             "UPDATE users SET email = 'admin@loggmagic.local'
              WHERE email = 'admin@loggimmo.local'
              AND NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@loggmagic.local')",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Privilèges Paramètres (assistant, entités, rôles, utilisateurs) — défaut Directeur.
+    pub fn migrate_v19(&self) -> Result<(), DbError> {
+        self.ensure_parametres_privileges()?;
+        Ok(())
+    }
+
+    /// Journal idempotent des impacts stock/compteur via liaisons entité.
+    pub fn migrate_v20(&self) -> Result<(), DbError> {
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS entity_relation_impact_log (
+                id TEXT PRIMARY KEY NOT NULL,
+                trigger_entity TEXT NOT NULL,
+                trigger_record_id TEXT NOT NULL,
+                owner_entity TEXT NOT NULL,
+                attr_nom TEXT NOT NULL,
+                line_index INTEGER NOT NULL DEFAULT -1,
+                child_entity TEXT NOT NULL,
+                child_record_id TEXT NOT NULL,
+                target_field TEXT NOT NULL,
+                action TEXT NOT NULL,
+                delta REAL NOT NULL,
+                applied_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_relation_impact_idempotent
+             ON entity_relation_impact_log(
+                trigger_entity, trigger_record_id, owner_entity, attr_nom, line_index
+             )",
             [],
         )?;
         Ok(())
@@ -1156,10 +1192,19 @@ impl Database {
             "documents:voir",
             "documents:exporter",
             "ai:utiliser",
-            "users:voir",
-            "users:modifier",
         ];
         for privilege in privileges {
+            let _ = self.conn.execute(
+                "INSERT OR IGNORE INTO role_privileges (role_id, privilege) VALUES ('role-directeur', ?1)",
+                params![privilege],
+            );
+        }
+        self.ensure_parametres_privileges()?;
+        Ok(())
+    }
+
+    fn ensure_parametres_privileges(&self) -> Result<(), DbError> {
+        for privilege in crate::privileges::default_directeur_parametres_privileges() {
             let _ = self.conn.execute(
                 "INSERT OR IGNORE INTO role_privileges (role_id, privilege) VALUES ('role-directeur', ?1)",
                 params![privilege],
@@ -1288,32 +1333,51 @@ impl Database {
         Ok(renamed)
     }
 
-    /// Met à jour ou insère un modèle auto DDA (HTML/CSS) — rafraîchit l'apparence à chaque sync.
-    pub fn sync_auto_print_model(
+    /// Met à jour ou insère un modèle de base (HTML/CSS) — attributs alignés sur l'entité à chaque sync.
+    /// Ne touche pas aux modèles créés par les utilisateurs (description sans préfixe auto DDA).
+    pub fn sync_base_print_model(
         &self,
         screen_key: &str,
         name: &str,
         description: &str,
         html_content: &str,
         css_content: &str,
-        kind_hint: &str,
+        kind: &str,
     ) -> Result<(), DbError> {
         use crate::print_seed::AUTO_PRINT_DESCRIPTION_PREFIX;
         use rusqlite::OptionalExtension;
 
-        let like_desc = format!("{AUTO_PRINT_DESCRIPTION_PREFIX}%");
-        let like_name = format!("%{kind_hint}%");
-        let existing_id: Option<String> = self
+        let like_kind = format!("{AUTO_PRINT_DESCRIPTION_PREFIX} — {kind} —%");
+        let like_auto = format!("{AUTO_PRINT_DESCRIPTION_PREFIX}%");
+        let mut existing_id: Option<String> = self
             .conn
             .query_row(
                 "SELECT id FROM document_print_models
-                 WHERE screen_key = ?1
-                   AND (description LIKE ?2 OR name LIKE ?3 OR description LIKE '%généré DDA%')
+                 WHERE screen_key = ?1 AND description LIKE ?2
                  ORDER BY created_at ASC LIMIT 1",
-                params![screen_key, like_desc, like_name],
+                params![screen_key, like_kind],
                 |r| r.get(0),
             )
             .optional()?;
+
+        // Modèles de base créés avant le format « — fiche/liste — » (évite doublon UNIQUE sur name).
+        if existing_id.is_none() {
+            existing_id = self
+                .conn
+                .query_row(
+                    "SELECT id FROM document_print_models
+                     WHERE screen_key = ?1
+                       AND (
+                         description LIKE ?2
+                         OR description LIKE '%généré DDA%'
+                         OR (name = ?3 AND description NOT LIKE 'Mon %')
+                       )
+                     ORDER BY created_at ASC LIMIT 1",
+                    params![screen_key, like_auto, name],
+                    |r| r.get(0),
+                )
+                .optional()?;
+        }
 
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         if let Some(id) = existing_id {
@@ -1345,6 +1409,31 @@ impl Database {
         Ok(())
     }
 
+    /// @deprecated Préférer `sync_base_print_model`.
+    pub fn sync_auto_print_model(
+        &self,
+        screen_key: &str,
+        name: &str,
+        description: &str,
+        html_content: &str,
+        css_content: &str,
+        kind_hint: &str,
+    ) -> Result<(), DbError> {
+        let kind = if kind_hint.to_lowercase().contains("liste") {
+            "liste"
+        } else {
+            "fiche"
+        };
+        self.sync_base_print_model(
+            screen_key,
+            name,
+            description,
+            html_content,
+            css_content,
+            kind,
+        )
+    }
+
     /// Insère un modèle « Liste » pour l'écran s'il n'existe pas encore (ne remplace pas les modèles utilisateur).
     pub fn ensure_list_print_model_for_screen(
         &self,
@@ -1354,7 +1443,7 @@ impl Database {
         html_content: &str,
         css_content: &str,
     ) -> Result<(), DbError> {
-        self.sync_auto_print_model(screen_key, name, description, html_content, css_content, "Liste")
+        self.sync_base_print_model(screen_key, name, description, html_content, css_content, "liste")
     }
 
     /// Modèle liste tabulaire pour un écran (priorité au nom « Liste »).

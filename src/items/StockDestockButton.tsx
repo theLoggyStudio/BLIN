@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PackageMinus } from "lucide-react";
 import { Guard } from "@/components/Guard";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Modal } from "@/items/Modal";
 import { Input } from "@/items/Input";
@@ -95,6 +96,7 @@ export function StockDestockButton({ row, onDone }: StockDestockButtonProps) {
         <p className="mb-3 text-sm text-muted">
           {String(row.libelle ?? "Article")} — disponible : <strong>{available}</strong>
         </p>
+        {error && <Alert variant="danger" size="box" message={error} className="mb-3" />}
         <Input
           label="Quantité à retirer"
           type="number"
@@ -102,7 +104,6 @@ export function StockDestockButton({ row, onDone }: StockDestockButtonProps) {
           step={1}
           value={qty}
           disabled={busy}
-          error={error ?? undefined}
           onChange={(e) => setQty(e.target.value)}
         />
         <p className="mt-2 text-xs text-muted">

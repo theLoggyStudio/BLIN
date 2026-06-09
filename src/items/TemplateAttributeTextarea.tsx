@@ -1,32 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Textarea } from "@/items/Textarea";
 import {
-  applyVariableSuggestion,
-  getVariableSuggestions,
-  type EntityVariableCatalog,
-  type VariableSuggestion,
-} from "@/lib/print/templateVariables";
+  applyAttributSuggestion,
+  getAttributSuggestions,
+  type AttributSuggestion,
+  type EntityAttributCatalog,
+} from "@/lib/print/templateAttributes";
 
-interface TemplateVariableTextareaProps {
+interface TemplateAttributeTextareaProps {
   label: string;
   hint?: string;
   value: string;
   onChange: (value: string) => void;
-  catalog: EntityVariableCatalog;
+  catalog: EntityAttributCatalog;
   className?: string;
 }
 
-/** Zone de texte avec suggestions « table.champ » après {{ */
-export function TemplateVariableTextarea({
+/** Zone de texte avec suggestions « table.attribut » après {{ */
+export function TemplateAttributeTextarea({
   label,
   hint,
   value,
   onChange,
   catalog,
   className,
-}: TemplateVariableTextareaProps) {
+}: TemplateAttributeTextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [suggestions, setSuggestions] = useState<VariableSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<AttributSuggestion[]>([]);
   const [replaceStart, setReplaceStart] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [open, setOpen] = useState(false);
@@ -37,7 +37,7 @@ export function TemplateVariableTextarea({
       setOpen(false);
       return;
     }
-    const hit = getVariableSuggestions(value, el.selectionStart, catalog);
+    const hit = getAttributSuggestions(value, el.selectionStart, catalog);
     if (!hit) {
       setOpen(false);
       return;
@@ -52,10 +52,10 @@ export function TemplateVariableTextarea({
     refreshSuggestions();
   }, [refreshSuggestions]);
 
-  const pick = (item: VariableSuggestion) => {
+  const pick = (item: AttributSuggestion) => {
     const el = textareaRef.current;
     if (!el) return;
-    const { text, cursor } = applyVariableSuggestion(
+    const { text, cursor } = applyAttributSuggestion(
       value,
       el.selectionStart,
       replaceStart,

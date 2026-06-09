@@ -2,10 +2,16 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import {
+  CLOSE_TACHES_WINDOW_EVENT,
+  FOCUS_TACHES_WINDOW_EVENT,
+} from "@/constants/events";
+import { useOpenWindows } from "@/contexts/OpenWindowsContext";
 import { TachesModal } from "@/items/TachesModal";
 import type { ScreenRow } from "@/types/screen";
 
@@ -19,6 +25,7 @@ const TachesModalContext = createContext<TachesModalContextValue | null>(null);
 export function TachesModalProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [initialCreate, setInitialCreate] = useState<ScreenRow | undefined>();
+  const { openWindow, closeWindow } = useOpenWindows();
 
   const openTaches = useCallback((draft?: ScreenRow) => {
     setInitialCreate(draft);
@@ -29,6 +36,27 @@ export function TachesModalProvider({ children }: { children: ReactNode }) {
     setOpen(false);
     setInitialCreate(undefined);
   }, []);
+
+  useEffect(() => {
+    if (open) {
+      openWindow({ id: "taches", kind: "taches", title: "Tâches" });
+    } else {
+      closeWindow("taches");
+    }
+  }, [open, openWindow, closeWindow]);
+
+  useEffect(() => {
+    const onFocus = () => openTaches();
+    const onClose = () => {
+      if (open) closeTaches();
+    };
+    window.addEventListener(FOCUS_TACHES_WINDOW_EVENT, onFocus);
+    window.addEventListener(CLOSE_TACHES_WINDOW_EVENT, onClose);
+    return () => {
+      window.removeEventListener(FOCUS_TACHES_WINDOW_EVENT, onFocus);
+      window.removeEventListener(CLOSE_TACHES_WINDOW_EVENT, onClose);
+    };
+  }, [open, openTaches, closeTaches]);
 
   const value = useMemo(
     () => ({ openTaches, closeTaches }),

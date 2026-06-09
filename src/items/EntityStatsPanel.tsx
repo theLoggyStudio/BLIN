@@ -225,7 +225,7 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
           </div>
         </div>
 
-        {error && <Alert variant="danger" size="inline" message={error} />}
+        {error && <Alert variant="danger" size="box" message={error} />}
 
         <div className="space-y-3">
         {series.map((s, index) => {

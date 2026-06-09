@@ -10,8 +10,11 @@ pub fn push_row(writer: &mut String, fields: &[String]) {
     push_row_delim(writer, fields, ',');
 }
 
-pub fn push_row_semicolon(writer: &mut String, fields: &[String]) {
-    push_row_delim(writer, fields, ';');
+/// Séparateur CSV entités (import / export) — évite les conflits avec `;` (Excel FR) et `,`.
+pub const ENTITY_CSV_DELIMITER: char = '|';
+
+pub fn push_row_entity_csv(writer: &mut String, fields: &[String]) {
+    push_row_delim(writer, fields, ENTITY_CSV_DELIMITER);
 }
 
 fn push_row_delim(writer: &mut String, fields: &[String], delimiter: char) {

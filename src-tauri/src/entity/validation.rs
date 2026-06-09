@@ -4,8 +4,10 @@ use chrono::Utc;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
+use super::attr_types::is_reserved_attribute;
+use super::compteur::{self, is_compteur_attr};
 use super::record_signature;
-use super::registry::EntityDef;
+use super::registry::{EntityAttribute, EntityDef};
 use super::schema::{attr_column, table_has_column, table_name};
 use crate::db::Database;
 use crate::dda::crud;
@@ -136,6 +138,7 @@ pub fn spawn_signature_tasks(
                 record_id,
                 None,
                 user_id,
+                None,
             )?;
             created_task_ids.push(task_id);
         }
@@ -194,6 +197,7 @@ pub fn spawn_creator_validation_task(
     let summary = record_summary(source, source_row);
     let source_label = source.label.as_deref().unwrap_or(&source.nom);
     let libelle = format!("Valider {source_label} — {summary}");
+    let objet_intitule = format_record_full_info(source, source_row);
     let description = format!(
         "L'objet « {source_label} » ({source_entity_key}) que vous avez créé a été signé par {signer_label}.\n\
          Enregistrement : {record_id}\n\
@@ -212,6 +216,7 @@ pub fn spawn_creator_validation_task(
         record_id,
         Some(&creator_role_id),
         Some(creator_user_id),
+        Some(&objet_intitule),
     )
 }
 
@@ -277,6 +282,7 @@ pub fn spawn_other_signatory_roles_signed_notices(
         }
 
         let libelle = format!("{source_label} signé — {summary}");
+        let objet_intitule = format_record_full_info(source, source_row);
         let description = format!(
             "L'objet « {source_label} » ({source_entity_key}) a été signé par {signer_label}.\n\
              Enregistrement : {record_id}\n\
@@ -296,6 +302,7 @@ pub fn spawn_other_signatory_roles_signed_notices(
             record_id,
             Some(contact.role_id.as_str()),
             Some(contact.user_id.as_str()),
+            Some(&objet_intitule),
         )?;
     }
     Ok(())
@@ -375,6 +382,7 @@ pub fn spawn_creator_rejection_task(
         record_id,
         Some(&creator_role_id),
         Some(creator_user_id),
+        Some(&format_record_full_info(source, source_row)),
     )
 }
 
@@ -464,6 +472,7 @@ pub fn spawn_other_signatory_roles_rejection_notices(
             record_id,
             Some(contact.role_id.as_str()),
             Some(contact.user_id.as_str()),
+            Some(&format_record_full_info(source, source_row)),
         )?;
     }
     Ok(())
@@ -602,6 +611,11 @@ pub fn ensure_tache_workflow_attrs(registry: &mut super::registry::EntityRegistr
 
     let needed = [
         (
+            "intitule",
+            "string",
+            Some("Objet concerné (résumé)"),
+        ),
+        (
             "entite_a_valider",
             "string",
             Some("Entité à valider"),
@@ -631,13 +645,19 @@ pub fn ensure_tache_workflow_attrs(registry: &mut super::registry::EntityRegistr
             relation_exclusive_parent: true,
             default: None,
             enum_options: None,
+            ..Default::default()
         });
     }
 }
 
 pub fn ensure_tache_workflow_columns(db: &Database) -> Result<(), String> {
     let table = table_name(TACHE_ENTITY_KEY);
-    for col in ["entite_a_valider", "role_validateur", COL_UTILISATEUR_CIBLE] {
+    for col in [
+        "intitule",
+        "entite_a_valider",
+        "role_validateur",
+        COL_UTILISATEUR_CIBLE,
+    ] {
         if !table_has_column(db, &table, col)? {
             db.conn
                 .execute(&format!("ALTER TABLE {table} ADD COLUMN {col} TEXT"), [])
@@ -730,6 +750,135 @@ fn is_signature_task_row(row: &Map<String, Value>) -> bool {
         .unwrap_or(false)
 }
 
+const TITLE_SKIP_KEYS: &[&str] = &[
+    "id",
+    "created_at",
+    "statut_signature",
+    "signe_par",
+    "cree_par",
+    "refuse_par",
+    "motif_refus",
+    "lignes",
+];
+
+fn attr_label(attr: &EntityAttribute) -> &str {
+    attr.label
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(attr.nom.as_str())
+}
+
+fn format_attr_value_for_title(attr: &EntityAttribute, row: &Map<String, Value>) -> String {
+    if is_compteur_attr(attr) {
+        let lib = row
+            .get(&compteur::column_libelle(attr))
+            .or_else(|| row.get(&attr.nom))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        let date = row
+            .get(&compteur::column_jjmmaaaa(attr))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        let num = row
+            .get(&compteur::column_numero(attr))
+            .map(|v| match v {
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => s.clone(),
+                _ => String::new(),
+            })
+            .unwrap_or_default();
+        let parts: Vec<&str> = [lib, date, num.as_str()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect();
+        return parts.join(" · ");
+    }
+    let col = attr_column(attr);
+    let raw = row.get(&attr.nom).or_else(|| row.get(&col));
+    match raw {
+        None | Some(Value::Null) => String::new(),
+        Some(Value::Bool(b)) => {
+            if *b {
+                "Oui".into()
+            } else {
+                "Non".into()
+            }
+        }
+        Some(Value::Number(n)) => n.to_string(),
+        Some(Value::String(s)) => {
+            let t = s.trim();
+            if t.starts_with('[') || t.starts_with('{') {
+                if t.len() > 120 {
+                    format!("{}…", &t[..120])
+                } else {
+                    t.to_string()
+                }
+            } else {
+                s.clone()
+            }
+        }
+        Some(other) => other.to_string(),
+    }
+}
+
+/// Texte multi-lignes « Label: valeur » pour toutes les données métier de l'enregistrement.
+pub fn format_record_full_info(ent: &EntityDef, row: &Map<String, Value>) -> String {
+    let mut lines = Vec::new();
+    for attr in &ent.attributs {
+        if is_reserved_attribute(attr) || TITLE_SKIP_KEYS.contains(&attr.nom.as_str()) {
+            continue;
+        }
+        if attr.attr_type == "entity" {
+            continue;
+        }
+        let val = format_attr_value_for_title(attr, row);
+        if val.trim().is_empty() {
+            continue;
+        }
+        lines.push(format!("{}: {}", attr_label(attr), val.trim()));
+    }
+    if lines.is_empty() {
+        record_summary(ent, row)
+    } else {
+        lines.join("\n")
+    }
+}
+
+/// Après signature : titre lisible sur l'objet signé (`intitule` ou `titre`).
+pub fn apply_signed_object_title(
+    db: &Database,
+    ent: &EntityDef,
+    record_id: &str,
+    row: &Map<String, Value>,
+) -> Result<(), String> {
+    let title = format_record_full_info(ent, row);
+    if title.trim().is_empty() {
+        return Ok(());
+    }
+    let table = table_name(&ent.nom);
+    for col in ["intitule", "titre"] {
+        if !ent.attributs.iter().any(|a| a.nom == col) {
+            continue;
+        }
+        if !table_has_column(db, &table, col)? {
+            continue;
+        }
+        let n = db
+            .conn
+            .execute(
+                &format!("UPDATE {table} SET {col} = ?1 WHERE id = ?2"),
+                rusqlite::params![title, record_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n > 0 {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 fn record_summary(ent: &EntityDef, row: &Map<String, Value>) -> String {
     const PRIORITY: &[&str] = &[
         "libelle",
@@ -778,6 +927,7 @@ fn insert_system_task(
     record_id: &str,
     role_validateur: Option<&str>,
     utilisateur_cible: Option<&str>,
+    objet_intitule: Option<&str>,
 ) -> Result<String, String> {
     let table = table_name(TACHE_ENTITY_KEY);
     let id = Uuid::new_v4().to_string();
@@ -809,6 +959,9 @@ fn insert_system_task(
     }
     if let Some(uid) = utilisateur_cible {
         data.insert(COL_UTILISATEUR_CIBLE.into(), json!(uid));
+    }
+    if let Some(title) = objet_intitule.filter(|s| !s.trim().is_empty()) {
+        data.insert("intitule".into(), json!(title));
     }
 
     let mut columns = vec!["id".to_string(), "created_at".to_string()];

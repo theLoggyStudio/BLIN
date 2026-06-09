@@ -65,7 +65,31 @@ function emptyAttr(): EntityAttribute {
     required: false,
     relation_multiple: false,
     relation_exclusive_parent: true,
+    relation_impact_defer: false,
   };
+}
+
+const NUMERIC_IMPACT_TYPES = new Set([
+  "stock",
+  "number",
+  "integer",
+  "float",
+  "compteur",
+  "matricule",
+]);
+
+function isNumericImpactType(type: string): boolean {
+  return NUMERIC_IMPACT_TYPES.has(type);
+}
+
+function numericFieldsForEntity(ent: EntityDef | undefined): { value: string; label: string }[] {
+  if (!ent) return [];
+  return ent.attributs
+    .filter((a) => isNumericImpactType(String(a.type)))
+    .map((a) => ({
+      value: a.nom,
+      label: a.label?.trim() ? `${a.label} (${a.nom})` : a.nom,
+    }));
 }
 
 function withRegistryMeta(
@@ -284,6 +308,20 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
               ? (a.ref?.trim().toLowerCase().replace(/\s+/g, "_") ?? undefined)
               : undefined,
           relation_exclusive_parent: a.type === "entity" ? true : undefined,
+          relation_impact_source:
+            a.type === "entity" && a.relation_impact_source?.trim()
+              ? a.relation_impact_source.trim()
+              : undefined,
+          relation_impact_target:
+            a.type === "entity" && a.relation_impact_target?.trim()
+              ? a.relation_impact_target.trim()
+              : undefined,
+          relation_impact_action:
+            a.type === "entity" && a.relation_impact_action
+              ? a.relation_impact_action
+              : undefined,
+          relation_impact_defer:
+            a.type === "entity" ? Boolean(a.relation_impact_defer) : undefined,
         })),
     };
     const ent: EntityDef = { ...draftEnt };
@@ -615,19 +653,105 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                 )}
                 {attr.type === "entity" && (
                   <div className="space-y-2 sm:col-span-2">
-                    <Select
-                      label="Entité liée (ref)"
-                      value={attr.ref ?? ""}
-                      onChange={(e) => {
-                        const attributs = [...entityModal.attributs];
-                        attributs[idx] = { ...attr, ref: e.target.value };
-                        setEntityModal({ ...entityModal, attributs });
-                      }}
-                      options={[
-                        { value: "", label: "— Choisir —" },
-                        ...entityRefOptions(entityModal.nom),
-                      ]}
-                    />
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <Select
+                        label="Entité liée (ref)"
+                        value={attr.ref ?? ""}
+                        onChange={(e) => {
+                          const attributs = [...entityModal.attributs];
+                          attributs[idx] = {
+                            ...attr,
+                            ref: e.target.value,
+                            relation_impact_target: undefined,
+                          };
+                          setEntityModal({ ...entityModal, attributs });
+                        }}
+                        options={[
+                          { value: "", label: "— Choisir —" },
+                          ...entityRefOptions(entityModal.nom),
+                        ]}
+                      />
+                      {attr.ref?.trim() && (
+                        <>
+                          <Select
+                            label="Champ source (valeur)"
+                            value={attr.relation_impact_source ?? ""}
+                            onChange={(e) => {
+                              const attributs = [...entityModal.attributs];
+                              attributs[idx] = {
+                                ...attr,
+                                relation_impact_source: e.target.value || undefined,
+                              };
+                              setEntityModal({ ...entityModal, attributs });
+                            }}
+                            options={[
+                              { value: "", label: "— Aucun impact —" },
+                              ...numericFieldsForEntity(entityModal),
+                              ...(attr.relation_multiple
+                                ? numericFieldsForEntity(
+                                    registry.entities.find((e) => e.nom === attr.ref?.trim()),
+                                  ).map((o) => ({
+                                    value: o.value,
+                                    label: `${o.label} (ligne fille)`,
+                                  }))
+                                : []),
+                            ]}
+                          />
+                          <Select
+                            label="Champ cible (entité fille)"
+                            value={attr.relation_impact_target ?? ""}
+                            onChange={(e) => {
+                              const attributs = [...entityModal.attributs];
+                              attributs[idx] = {
+                                ...attr,
+                                relation_impact_target: e.target.value || undefined,
+                              };
+                              setEntityModal({ ...entityModal, attributs });
+                            }}
+                            options={[
+                              { value: "", label: "— Choisir —" },
+                              ...numericFieldsForEntity(
+                                registry.entities.find((e) => e.nom === attr.ref?.trim()),
+                              ),
+                            ]}
+                          />
+                          <Select
+                            label="Action"
+                            value={attr.relation_impact_action ?? ""}
+                            onChange={(e) => {
+                              const attributs = [...entityModal.attributs];
+                              const action = e.target.value;
+                              attributs[idx] = {
+                                ...attr,
+                                relation_impact_action:
+                                  action === "increment" || action === "decrement"
+                                    ? action
+                                    : undefined,
+                              };
+                              setEntityModal({ ...entityModal, attributs });
+                            }}
+                            options={[
+                              { value: "", label: "— Choisir —" },
+                              { value: "increment", label: "Incrémenter" },
+                              { value: "decrement", label: "Décrémenter" },
+                            ]}
+                          />
+                        </>
+                      )}
+                    </div>
+                    {attr.ref?.trim() &&
+                      attr.relation_impact_source &&
+                      attr.relation_impact_target &&
+                      attr.relation_impact_action && (
+                        <p className="text-xs text-muted">
+                          À la validation, la valeur du champ « {attr.relation_impact_source} »
+                          {attr.relation_impact_action === "increment"
+                            ? " augmentera "
+                            : " diminuera "}
+                          « {attr.relation_impact_target} » sur l&apos;entité liée. L&apos;impact
+                          est définitif (jamais annulé).
+                        </p>
+                      )}
                     <label className="flex cursor-pointer items-center gap-3">
                       <input
                         type="checkbox"
@@ -645,6 +769,24 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                       />
                       <span className="text-sm text-foreground">
                         Liste de {attr.ref?.trim() || "l'entité liée"}
+                      </span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(attr.relation_impact_defer)}
+                        onChange={(e) => {
+                          const attributs = [...entityModal.attributs];
+                          attributs[idx] = {
+                            ...attr,
+                            relation_impact_defer: e.target.checked,
+                          };
+                          setEntityModal({ ...entityModal, attributs });
+                        }}
+                        className="h-4 w-4 rounded border-border accent-secondary"
+                      />
+                      <span className="text-sm text-foreground">
+                        Reporter l&apos;impact à la validation de l&apos;entité englobante
                       </span>
                     </label>
                     <p className="text-xs text-muted sm:col-span-2">

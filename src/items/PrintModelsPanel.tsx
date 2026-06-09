@@ -6,15 +6,15 @@ import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Select } from "@/items/Select";
 import { Text } from "@/items/Text";
-import { PrintVariablesTab } from "@/items/PrintVariablesTab";
-import { TemplateVariableTextarea } from "@/items/TemplateVariableTextarea";
+import { PrintAttributesTab } from "@/items/PrintAttributesTab";
+import { TemplateAttributeTextarea } from "@/items/TemplateAttributeTextarea";
 import { DEFAULT_FICHE_CSS } from "@/lib/print/defaultCss";
 import { buildPrintPreviewSrcDoc } from "@/lib/print/previewDoc";
-import { buildVariableCatalog } from "@/lib/print/templateVariables";
+import { buildAttributCatalog } from "@/lib/print/templateAttributes";
 import type { EntityDef, EntityRegistryResponse } from "@/types/entity";
 import type { PrintModelDetail, PrintModelRow, PrintTemplateDefaults } from "@/types/print";
 
-type EditorTab = "html" | "css" | "variables" | "preview";
+type EditorTab = "html" | "css" | "attributs" | "preview";
 
 const emptyDraft = (): PrintModelDetail => ({
   id: "",
@@ -68,7 +68,7 @@ export function PrintModelsPanel() {
     [entityDefs],
   );
 
-  const variableCatalog = useMemo(() => buildVariableCatalog(entityDefs), [entityDefs]);
+  const attributCatalog = useMemo(() => buildAttributCatalog(entityDefs), [entityDefs]);
 
   const previewSrc = useMemo(
     () => buildPrintPreviewSrcDoc(draft.html_content, draft.css_content),
@@ -167,7 +167,7 @@ export function PrintModelsPanel() {
     <div className="space-y-4">
       <Text variant="muted" className="text-sm">
         Créez des modèles HTML/CSS par entité. Utilisez{" "}
-        <code className="text-secondary">{`{{nomTable.nomVariable}}`}</code> (ex.{" "}
+        <code className="text-secondary">{`{{nomTable.nomAttribut}}`}</code> (ex.{" "}
         <code className="text-secondary">{`{{ecole.nom}}`}</code>) — remplacées à l&apos;impression
         PDF sur chaque ligne.
       </Text>
@@ -175,7 +175,7 @@ export function PrintModelsPanel() {
       {(message || error) && (
         <Alert
           variant={error ? "danger" : "success"}
-          size="inline"
+          size="box"
           role="status"
           message={error ?? message ?? ""}
         />
@@ -239,7 +239,7 @@ export function PrintModelsPanel() {
         </div>
 
         <div className="flex gap-2 border-b border-border">
-          {(["html", "css", "variables", "preview"] as EditorTab[]).map((t) => (
+          {(["html", "css", "attributs", "preview"] as EditorTab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -254,35 +254,35 @@ export function PrintModelsPanel() {
                 ? "HTML"
                 : t === "css"
                   ? "CSS"
-                  : t === "variables"
-                    ? "Variables"
+                  : t === "attributs"
+                    ? "Attributs"
                     : "Aperçu"}
             </button>
           ))}
         </div>
 
         {tab === "html" && (
-          <TemplateVariableTextarea
+          <TemplateAttributeTextarea
             label="HTML du modèle"
-            hint="Tapez {{ pour suggérer une table, puis un champ après le point"
+            hint="Tapez {{ pour suggérer une table, puis un attribut après le point"
             value={draft.html_content}
             onChange={(html_content) => setDraft({ ...draft, html_content })}
-            catalog={variableCatalog}
+            catalog={attributCatalog}
             className="min-h-[220px] font-mono text-xs"
           />
         )}
         {tab === "css" && (
-          <TemplateVariableTextarea
+          <TemplateAttributeTextarea
             label="CSS du modèle"
-            hint="Variables possibles dans le CSS (ex. content: '{{date.aujourdhui}}')"
+            hint="Attributs possibles dans le CSS (ex. content: '{{date.aujourdhui}}')"
             value={draft.css_content}
             onChange={(css_content) => setDraft({ ...draft, css_content })}
-            catalog={variableCatalog}
+            catalog={attributCatalog}
             className="min-h-[220px] font-mono text-xs"
           />
         )}
-        {tab === "variables" && (
-          <PrintVariablesTab entities={entityDefs} primaryTableKey={draft.screen_key} />
+        {tab === "attributs" && (
+          <PrintAttributesTab entities={entityDefs} primaryTableKey={draft.screen_key} />
         )}
         {tab === "preview" && (
           <div className="rounded-lg border border-border bg-white overflow-hidden">

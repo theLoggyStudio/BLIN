@@ -68,6 +68,8 @@ export function TachesModal({
             </Text>
             <DataScreen
               config={config}
+              compactList
+              listRowClick="detail"
               initialCreateValues={initialCreateValues}
               onInitialCreateApplied={onInitialCreateApplied}
               key={

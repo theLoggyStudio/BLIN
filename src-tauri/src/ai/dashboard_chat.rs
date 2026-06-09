@@ -2,12 +2,13 @@
 
 use uuid::Uuid;
 
-use crate::ai::agent::{ChatDisplayBlock, ChatReply, EntityCreateAction};
+use crate::ai::agent::{ChatDisplayBlock, ChatReply, EntityCreateAction, RegistryEntityCreateAction};
 use crate::ai::intent_filters::{extract_web_search_query, wants_internet_research_intent};
 use crate::entity::create_draft;
 use crate::entity::list_preview::{self, parse_display_from_message};
 use crate::entity::registry;
-use crate::privileges::has_privilege;
+use crate::entity::registry_create_draft;
+use crate::privileges::{can_create_registry_entity, has_privilege};
 use crate::ai::llama_server::{ChatMessage, LlamaServer};
 use crate::ai::quick_answers::try_quick_answer;
 use crate::ai::translate::{core_message, finalize_with_translation, try_translate_previous_reply};
@@ -37,8 +38,8 @@ pub fn answer_practical(
 
     if let Some(result) = try_translate_previous_reply(db, &conv_id, user_message) {
         return match result {
-            Ok(msg) => store_assistant_raw(db, &conv_id, &msg, vec![], None, vec![]),
-            Err(e) => store_assistant_raw(db, &conv_id, &e, vec![], None, vec![]),
+            Ok(msg) => store_assistant_raw(db, &conv_id, &msg, vec![], None, None, vec![]),
+            Err(e) => store_assistant_raw(db, &conv_id, &e, vec![], None, None, vec![]),
         };
     }
 
@@ -49,6 +50,31 @@ pub fn answer_practical(
     }
 
     if let Ok(reg) = registry::load(&db.data_dir) {
+        if let Some(reg_draft) = registry_create_draft::match_registry_create_draft(user_message, &reg)
+        {
+            let allowed = can_create_registry_entity(&user.privileges);
+            let msg = if allowed {
+                reg_draft.assistant_message.clone()
+            } else {
+                "Tu n'as pas le privilège pour créer une entité dans le registre (parametres:entites:creer). Contacte un administrateur.".into()
+            };
+            let open_registry = if allowed {
+                Some(RegistryEntityCreateAction {
+                    initial_entity: serde_json::to_value(&reg_draft.initial_entity)
+                        .unwrap_or(serde_json::Value::Null),
+                })
+            } else {
+                None
+            };
+            return store_assistant_registry(
+                db,
+                &conv_id,
+                user_message,
+                &msg,
+                open_registry,
+            );
+        }
+
         if let Some(draft) = create_draft::match_create_draft(user_message, &reg) {
             let priv_key = format!("{}:creer", draft.entity_key);
             if has_privilege(&user.privileges, &priv_key) {
@@ -71,7 +97,7 @@ pub fn answer_practical(
 
     if let Ok(Some((raw_msg, blocks))) = list_preview::try_list_preview(db, user, &conv_id, user_message)
     {
-        return store_assistant_raw(db, &conv_id, &raw_msg, vec![], None, blocks);
+        return store_assistant_raw(db, &conv_id, &raw_msg, vec![], None, None, blocks);
     }
 
     if web_search::is_enabled(&db.data_dir) && wants_internet_research_intent(&core) {
@@ -111,7 +137,27 @@ fn store_assistant(
         &final_msg,
         tool_results,
         open_entity_create,
+        None,
         display_blocks,
+    )
+}
+
+fn store_assistant_registry(
+    db: &Database,
+    conv_id: &str,
+    user_message_full: &str,
+    msg: &str,
+    open_registry_entity_create: Option<RegistryEntityCreateAction>,
+) -> Result<ChatReply, String> {
+    let final_msg = finalize_with_translation(user_message_full, msg)?;
+    store_assistant_raw(
+        db,
+        conv_id,
+        &final_msg,
+        vec![],
+        None,
+        open_registry_entity_create,
+        vec![],
     )
 }
 
@@ -121,6 +167,7 @@ fn store_assistant_raw(
     msg: &str,
     tool_results: Vec<crate::ai::tools::ToolResult>,
     open_entity_create: Option<EntityCreateAction>,
+    open_registry_entity_create: Option<RegistryEntityCreateAction>,
     display_blocks: Vec<ChatDisplayBlock>,
 ) -> Result<ChatReply, String> {
     db.ai_add_message(conv_id, "assistant", msg)
@@ -136,6 +183,7 @@ fn store_assistant_raw(
         tool_results,
         display_blocks: blocks,
         open_entity_create,
+        open_registry_entity_create,
     })
 }
 

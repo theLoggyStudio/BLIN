@@ -1,46 +1,58 @@
 import type { EntityDef } from "@/types/entity";
 
-export interface VariableField {
+export interface AttributField {
   key: string;
   label: string;
 }
 
-export interface VariableTable {
+export interface AttributTable {
   key: string;
   label: string;
-  fields: VariableField[];
+  fields: AttributField[];
 }
 
 /** Bloc tableau HTML injecté dans les modèles liste (ex. {{eleves}}, {{stock}}). */
-export interface TableBlockVariable {
+export interface TableBlockAttribut {
   entityKey: string;
   token: string;
   label: string;
 }
 
-export interface EntityVariableCatalog {
-  tables: VariableTable[];
-  /** Variables système : {{date.aujourdhui}}, {{date.heure}} */
-  systemTable: VariableTable;
-  /** Variables bloc tableau pleine largeur pour modèles « Liste ». */
-  tableBlocks: TableBlockVariable[];
+export interface EntityAttributCatalog {
+  tables: AttributTable[];
+  /** Attributs système : date, société, etc. */
+  systemTables: AttributTable[];
+  /** @deprecated Utiliser `systemTables` */
+  systemTable: AttributTable;
+  /** Attributs bloc tableau pleine largeur pour modèles « Liste ». */
+  tableBlocks: TableBlockAttribut[];
 }
 
-export interface VariableSuggestion {
+export interface AttributSuggestion {
   /** Texte inséré après « {{ » (ex. « ecole. » ou « ecole.nom}} »). */
   insert: string;
   label: string;
   detail?: string;
 }
 
-const SYSTEM_TABLE: VariableTable = {
-  key: "date",
-  label: "Date (système)",
-  fields: [
-    { key: "aujourdhui", label: "Date du jour" },
-    { key: "heure", label: "Heure" },
-  ],
-};
+const SYSTEM_TABLES: AttributTable[] = [
+  {
+    key: "date",
+    label: "Date (système)",
+    fields: [
+      { key: "aujourdhui", label: "Date du jour" },
+      { key: "heure", label: "Heure" },
+    ],
+  },
+  {
+    key: "societe",
+    label: "Société (en-tête)",
+    fields: [
+      { key: "nom", label: "Nom de l'application" },
+      { key: "slogan", label: "Slogan" },
+    ],
+  },
+];
 
 const RESERVED_ATTRS = new Set(["id", "uuid", "created_at", "updated_at"]);
 
@@ -58,7 +70,7 @@ export function formatTableBlockToken(entityNom: string): string {
   return `{{${tableTokenForEntity(entityNom)}}}`;
 }
 
-export function buildVariableCatalog(entities: EntityDef[]): EntityVariableCatalog {
+export function buildAttributCatalog(entities: EntityDef[]): EntityAttributCatalog {
   const tables = entities
     .map((ent) => ({
       key: ent.nom,
@@ -78,19 +90,24 @@ export function buildVariableCatalog(entities: EntityDef[]): EntityVariableCatal
       label: ent.label?.trim() || ent.nom,
     }))
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
-  return { tables, systemTable: SYSTEM_TABLE, tableBlocks };
+  return {
+    tables,
+    systemTables: SYSTEM_TABLES,
+    systemTable: SYSTEM_TABLES[0],
+    tableBlocks,
+  };
 }
 
-export function formatVariableToken(tableKey: string, fieldKey: string): string {
+export function formatAttributToken(tableKey: string, fieldKey: string): string {
   return `{{${tableKey}.${fieldKey}}}`;
 }
 
 /** Détecte une saisie incomplète après « {{ » pour proposer des tables ou champs. */
-export function getVariableSuggestions(
+export function getAttributSuggestions(
   text: string,
   cursor: number,
-  catalog: EntityVariableCatalog,
-): { replaceStart: number; suggestions: VariableSuggestion[] } | null {
+  catalog: EntityAttributCatalog,
+): { replaceStart: number; suggestions: AttributSuggestion[] } | null {
   const before = text.slice(0, cursor);
   const open = before.lastIndexOf("{{");
   if (open < 0) return null;
@@ -101,13 +118,15 @@ export function getVariableSuggestions(
 
   if (!afterOpen.includes(".")) {
     const prefix = afterOpen.toLowerCase();
-    const tableSuggestions: VariableSuggestion[] = [];
-    if ("date".startsWith(prefix)) {
-      tableSuggestions.push({
-        insert: "date.",
-        label: catalog.systemTable.label,
-        detail: catalog.systemTable.key,
-      });
+    const tableSuggestions: AttributSuggestion[] = [];
+    for (const st of catalog.systemTables) {
+      if (st.key.toLowerCase().startsWith(prefix)) {
+        tableSuggestions.push({
+          insert: `${st.key}.`,
+          label: st.label,
+          detail: st.key,
+        });
+      }
     }
     for (const t of catalog.tables) {
       if (t.key.toLowerCase().startsWith(prefix)) {
@@ -126,9 +145,8 @@ export function getVariableSuggestions(
   const fieldPrefix = afterOpen.slice(dot + 1).toLowerCase();
 
   const table =
-    tableKey === catalog.systemTable.key
-      ? catalog.systemTable
-      : catalog.tables.find((t) => t.key === tableKey);
+    catalog.systemTables.find((t) => t.key === tableKey)
+    ?? catalog.tables.find((t) => t.key === tableKey);
   if (!table) return null;
 
   const suggestions = table.fields
@@ -142,7 +160,7 @@ export function getVariableSuggestions(
   return suggestions.length > 0 ? { replaceStart, suggestions } : null;
 }
 
-export function applyVariableSuggestion(
+export function applyAttributSuggestion(
   text: string,
   cursor: number,
   replaceStart: number,

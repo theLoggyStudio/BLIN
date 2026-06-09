@@ -62,6 +62,7 @@ fn stub_entity(nom: &str) -> EntityDef {
             relation_exclusive_parent: true,
             default: None,
             enum_options: None,
+            ..Default::default()
         }],
     }
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ClipboardCopy } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Modal } from "@/items/Modal";
@@ -33,6 +34,12 @@ export function EntityRegistryPromptButton({
     setFeedback(null);
     setOpen(true);
   };
+
+  const feedbackVariant = feedback?.includes("Impossible")
+    ? "danger"
+    : feedback?.includes("obligatoire") || feedback?.includes("Indiquez")
+      ? "warning"
+      : "success";
 
   const copyPrompt = async () => {
     const domainHint = domain.trim();
@@ -89,13 +96,8 @@ export function EntityRegistryPromptButton({
         title="Prompt IA — nouvel écosystème"
         size="md"
         footer={
-          <div className="flex w-full flex-wrap items-center justify-between gap-2">
-            {feedback && (
-              <span className="text-xs text-secondary" role="status">
-                {feedback}
-              </span>
-            )}
-            <div className="ml-auto flex gap-2">
+          <div className="flex w-full flex-wrap items-center justify-end gap-2">
+            <div className="flex gap-2">
               <Button variant="ghost" type="button" onClick={() => setOpen(false)}>
                 Annuler
               </Button>
@@ -112,6 +114,9 @@ export function EntityRegistryPromptButton({
         }
       >
         <div className="space-y-4">
+          {feedback && (
+            <Alert variant={feedbackVariant} size="box" role="status" message={feedback} />
+          )}
           <Text variant="muted">
             Blin s&apos;adapte à <strong className="text-foreground">n&apos;importe quel métier</strong>.
             Indiquez le domaine visé : le prompt demandera à l&apos;IA un{" "}

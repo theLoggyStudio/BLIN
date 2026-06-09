@@ -101,6 +101,7 @@ mod tests {
                 relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
+                ..Default::default()
             }],
         };
         let parent_attr = EntityAttribute {
@@ -113,6 +114,7 @@ mod tests {
             relation_exclusive_parent: true,
             default: None,
             enum_options: None,
+            ..Default::default()
         };
         let registry = EntityRegistry {
             ecosysteme: None,

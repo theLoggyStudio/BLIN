@@ -67,7 +67,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 flex items-center justify-center p-4"
+      className="fixed inset-0 flex items-center justify-center p-4 max-md:items-stretch max-md:justify-stretch max-md:p-0"
       style={{ zIndex: zBase }}
       role="dialog"
       aria-modal="true"
@@ -75,7 +75,7 @@ export function Modal({
     >
       <button
         type="button"
-        className="absolute inset-0 bg-black/78 cursor-default"
+        className="absolute inset-0 cursor-default bg-black/78 max-md:bg-black/85"
         aria-label="Fermer"
         onClick={onClose}
       />
@@ -83,22 +83,28 @@ export function Modal({
         ref={panelRef}
         className={cn(
           "relative flex w-full max-h-[min(90dvh,calc(100vh-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-2xl",
+          "max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:rounded-none max-md:border-x-0 max-md:border-t-0 max-md:shadow-none",
           sizeClasses[size],
         )}
         style={{ zIndex: zBase + 1 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
-          <h2 id={titleId} className="text-lg font-semibold text-foreground">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6 md:py-4">
+          <h2
+            id={titleId}
+            className="min-w-0 text-base font-semibold leading-snug text-foreground md:text-lg"
+          >
             {title}
           </h2>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fermer">
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 md:px-6 md:py-4">
+          {children}
+        </div>
         {footer && (
-          <div className="flex shrink-0 justify-end gap-2 border-t border-border px-6 py-4">
+          <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border px-4 py-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] md:flex-row md:justify-end md:px-6 md:py-4 [&_button]:w-full md:[&_button]:w-auto">
             {footer}
           </div>
         )}

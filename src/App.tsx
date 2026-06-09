@@ -1,9 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { BusinessSessionProvider } from "@/contexts/BusinessSessionContext";
 import { EntityBrandingProvider } from "@/contexts/EntityBrandingContext";
 import { UiThemeProvider } from "@/contexts/UiThemeContext";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { OpenWindowsProvider } from "@/contexts/OpenWindowsContext";
 import { DashboardChatProvider } from "@/contexts/DashboardChatContext";
 import { ForcePasswordChangeModal } from "@/items/ForcePasswordChangeModal";
 import { ForbiddenPage } from "@/pages/Forbidden/ForbiddenPage";
@@ -12,8 +12,8 @@ import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { ParametresPage } from "@/pages/system/ParametresPage";
 import { TachesModalProvider } from "@/contexts/TachesModalContext";
 import { StockModalProvider } from "@/contexts/StockModalContext";
+import { EntityDefLoggyModalProvider } from "@/contexts/EntityDefLoggyModalContext";
 import { AlertProvider } from "@/contexts/AlertContext";
-import { LoginNoticesHost } from "@/items/LoginNoticesHost";
 
 function LoadingScreen() {
   return (
@@ -46,13 +46,17 @@ function ProtectedRoutes() {
     <Routes>
       <Route
         element={
-          <DashboardChatProvider>
-            <TachesModalProvider>
-              <StockModalProvider>
-                <AppLayout />
-              </StockModalProvider>
-            </TachesModalProvider>
-          </DashboardChatProvider>
+          <OpenWindowsProvider>
+            <DashboardChatProvider>
+              <TachesModalProvider>
+                <StockModalProvider>
+                  <EntityDefLoggyModalProvider>
+                    <AppLayout />
+                  </EntityDefLoggyModalProvider>
+                </StockModalProvider>
+              </TachesModalProvider>
+            </DashboardChatProvider>
+          </OpenWindowsProvider>
         }
       >
         <Route index element={<DashboardPage />} />
@@ -78,12 +82,9 @@ export default function App() {
       <UiThemeProvider>
         <EntityBrandingProvider>
           <AuthProvider>
-            <BusinessSessionProvider>
-              <AlertProvider>
-                <LoginNoticesHost />
-                <AppRoutes />
-              </AlertProvider>
-            </BusinessSessionProvider>
+            <AlertProvider>
+              <AppRoutes />
+            </AlertProvider>
           </AuthProvider>
         </EntityBrandingProvider>
       </UiThemeProvider>

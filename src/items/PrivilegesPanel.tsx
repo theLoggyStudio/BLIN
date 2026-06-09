@@ -114,8 +114,8 @@ export function PrivilegesPanel({ onClose }: PrivilegesPanelProps) {
 
       {(message || error) && (
         <Alert
-          variant={error ? "danger" : "info"}
-          size="inline"
+          variant={error ? "danger" : message ? "success" : "info"}
+          size="box"
           role="status"
           message={error ?? message ?? ""}
         />

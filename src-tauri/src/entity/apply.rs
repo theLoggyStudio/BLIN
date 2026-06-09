@@ -4,7 +4,6 @@ use std::path::Path;
 use crate::dda;
 use crate::db::Database;
 use crate::entity::{config, knowledge, registry, relations, schema, suggestions};
-use crate::print_template::auto_print_description;
 use crate::sync_progress::SyncReporter;
 
 use super::generated_config_dir;
@@ -80,21 +79,6 @@ pub fn apply_registry(
         }
         fs::write(gen_dir.join(format!("{}.json", ent.nom)), json).map_err(|e| e.to_string())?;
         dda::triggers::run_all_with_progress(db, data_dir, &cfg, progress, Some(label))?;
-        let list_html = if ent.nom == super::stock::STOCK_ENTITY_KEY {
-            crate::print_template::build_stock_list_print_html()
-        } else {
-            crate::print_template::build_list_print_html(&cfg)
-        };
-        let list_name = format!("Liste — {label}");
-        let list_desc = auto_print_description("liste", &ent.nom);
-        let _ = db.sync_auto_print_model(
-            &ent.nom,
-            &list_name,
-            &list_desc,
-            &list_html,
-            crate::print_template::LIST_CSS,
-            "Liste",
-        );
         synced.push(ent.nom.clone());
     }
 

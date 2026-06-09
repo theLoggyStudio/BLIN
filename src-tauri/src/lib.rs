@@ -7,6 +7,7 @@ mod commands;
 mod csv_util;
 mod db;
 mod db_io;
+mod print_model_sync;
 mod print_seed;
 mod print_template;
 mod privileges;
@@ -90,6 +91,9 @@ pub fn run() {
             commands::ai::ai_reindex,
             commands::ai::ai_chat,
             commands::ai::ai_dashboard_transition,
+            commands::ai::ai_entity_access_denied,
+            commands::ai::ai_alert_personify,
+            commands::ai::ai_task_reminder_personify,
             commands::ai::ai_dashboard_answer,
             commands::ai::ai_list_conversations,
             commands::ai::ai_conversation_messages,
@@ -117,10 +121,16 @@ pub fn run() {
             commands::entity::entity_registry_save,
             commands::entity::entity_branding_apply_window,
             commands::entity::entity_logo_from_url,
+            commands::entity::entity_check_access,
             commands::entity::entity_list_manageable,
             commands::entity::entity_match_intent,
             commands::entity::entity_match_create_draft,
+            commands::entity::entity_registry_create_access,
+            commands::entity::entity_registry_list_brief,
+            commands::entity::entity_match_registry_create_draft,
+            commands::entity::entity_registry_append_entity,
             commands::entity::entity_get_screen_config,
+            commands::entity::entity_compteur_preview,
             commands::entity::entity_relation_options,
             commands::entity::entity_embed_values_from_record,
             commands::entity::entity_embed_child_from_record,

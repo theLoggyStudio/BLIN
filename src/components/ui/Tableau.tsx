@@ -44,6 +44,8 @@ interface TableauProps<T> extends TablePaginationProps {
   keyExtractor: (row: T) => string;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  /** Lignes compactes (padding réduit). */
+  dense?: boolean;
   /** Nombre de lignes visuelles par enregistrement (rowspan colonnes partagées). */
   lineCount?: (row: T) => number;
   isFirstLine?: (row: T) => boolean;
@@ -91,6 +93,7 @@ export function Tableau<T extends Record<string, unknown>>({
   hideWhenSinglePage = false,
   emptyMessage = "Aucune donnée",
   onRowClick,
+  dense = false,
   lineCount,
   isFirstLine,
   defaultSortKey,
@@ -152,14 +155,15 @@ export function Tableau<T extends Record<string, unknown>>({
   return (
     <div className="overflow-hidden rounded-xl border border-border">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className={cn("w-full", dense ? "text-xs" : "text-sm")}>
           <thead>
             <tr className="border-b border-border bg-surface-elevated/50">
               {columns.map((col) => (
                 <th
                   key={col.key}
                   className={cn(
-                    "px-4 py-3 text-left font-medium text-muted",
+                    "text-left font-medium text-muted",
+                    dense ? "px-2 py-2" : "px-4 py-3",
                     col.className,
                   )}
                 >
@@ -212,7 +216,10 @@ export function Tableau<T extends Record<string, unknown>>({
                       <td
                         key={col.key}
                         rowSpan={span}
-                        className={cn("px-4 py-3 align-top", col.className)}
+                        className={cn(
+                          dense ? "px-2 py-1.5 align-middle" : "px-4 py-3 align-top",
+                          col.className,
+                        )}
                       >
                         {col.render
                           ? col.render(row)

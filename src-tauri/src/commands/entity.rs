@@ -7,9 +7,10 @@ use crate::entity::{
     create_draft::EntityCreateDraft,
     record_signature::{RecordSignatureDetail, RelationSelectOptionExt, RowUserContext},
     registry::EntityRegistry,
+    registry_create_draft::{RegistryCreateMatchResult, RegistryEntityCreateDraft},
     relations::RelationDetailResponse,
 };
-use crate::privileges::has_privilege;
+use crate::privileges::{can_create_registry_entity, has_any_entity_privilege, has_privilege};
 use crate::sync_progress::{count_apply_registry_steps, SyncReporter};
 use crate::AppState;
 
@@ -115,6 +116,9 @@ pub struct EntityStockDestockPayload {
 
 #[tauri::command]
 pub fn entity_registry_get(state: State<'_, AppState>) -> Result<EntityRegistryResponse, String> {
+    state
+        .desktop_sessions
+        .require_privilege("parametres:entites")?;
     let db = state.db.lock();
     let registry = entity::registry::load(&db.data_dir)?;
     let json = serde_json::to_string_pretty(&registry).map_err(|e| e.to_string())?;
@@ -140,7 +144,9 @@ pub fn entity_logo_from_url(
     state: State<'_, AppState>,
     payload: EntityLogoUrlPayload,
 ) -> Result<String, String> {
-    state.desktop_sessions.require_privilege("ai:utiliser")?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:entites")?;
     entity::logo::fetch_from_url(&payload.url)
 }
 
@@ -150,7 +156,9 @@ pub fn entity_registry_save(
     state: State<'_, AppState>,
     payload: EntityRegistrySavePayload,
 ) -> Result<Vec<String>, String> {
-    state.desktop_sessions.require_privilege("ai:utiliser")?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:entites")?;
     let db = state.db.lock();
     let data_dir = db.data_dir.clone();
     let previous = entity::registry::load(&data_dir)?;
@@ -361,6 +369,51 @@ pub fn entity_relation_detail(
     )
 }
 
+#[derive(Serialize)]
+pub struct EntityAccessCheckResult {
+    pub allowed: bool,
+    pub entity_key: String,
+    pub entity_label: String,
+    pub contact_role_names: Vec<String>,
+}
+
+#[tauri::command]
+pub fn entity_check_access(
+    state: State<'_, AppState>,
+    payload: EntityKeyPayload,
+) -> Result<EntityAccessCheckResult, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    let _ = state.desktop_sessions.sync_privileges(&db)?;
+    let session = state.desktop_sessions.require_session()?;
+    let key = payload.entity_key.trim();
+    if key.is_empty() {
+        return Err("Entité cible manquante.".into());
+    }
+    let registry = entity::registry::load(&db.data_dir)?;
+    let ent = registry
+        .find(key)
+        .ok_or_else(|| format!("Entité « {key} » introuvable."))?;
+    let label = ent
+        .label
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| key.to_string());
+    let allowed = has_any_entity_privilege(&session.user.privileges, key);
+    let contact_role_names = if allowed {
+        vec![]
+    } else {
+        db.list_role_names_with_entity_access(key)
+            .map_err(|e| e.to_string())?
+    };
+    Ok(EntityAccessCheckResult {
+        allowed,
+        entity_key: key.to_string(),
+        entity_label: label,
+        contact_role_names,
+    })
+}
+
 #[tauri::command]
 pub fn entity_list_manageable(
     state: State<'_, AppState>,
@@ -405,6 +458,124 @@ pub fn entity_match_create_draft(
     Ok(Some(draft))
 }
 
+#[derive(Serialize)]
+pub struct RegistryCreateAccessResult {
+    pub allowed: bool,
+}
+
+#[derive(Serialize)]
+pub struct EntityRegistryBrief {
+    pub nom: String,
+    pub label: Option<String>,
+}
+
+#[tauri::command]
+pub fn entity_registry_list_brief(
+    state: State<'_, AppState>,
+) -> Result<Vec<EntityRegistryBrief>, String> {
+    let session = state.desktop_sessions.require_session()?;
+    if !can_create_registry_entity(&session.user.privileges) {
+        return Err("Privilège requis : parametres:entites:creer ou parametres:entites".into());
+    }
+    let db = state.db.lock();
+    let registry = entity::registry::load(&db.data_dir)?;
+    Ok(registry
+        .entities
+        .iter()
+        .map(|e| EntityRegistryBrief {
+            nom: e.nom.clone(),
+            label: e.label.clone(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn entity_registry_create_access(
+    state: State<'_, AppState>,
+) -> Result<RegistryCreateAccessResult, String> {
+    let session = state.desktop_sessions.require_session()?;
+    Ok(RegistryCreateAccessResult {
+        allowed: can_create_registry_entity(&session.user.privileges),
+    })
+}
+
+#[tauri::command]
+pub fn entity_match_registry_create_draft(
+    state: State<'_, AppState>,
+    payload: EntityIntentPayload,
+) -> Result<RegistryCreateMatchResult, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    let session = state.desktop_sessions.require_session()?;
+    let registry = entity::registry::load(&db.data_dir)?;
+    let allowed = can_create_registry_entity(&session.user.privileges);
+    Ok(entity::registry_create_draft::match_registry_create_with_access(
+        &payload.message,
+        &registry,
+        allowed,
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct EntityRegistryAppendPayload {
+    pub entity: crate::entity::registry::EntityDef,
+}
+
+#[tauri::command]
+pub fn entity_registry_append_entity(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: EntityRegistryAppendPayload,
+) -> Result<Vec<String>, String> {
+    let session = state.desktop_sessions.require_session()?;
+    if !can_create_registry_entity(&session.user.privileges) {
+        return Err("Privilège requis : parametres:entites:creer ou parametres:entites".into());
+    }
+    let db = state.db.lock();
+    let data_dir = db.data_dir.clone();
+    let previous = entity::registry::load(&data_dir)?;
+    let mut registry = previous.clone();
+    let nom = payload.entity.nom.trim().to_lowercase();
+    if nom.is_empty() {
+        return Err("Le nom de l'entité est obligatoire.".into());
+    }
+    if registry.entities.iter().any(|e| e.nom == nom) {
+        return Err(format!("L'entité « {nom} » existe déjà dans le registre."));
+    }
+    let mut ent = payload.entity;
+    ent.nom = nom;
+    registry.entities.push(ent);
+    registry = entity::registry::normalize_registry(registry);
+    let auto_created = entity::relations::ensure_referenced_entities(&mut registry);
+    registry = entity::registry::normalize_registry(registry);
+    let entity_count = registry.entities.len();
+    let removed_count = 0usize;
+    let total_steps = 3 + count_apply_registry_steps(entity_count, removed_count);
+    let reporter = SyncReporter::new(&app, total_steps);
+    reporter.prep("Enregistrement du registre", "save");
+    entity::registry::save(&data_dir, &registry)?;
+    drop(db);
+
+    let db = state.db.lock();
+    let mut synced = entity::apply_registry(&db, &data_dir, &previous, Some(&reporter))?;
+    synced.extend(auto_created);
+    drop(db);
+
+    let db = state.db.lock();
+    reporter.tick("Réindexation mémoire IA (Loggy)", None, "reindex");
+    crate::dda::reindex_ai_knowledge(&db)?;
+    drop(db);
+
+    let db = state.db.lock();
+    reporter.tick("Mise à jour des privilèges de session", None, "session");
+    let _ = state.desktop_sessions.sync_privileges(&db)?;
+    reporter.finish("Synchronisation terminée");
+    if let Err(e) = entity::branding::apply_window_branding(&app, &data_dir) {
+        eprintln!("Avertissement branding fenêtre : {e}");
+    }
+    Ok(synced)
+}
+
 #[tauri::command]
 pub fn entity_get_screen_config(
     state: State<'_, AppState>,
@@ -412,6 +583,18 @@ pub fn entity_get_screen_config(
 ) -> Result<ScreenConfigFile, String> {
     let db = state.db.lock();
     entity::load_screen_config(&db.data_dir, &payload.entity_key)
+}
+
+/// Prévisualise date (jjmmaaaa) et n° quotidien des attributs compteur / matricule à la création.
+#[tauri::command]
+pub fn entity_compteur_preview(
+    state: State<'_, AppState>,
+    payload: EntityKeyPayload,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    let registry = entity::registry::load(&db.data_dir)?;
+    entity::compteur::preview_compteurs_on_create(&db, &registry, &payload.entity_key)
 }
 
 #[tauri::command]

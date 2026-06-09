@@ -1,0 +1,301 @@
+﻿reference|marque|modele|annee|couleur|carburant|kilometrage|immatriculation|ville|prix|qte_initial
+VEH-001|Hyundai|i20|2018|Rouge flamme|Diesel|63513|23-VXR-189|Marseille|36151|1
+VEH-002|Renault|Clio V|2019|Bleu intense|GPL|162815|81-GWU-818|Paris|44213|4
+VEH-003|Toyota|RAV4|2022|Rouge flamme|Essence|46853|53-IEG-881|Lille|30559|1
+VEH-004|Peugeot|5008|2018|Argent|Hybride|163263|15-XOR-227|Nantes|33307|1
+VEH-005|Ford|Puma|2024|Argent|GPL|55407|15-VHY-396|Lyon|13729|2
+VEH-006|Fiat|500|2021|Rouge flamme|Electrique|171640|30-LLG-786|Bordeaux|25996|1
+VEH-007|Dacia|Duster|2022|Bleu intense|Diesel|126178|44-UWR-324|Lille|29752|1
+VEH-008|Toyota|Yaris Hybrid|2024|Argent|Electrique|75186|37-SWK-317|Lyon|41217|4
+VEH-009|Seat|Ateca|2019|Rouge flamme|Diesel|69651|78-IXS-538|Nice|34675|3
+VEH-010|Toyota|Corolla|2022|Beige sable|Essence|17351|29-UFZ-796|Lyon|36166|5
+VEH-011|Peugeot|5008|2021|Beige sable|GPL|70906|11-VXD-798|Nice|43690|3
+VEH-012|Nissan|Juke|2018|Rouge flamme|Electrique|46460|10-XXI-612|Strasbourg|20208|5
+VEH-013|Seat|Ibiza|2024|Rouge flamme|GPL|164637|29-LYF-652|Toulouse|43257|1
+VEH-014|Dacia|Jogger|2021|Blanc nacre|Essence|100153|40-BHS-180|Nantes|14113|4
+VEH-015|Fiat|500|2024|Gris platine|Diesel|177949|80-FIQ-993|Strasbourg|36230|2
+VEH-016|Seat|Alhambra|2024|Bleu intense|Hybride|109593|66-QOD-353|Bordeaux|23225|1
+VEH-017|BMW|Serie 1|2022|Bleu intense|GPL|62728|19-WUB-334|Paris|12917|1
+VEH-018|Fiat|Tipo|2018|Bleu intense|Hybride|180368|37-REX-684|Strasbourg|39476|2
+VEH-019|Nissan|Leaf|2024|Vert olive|Diesel|29726|94-NLN-520|Lyon|39106|1
+VEH-020|Hyundai|i20|2018|Vert olive|Hybride|33644|34-GRO-243|Toulouse|36148|2
+VEH-021|Volkswagen|T-Roc|2019|Noir perla|Electrique|149264|16-URA-195|Lyon|23991|2
+VEH-022|Mercedes|GLC|2021|Bleu intense|Electrique|20370|58-AMI-902|Marseille|38319|3
+VEH-023|Mercedes|Sprinter|2023|Beige sable|Diesel|54780|37-BSX-655|Nantes|12494|3
+VEH-024|Renault|Clio V|2022|Beige sable|GPL|144231|17-QCF-170|Marseille|12953|2
+VEH-025|Mercedes|Classe A|2022|Bleu intense|GPL|160849|89-CNV-697|Paris|42761|3
+VEH-026|Seat|Arona|2019|Argent|Diesel|74629|26-VUJ-568|Lille|29220|1
+VEH-027|Renault|Arkana|2022|Noir perla|Essence|145937|74-IEL-170|Toulouse|24509|3
+VEH-028|Volkswagen|Golf 8|2021|Rouge flamme|GPL|176435|11-VRJ-779|Nice|15288|2
+VEH-029|Volkswagen|Polo|2018|Gris platine|Hybride|78860|36-WKG-803|Rennes|25800|5
+VEH-030|Audi|Q3|2024|Blanc nacre|Essence|171273|45-BAK-889|Lille|17073|3
+VEH-031|Citroen|Berlingo|2022|Vert olive|GPL|7534|19-WER-136|Lyon|32696|5
+VEH-032|Ford|Focus|2021|Gris platine|Essence|85808|15-LGV-355|Bordeaux|15236|3
+VEH-033|Nissan|X-Trail|2024|Vert olive|GPL|45515|30-ZZF-522|Toulouse|10124|2
+VEH-034|Kia|Sportage|2024|Vert olive|Diesel|74941|99-DMB-979|Marseille|39347|2
+VEH-035|Toyota|RAV4|2020|Rouge flamme|Diesel|63438|94-GMK-385|Paris|13049|3
+VEH-036|BMW|i4|2021|Argent|Essence|35236|32-SIB-211|Nantes|36979|3
+VEH-037|Kia|Sportage|2021|Noir perla|Electrique|156149|42-BWN-101|Toulouse|42573|5
+VEH-038|Hyundai|i30|2020|Vert olive|Essence|179125|89-KVD-837|Bordeaux|28181|5
+VEH-039|Volkswagen|T-Roc|2020|Vert olive|Hybride|150335|34-NVM-793|Marseille|19905|5
+VEH-040|Dacia|Jogger|2021|Blanc nacre|Hybride|80212|65-ZST-770|Toulouse|29618|4
+VEH-041|Audi|Q5|2023|Bleu intense|GPL|129042|94-CJQ-779|Marseille|30466|1
+VEH-042|Fiat|Panda|2023|Rouge flamme|Diesel|57200|13-BHP-725|Marseille|13272|4
+VEH-043|Mercedes|Sprinter|2019|Vert olive|Electrique|109766|28-UWA-868|Toulouse|15485|4
+VEH-044|Toyota|Corolla|2024|Beige sable|Essence|151120|25-OEZ-575|Toulouse|43308|5
+VEH-045|Dacia|Jogger|2024|Beige sable|GPL|137324|80-OFX-982|Lille|39608|4
+VEH-046|Volkswagen|Golf 8|2024|Rouge flamme|GPL|132034|45-OCW-392|Toulouse|23867|3
+VEH-047|BMW|X1|2022|Noir perla|Diesel|44539|59-WEW-319|Toulouse|12709|4
+VEH-048|Mercedes|GLA|2022|Beige sable|Electrique|21322|63-MYS-812|Toulouse|9780|5
+VEH-049|Mercedes|GLC|2018|Argent|Hybride|107232|78-XXR-919|Lille|22953|4
+VEH-050|Toyota|C-HR|2021|Beige sable|Essence|106936|95-VZM-841|Bordeaux|19316|4
+VEH-051|Seat|Leon|2022|Blanc nacre|Electrique|160161|94-ACU-538|Rennes|17393|4
+VEH-052|Citroen|C3|2020|Vert olive|Hybride|60485|51-KYM-384|Strasbourg|36127|3
+VEH-053|Fiat|500|2021|Blanc nacre|GPL|18653|38-UCY-767|Bordeaux|11138|1
+VEH-054|Toyota|Corolla|2024|Blanc nacre|GPL|44946|26-PVD-677|Toulouse|22784|4
+VEH-055|Kia|Sportage|2024|Argent|Diesel|163831|24-YFJ-210|Rennes|10182|3
+VEH-056|Dacia|Spring|2021|Bleu intense|Essence|160214|23-WYJ-970|Toulouse|16433|5
+VEH-057|Nissan|Micra|2020|Vert olive|Hybride|23076|92-KAN-942|Nice|40625|1
+VEH-058|Mercedes|GLA|2023|Beige sable|Diesel|119160|76-UIT-927|Marseille|43769|4
+VEH-059|Audi|Q5|2024|Rouge flamme|Hybride|69355|45-OHY-575|Lyon|33337|3
+VEH-060|Renault|Arkana|2024|Argent|Diesel|132808|55-ZIK-386|Toulouse|26605|5
+VEH-061|Renault|Trafic|2019|Noir perla|Diesel|111542|81-YHW-587|Strasbourg|40666|4
+VEH-062|Nissan|Micra|2018|Rouge flamme|Diesel|111011|49-VSL-584|Toulouse|44772|5
+VEH-063|BMW|X3|2023|Argent|Hybride|123946|49-IHD-838|Nantes|21121|3
+VEH-064|Peugeot|Partner|2024|Gris platine|Diesel|61723|45-XSY-637|Strasbourg|27046|1
+VEH-065|Fiat|Panda|2020|Bleu intense|Hybride|52039|11-WRE-380|Nantes|11482|1
+VEH-066|Ford|Puma|2023|Gris platine|Electrique|31892|83-JPP-551|Paris|30828|2
+VEH-067|Renault|Captur|2024|Beige sable|Essence|22129|72-CSU-802|Lille|12013|2
+VEH-068|Citroen|C3 Aircross|2020|Noir perla|Diesel|36051|63-TTZ-733|Nice|23290|5
+VEH-069|Mercedes|GLC|2021|Rouge flamme|GPL|117415|82-TBT-857|Nantes|15003|2
+VEH-070|Hyundai|i30|2020|Noir perla|Diesel|67879|80-CFA-518|Marseille|38024|5
+VEH-071|Audi|Q3|2018|Bleu intense|Hybride|79112|19-VHI-906|Strasbourg|21464|4
+VEH-072|Peugeot|Partner|2019|Gris platine|Hybride|42286|17-FZJ-709|Lyon|27414|4
+VEH-073|Peugeot|5008|2023|Rouge flamme|Electrique|76367|79-POC-712|Nice|11112|4
+VEH-074|Kia|Sportage|2022|Rouge flamme|Essence|28940|96-SSA-883|Toulouse|26162|5
+VEH-075|Renault|Megane E-Tech|2021|Beige sable|Hybride|52576|65-UPC-581|Rennes|31303|4
+VEH-076|BMW|X1|2023|Noir perla|Diesel|91456|98-PJV-510|Lille|44551|1
+VEH-077|Audi|A1|2020|Rouge flamme|Hybride|35388|75-AVR-573|Lille|35582|1
+VEH-078|Toyota|Aygo X|2020|Beige sable|Electrique|18529|44-REJ-548|Toulouse|40266|1
+VEH-079|Renault|Trafic|2024|Bleu intense|Diesel|86461|11-RNC-330|Nice|15935|4
+VEH-080|Peugeot|308|2021|Rouge flamme|GPL|76676|71-PHO-664|Lille|17979|4
+VEH-081|Toyota|Aygo X|2022|Gris platine|Essence|77416|53-ZQI-940|Lille|8668|3
+VEH-082|Kia|Sportage|2024|Beige sable|Diesel|122059|71-LKR-881|Nice|44114|4
+VEH-083|Audi|Q3|2024|Bleu intense|Diesel|154893|39-YNB-425|Lille|39496|4
+VEH-084|Mercedes|Classe C|2021|Blanc nacre|Diesel|136672|52-DOD-638|Rennes|38445|1
+VEH-085|Kia|Ceed|2021|Gris platine|Essence|128074|53-TWM-765|Nantes|13763|3
+VEH-086|Fiat|500X|2021|Argent|Electrique|146824|89-CHU-800|Paris|27333|2
+VEH-087|Kia|Picanto|2021|Noir perla|Essence|121307|98-JAB-432|Marseille|12177|3
+VEH-088|BMW|X1|2021|Gris platine|Diesel|144242|82-VZF-274|Lille|19973|1
+VEH-089|Dacia|Spring|2022|Bleu intense|Electrique|157871|39-OUI-570|Marseille|25233|1
+VEH-090|Seat|Ateca|2020|Gris platine|Essence|120796|85-JUN-806|Bordeaux|24890|4
+VEH-091|Fiat|Tipo|2019|Vert olive|Electrique|32958|58-SLS-402|Toulouse|27848|1
+VEH-092|Fiat|Doblo|2020|Blanc nacre|GPL|184778|87-XPJ-894|Paris|23581|5
+VEH-093|Nissan|Juke|2019|Bleu intense|GPL|70700|90-DUU-140|Marseille|28746|4
+VEH-094|Renault|Trafic|2020|Gris platine|Essence|82361|63-FGE-905|Bordeaux|43850|3
+VEH-095|Ford|Transit Custom|2020|Gris platine|Hybride|131313|53-ZDO-177|Nantes|17724|2
+VEH-096|Fiat|Doblo|2024|Argent|Essence|108435|43-RDO-477|Paris|25681|5
+VEH-097|Mercedes|GLA|2018|Bleu intense|Electrique|11560|81-KTH-763|Rennes|12642|4
+VEH-098|Seat|Arona|2023|Vert olive|Essence|41641|14-JPD-199|Paris|23887|5
+VEH-099|Citroen|Berlingo|2021|Argent|GPL|114871|29-NUD-953|Rennes|40569|5
+VEH-100|Mercedes|GLA|2018|Argent|Diesel|121230|40-LDV-476|Strasbourg|44182|3
+VEH-101|Toyota|C-HR|2025|Orange fusion|Hybride rechargeable|29905|38-TTR-530|Angers|45023|5
+VEH-102|Volvo|EX30|2024|Bleu intense|Essence|164009|24-JDO-111|Lyon|39631|3
+VEH-103|Mercedes|GLC|2021|Argent|Hybride|101656|75-UCX-448|Grenoble|13376|5
+VEH-104|Opel|Mokka|2021|Beige sable|Diesel|172029|83-JAW-477|Grenoble|31325|4
+VEH-105|Fiat|500|2023|Gris anthracite|GPL|133667|24-NQZ-868|Tours|46832|4
+VEH-106|Nissan|X-Trail|2021|Vert olive|GPL|128616|76-ZAS-329|Nice|15954|1
+VEH-107|Skoda|Fabia|2023|Beige sable|Diesel|129383|39-DUW-567|Angers|51691|4
+VEH-108|Opel|Mokka|2025|Vert olive|Hybride rechargeable|83642|92-QWP-924|Nice|33842|4
+VEH-109|Mercedes|GLA|2021|Blanc nacre|Essence|42280|86-OZQ-601|Montpellier|31088|2
+VEH-110|Ford|Mustang Mach-E|2024|Beige sable|GPL|133326|65-RVB-951|Dijon|26509|3
+VEH-111|Seat|Ibiza|2024|Orange fusion|Hybride|121730|33-NXP-165|Angers|50003|3
+VEH-112|Volvo|V60|2018|Bleu intense|Hybride rechargeable|110822|67-ACA-562|Marseille|45552|5
+VEH-113|Citroen|C3 Aircross|2020|Bleu intense|Essence|165810|79-IVY-750|Paris|30912|2
+VEH-114|Renault|Captur|2024|Gris platine|GPL|61439|85-ETW-616|Strasbourg|26550|1
+VEH-115|Fiat|600|2019|Gris platine|GPL|83217|62-MZE-632|Nice|20390|4
+VEH-116|Renault|Clio V|2023|Noir perla|Essence|93968|55-YAA-622|Montpellier|38696|3
+VEH-117|Dacia|Spring|2022|Noir perla|Electrique|125311|89-ZFE-705|Rennes|41553|2
+VEH-118|Fiat|500X|2022|Beige sable|GPL|64165|18-RMB-300|Montpellier|49916|2
+VEH-119|Peugeot|408|2025|Blanc nacre|Electrique|170995|71-WVA-232|Toulouse|49813|5
+VEH-120|Mercedes|Classe E|2025|Gris platine|Diesel|176335|33-MIN-645|Tours|34637|1
+VEH-121|Nissan|Juke|2019|Argent|Diesel|72060|73-YNJ-578|Strasbourg|19097|3
+VEH-122|Skoda|Kodiaq|2024|Noir perla|GPL|140546|45-DGH-105|Dijon|13602|4
+VEH-123|Hyundai|Kona|2025|Gris platine|Essence|95261|30-LRV-686|Tours|42783|2
+VEH-124|Toyota|Aygo X|2021|Orange fusion|GPL|194619|82-JSI-786|Toulouse|43920|2
+VEH-125|Toyota|C-HR|2018|Vert olive|Diesel|30796|17-YLX-921|Montpellier|19656|1
+VEH-126|Skoda|Kamiq|2021|Gris anthracite|Essence|79293|50-FII-164|Angers|8409|4
+VEH-127|Ford|Kuga|2017|Blanc nacre|Essence|64662|49-DDV-674|Paris|45280|3
+VEH-128|Hyundai|Kona|2017|Vert olive|Hybride|162327|86-ONV-999|Toulouse|15327|3
+VEH-129|Skoda|Kamiq|2023|Rouge flamme|Hybride|18107|65-AJW-438|Grenoble|26476|1
+VEH-130|Dacia|Spring|2022|Gris anthracite|Essence|145123|35-RBX-215|Bordeaux|18124|5
+VEH-131|Toyota|Yaris Hybrid|2017|Gris platine|GPL|95809|92-UJA-534|Rennes|45388|2
+VEH-132|Kia|Niro|2023|Vert olive|Diesel|113358|38-YEF-655|Montpellier|9362|5
+VEH-133|Opel|Grandland|2021|Gris platine|Diesel|9124|45-RPN-370|Paris|28127|2
+VEH-134|Mazda|2|2019|Orange fusion|Essence|173449|75-IKU-632|Tours|28307|1
+VEH-135|Renault|Austral|2020|Beige sable|Essence|61153|75-EXM-824|Montpellier|31088|2
+VEH-136|Opel|Mokka|2022|Bleu intense|Hybride|97138|91-ORZ-585|Strasbourg|51632|5
+VEH-137|Dacia|Duster|2019|Vert olive|Diesel|130102|10-LQW-518|Angers|9958|2
+VEH-138|Citroen|C5 Aircross|2022|Orange fusion|Hybride rechargeable|72472|22-ARG-970|Marseille|45667|3
+VEH-139|Mazda|2|2023|Vert olive|GPL|138422|92-VFQ-207|Dijon|13105|2
+VEH-140|Nissan|Juke|2025|Rouge flamme|Hybride|13902|85-VZG-266|Grenoble|26696|3
+VEH-141|Opel|Mokka|2022|Gris platine|Electrique|52465|90-ATU-591|Grenoble|35198|3
+VEH-142|Opel|Astra|2025|Blanc nacre|Diesel|85489|28-FAD-627|Nice|51258|1
+VEH-143|Kia|Picanto|2022|Rouge flamme|Diesel|142495|86-THE-208|Marseille|28883|4
+VEH-144|Toyota|Camry|2018|Vert olive|Hybride|164730|92-DLP-610|Nantes|15425|5
+VEH-145|Skoda|Octavia|2022|Beige sable|GPL|93470|18-YCZ-606|Lyon|27948|3
+VEH-146|Audi|A3 Sportback|2022|Vert olive|GPL|150213|51-XVP-512|Bordeaux|28057|2
+VEH-147|Mercedes|Classe E|2024|Bleu intense|Hybride rechargeable|94369|54-NZS-490|Dijon|21451|2
+VEH-148|Seat|Cupra Formentor|2019|Vert olive|Hybride|89238|25-KIO-369|Tours|17026|5
+VEH-149|Ford|Focus|2022|Gris platine|GPL|35305|47-SOU-510|Nantes|33678|1
+VEH-150|Opel|Mokka|2023|Argent|Essence|181041|73-VUV-882|Dijon|43309|5
+VEH-151|Mercedes|GLC|2022|Argent|Essence|107795|32-AIR-818|Grenoble|24026|2
+VEH-152|Hyundai|Ioniq 5|2023|Beige sable|Electrique|91800|14-YHU-223|Paris|50798|3
+VEH-153|Hyundai|i20|2020|Beige sable|GPL|75590|90-LCR-809|Rennes|19798|5
+VEH-154|Renault|Clio V|2019|Argent|Diesel|124494|87-VFW-416|Toulouse|13023|5
+VEH-155|Fiat|600|2025|Gris anthracite|GPL|37931|13-INB-289|Lyon|43560|5
+VEH-156|Audi|Q5|2022|Argent|Hybride|86314|71-IPK-959|Rennes|23890|1
+VEH-157|Volvo|XC60|2017|Beige sable|Hybride|69545|69-GLI-624|Tours|33709|3
+VEH-158|Mercedes|Sprinter|2017|Vert olive|Essence|193287|92-VQV-645|Grenoble|27069|4
+VEH-159|Suzuki|Swift|2025|Orange fusion|GPL|88222|50-VKL-285|Strasbourg|12616|5
+VEH-160|BMW|Serie 2|2021|Orange fusion|GPL|103356|23-TGA-574|Montpellier|23287|2
+VEH-161|Fiat|500X|2025|Gris platine|GPL|58385|44-YWP-239|Dijon|44127|3
+VEH-162|Kia|Sorento|2023|Orange fusion|GPL|193356|34-ETR-821|Nice|17534|2
+VEH-163|Volkswagen|Passat|2017|Blanc nacre|Hybride|81470|32-EIR-809|Tours|30873|2
+VEH-164|Seat|Leon|2019|Blanc nacre|Diesel|181238|62-UTP-659|Marseille|9401|3
+VEH-165|Audi|e-tron|2022|Orange fusion|Essence|125064|62-EKE-831|Montpellier|40807|1
+VEH-166|Volvo|XC40|2017|Noir perla|Hybride|156618|99-IKY-128|Tours|18235|5
+VEH-167|Mercedes|Classe E|2018|Vert olive|Hybride rechargeable|116542|31-HHV-606|Toulouse|21440|3
+VEH-168|BMW|i4|2023|Vert olive|Electrique|98208|36-JUX-551|Grenoble|44135|5
+VEH-169|Volvo|XC40|2020|Bleu intense|Essence|23661|96-TWF-217|Bordeaux|18780|2
+VEH-170|Fiat|Panda|2023|Blanc nacre|GPL|40979|91-ZIJ-856|Montpellier|31435|4
+VEH-171|Renault|Arkana|2025|Beige sable|Hybride|95846|27-DZE-673|Strasbourg|22087|3
+VEH-172|Seat|Ateca|2017|Orange fusion|Hybride|69809|20-OOL-659|Montpellier|41932|5
+VEH-173|Toyota|C-HR|2021|Blanc nacre|Essence|157719|18-QOS-211|Paris|32812|5
+VEH-174|Seat|Alhambra|2024|Orange fusion|Essence|43135|50-EAD-501|Angers|13520|2
+VEH-175|Opel|Mokka|2017|Blanc nacre|Hybride rechargeable|21645|87-QDX-977|Dijon|29448|2
+VEH-176|Dacia|Spring|2020|Argent|Hybride rechargeable|125858|41-MHQ-981|Grenoble|27987|4
+VEH-177|Peugeot|5008|2020|Gris anthracite|Diesel|117956|24-SPS-490|Toulouse|39143|5
+VEH-178|Renault|Arkana|2020|Vert olive|Hybride rechargeable|11923|69-ZEJ-346|Nice|41667|3
+VEH-179|Ford|Kuga|2017|Argent|GPL|139316|77-DSL-925|Marseille|21708|5
+VEH-180|Citroen|C3 Aircross|2019|Beige sable|Electrique|32113|23-ZNM-105|Dijon|23511|2
+VEH-181|Peugeot|3008|2019|Orange fusion|Hybride|101104|42-FBG-823|Lyon|48845|5
+VEH-182|Toyota|RAV4|2025|Blanc nacre|Hybride|184892|75-UBG-766|Strasbourg|50177|4
+VEH-183|Peugeot|3008|2018|Gris platine|Hybride rechargeable|20172|36-AJT-761|Nantes|10357|4
+VEH-184|Ford|Fiesta|2025|Gris platine|GPL|169642|84-RHP-939|Nice|10988|5
+VEH-185|Kia|Ceed|2025|Vert olive|Electrique|25927|14-ANM-669|Toulouse|13357|4
+VEH-186|Suzuki|Vitara|2019|Bleu intense|Diesel|149584|74-YKM-385|Toulouse|49845|2
+VEH-187|Seat|Ibiza|2017|Argent|Essence|37155|76-YHP-991|Rennes|17263|3
+VEH-188|BMW|X3|2025|Noir perla|Diesel|3395|58-CWP-744|Tours|34935|5
+VEH-189|Hyundai|Ioniq 5|2022|Noir perla|Hybride rechargeable|181691|12-UIH-218|Rennes|32222|2
+VEH-190|Dacia|Logan|2019|Rouge flamme|Hybride rechargeable|142264|13-KXF-831|Paris|37527|5
+VEH-191|Toyota|Corolla|2024|Gris platine|GPL|134756|94-PDC-230|Angers|7760|5
+VEH-192|Skoda|Kamiq|2019|Vert olive|Hybride|8318|87-JEM-748|Strasbourg|48483|1
+VEH-193|Seat|Alhambra|2018|Noir perla|Diesel|88134|18-MIO-887|Strasbourg|36598|3
+VEH-194|Ford|Kuga|2023|Beige sable|Hybride|85090|31-DTR-131|Tours|20907|2
+VEH-195|Dacia|Bigster|2023|Bleu intense|Hybride rechargeable|177244|31-ZDH-494|Bordeaux|15918|5
+VEH-196|Hyundai|Santa Fe|2025|Vert olive|Diesel|164590|48-RRM-810|Nice|24778|3
+VEH-197|Seat|Leon|2019|Orange fusion|Hybride|12816|89-GJF-968|Grenoble|35713|5
+VEH-198|Volkswagen|T-Roc|2023|Beige sable|Hybride rechargeable|18512|49-XBZ-710|Rennes|41174|3
+VEH-199|Opel|Mokka|2023|Bleu intense|Hybride rechargeable|168003|78-QJZ-780|Angers|47756|5
+VEH-200|Kia|Sportage|2023|Orange fusion|Diesel|6538|77-NMT-472|Lille|23491|5
+VEH-201|Mazda|CX-5|2022|Blanc nacre|Essence|64898|32-PTM-584|Toulouse|17808|4
+VEH-202|Skoda|Octavia|2022|Blanc nacre|GPL|25171|24-GMD-568|Lyon|46919|3
+VEH-203|Skoda|Fabia|2023|Bleu intense|Hybride|84423|10-DCY-449|Angers|50680|2
+VEH-204|Seat|Cupra Formentor|2023|Noir perla|Hybride rechargeable|30650|34-ZRP-449|Tours|46457|2
+VEH-205|Toyota|Yaris Hybrid|2022|Bleu intense|Diesel|119224|22-RZN-871|Strasbourg|16081|1
+VEH-206|Renault|Austral|2024|Vert olive|Essence|118813|17-OPL-865|Strasbourg|13958|1
+VEH-207|Fiat|Panda|2023|Noir perla|Hybride|189875|77-HND-458|Nice|18568|1
+VEH-208|Volkswagen|Transporter|2021|Rouge flamme|Electrique|29826|38-LYC-520|Grenoble|49033|1
+VEH-209|Mazda|MX-30|2021|Argent|Electrique|164203|84-JHX-944|Tours|47138|5
+VEH-210|BMW|i4|2023|Rouge flamme|Essence|148625|42-QOJ-523|Rennes|24578|2
+VEH-211|Mazda|CX-5|2019|Argent|GPL|83993|49-DTH-101|Nantes|20481|5
+VEH-212|Suzuki|S-Cross|2022|Noir perla|Hybride rechargeable|91195|92-NTO-723|Lille|32163|1
+VEH-213|Kia|Niro|2024|Gris anthracite|Hybride|152264|55-AYL-495|Lille|30484|3
+VEH-214|Volvo|XC40|2022|Vert olive|Electrique|14539|12-WJR-657|Rennes|11082|1
+VEH-215|Hyundai|Kona|2021|Vert olive|Hybride|189028|10-GGB-179|Nantes|22499|2
+VEH-216|Peugeot|408|2022|Gris anthracite|GPL|122572|96-TRQ-748|Lyon|47962|1
+VEH-217|Dacia|Duster|2018|Vert olive|Diesel|33552|18-DZZ-173|Grenoble|46119|4
+VEH-218|Peugeot|308|2024|Orange fusion|Hybride rechargeable|9285|46-NLR-792|Dijon|36413|2
+VEH-219|Peugeot|5008|2021|Gris platine|Hybride|170660|78-FTM-833|Angers|10699|1
+VEH-220|Seat|Alhambra|2023|Beige sable|Electrique|169613|28-ZAJ-896|Montpellier|13694|2
+VEH-221|Fiat|Panda|2021|Beige sable|GPL|165902|36-KFY-920|Marseille|26840|1
+VEH-222|Toyota|Corolla|2024|Vert olive|Essence|97217|19-ALS-786|Lille|13576|3
+VEH-223|Opel|Astra|2020|Argent|Hybride|27335|78-RDR-174|Nantes|22255|4
+VEH-224|Opel|Mokka|2019|Gris platine|Diesel|53904|42-VDM-357|Nice|46034|4
+VEH-225|Kia|Ceed|2020|Gris platine|Hybride|127178|91-TET-393|Lyon|42518|1
+VEH-226|Opel|Mokka|2020|Rouge flamme|Electrique|169498|14-JEI-565|Angers|33229|1
+VEH-227|Mercedes|GLA|2018|Rouge flamme|Hybride rechargeable|111626|71-KJJ-234|Lyon|10603|1
+VEH-228|Dacia|Spring|2018|Bleu intense|Hybride rechargeable|56102|79-AAK-306|Angers|9317|3
+VEH-229|Toyota|C-HR|2024|Orange fusion|Electrique|182047|79-XTH-143|Bordeaux|30955|5
+VEH-230|Volvo|C40|2023|Blanc nacre|Hybride rechargeable|173692|56-GRI-668|Bordeaux|49048|5
+VEH-231|Kia|Niro|2025|Noir perla|Hybride rechargeable|172784|12-NOV-153|Angers|49634|5
+VEH-232|Peugeot|5008|2019|Beige sable|Electrique|34533|92-LDI-220|Grenoble|23422|4
+VEH-233|Audi|A4 Avant|2020|Rouge flamme|Diesel|123628|11-DBX-640|Montpellier|38604|3
+VEH-234|BMW|X3|2019|Bleu intense|Hybride rechargeable|160850|32-JYN-393|Nantes|35196|4
+VEH-235|Opel|Grandland|2020|Noir perla|Electrique|101541|57-GTR-856|Tours|46610|5
+VEH-236|Volvo|V60|2022|Bleu intense|Hybride rechargeable|89689|21-GXI-291|Nice|12691|4
+VEH-237|BMW|Serie 3|2020|Rouge flamme|GPL|109496|68-BIX-943|Strasbourg|26516|1
+VEH-238|Peugeot|3008|2024|Argent|Hybride rechargeable|20644|59-QQN-862|Dijon|28106|4
+VEH-239|Citroen|C3|2021|Noir perla|Hybride rechargeable|17459|26-HKZ-690|Nice|28313|2
+VEH-240|Ford|Transit Custom|2021|Blanc nacre|Hybride rechargeable|77266|31-SIY-592|Angers|25747|4
+VEH-241|Skoda|Fabia|2025|Gris platine|Hybride|72833|11-FMC-732|Lille|31764|4
+VEH-242|Opel|Corsa|2025|Blanc nacre|Essence|17345|12-WBU-421|Angers|49096|2
+VEH-243|Renault|Clio V|2024|Blanc nacre|Essence|158544|66-YBG-870|Lyon|46452|2
+VEH-244|Volvo|XC60|2020|Blanc nacre|Hybride|121745|35-BJQ-615|Paris|38790|4
+VEH-245|Skoda|Fabia|2023|Vert olive|Essence|30557|61-HLC-182|Nantes|7828|2
+VEH-246|Renault|Megane E-Tech|2025|Bleu intense|Essence|16050|49-AUG-103|Tours|7956|3
+VEH-247|BMW|X3|2020|Beige sable|Essence|115949|22-KLF-933|Strasbourg|46269|2
+VEH-248|Peugeot|208|2019|Vert olive|Electrique|14075|21-ZEY-716|Nice|36942|4
+VEH-249|Renault|Espace|2022|Beige sable|GPL|192332|84-WTF-308|Marseille|46470|5
+VEH-250|Citroen|C4 X|2020|Bleu intense|Electrique|19099|26-PVD-624|Tours|34992|1
+VEH-251|Kia|EV6|2018|Gris platine|GPL|158812|23-JPA-781|Rennes|33885|4
+VEH-252|Hyundai|Tucson|2021|Orange fusion|Hybride|17818|60-HKD-504|Lille|40159|4
+VEH-253|Skoda|Octavia|2022|Gris anthracite|Electrique|54366|80-XCE-372|Nantes|15276|4
+VEH-254|BMW|X3|2021|Bleu intense|Hybride rechargeable|109615|29-QZF-686|Lille|9128|5
+VEH-255|BMW|Serie 1|2025|Gris platine|Hybride rechargeable|191990|29-UEA-864|Nantes|26773|2
+VEH-256|Nissan|Qashqai|2025|Bleu intense|Electrique|184463|97-ZTU-816|Paris|31408|1
+VEH-257|Nissan|Micra|2018|Orange fusion|GPL|157128|81-OAJ-225|Montpellier|28000|1
+VEH-258|Seat|Alhambra|2017|Noir perla|Diesel|63562|90-EKF-493|Grenoble|46264|3
+VEH-259|Fiat|600|2020|Beige sable|GPL|39756|69-MWB-758|Angers|41012|2
+VEH-260|Toyota|Camry|2023|Noir perla|Diesel|27592|77-LMB-566|Toulouse|10243|1
+VEH-261|BMW|Serie 3|2020|Orange fusion|Electrique|183795|60-TKG-366|Rennes|22013|2
+VEH-262|Volvo|V60|2023|Argent|Hybride|11914|35-XLD-153|Lyon|10960|4
+VEH-263|Mercedes|EQA|2024|Noir perla|Hybride rechargeable|191126|70-CUD-273|Angers|25199|2
+VEH-264|Audi|A4 Avant|2022|Noir perla|Electrique|91807|56-BTR-771|Nice|34134|5
+VEH-265|Renault|Espace|2018|Argent|Hybride|60074|59-CBG-742|Lyon|9140|2
+VEH-266|BMW|X1|2017|Gris platine|Essence|95926|30-ALW-220|Tours|13014|3
+VEH-267|Opel|Astra|2021|Noir perla|GPL|58378|24-SAQ-236|Nantes|21534|5
+VEH-268|Nissan|Ariya|2018|Bleu intense|Hybride|37623|24-XEF-279|Grenoble|21662|5
+VEH-269|Nissan|Qashqai|2024|Orange fusion|Electrique|130277|15-JWA-468|Lille|27483|2
+VEH-270|Dacia|Spring|2025|Argent|Hybride|181085|42-EYO-540|Marseille|25125|1
+VEH-271|BMW|i4|2024|Rouge flamme|Hybride|194877|66-MMB-382|Montpellier|38107|1
+VEH-272|Audi|e-tron|2020|Vert olive|Hybride rechargeable|16483|56-KAJ-688|Montpellier|33326|3
+VEH-273|Seat|Ibiza|2023|Blanc nacre|Hybride|114972|99-HHG-621|Nantes|38014|5
+VEH-274|BMW|X3|2025|Beige sable|Electrique|31644|89-YTM-388|Paris|24186|3
+VEH-275|Nissan|X-Trail|2021|Blanc nacre|Diesel|123474|13-KNR-350|Marseille|15854|4
+VEH-276|Nissan|Ariya|2017|Beige sable|Hybride|104894|85-MLC-518|Nice|27294|5
+VEH-277|Peugeot|5008|2025|Orange fusion|Diesel|14660|41-SNF-925|Montpellier|19341|1
+VEH-278|Mazda|MX-30|2024|Vert olive|GPL|90092|88-PCD-106|Toulouse|9200|5
+VEH-279|Skoda|Enyaq|2024|Vert olive|Hybride rechargeable|8871|32-YQZ-230|Paris|18452|1
+VEH-280|Volvo|XC40|2018|Vert olive|GPL|40953|76-IJF-610|Rennes|41347|2
+VEH-281|Peugeot|408|2023|Gris platine|Hybride|72842|18-OYO-379|Toulouse|35353|4
+VEH-282|Ford|Focus|2019|Bleu intense|Essence|116216|70-OOT-262|Grenoble|13049|3
+VEH-283|Citroen|C4 X|2022|Bleu intense|Hybride|81501|92-ZTV-503|Strasbourg|36284|2
+VEH-284|Kia|Ceed|2018|Orange fusion|GPL|153856|36-GFC-230|Paris|35818|4
+VEH-285|Skoda|Kodiaq|2019|Gris platine|Electrique|26501|77-GYD-276|Toulouse|44553|3
+VEH-286|Volvo|XC40|2022|Blanc nacre|Hybride rechargeable|36303|89-LET-285|Montpellier|11171|4
+VEH-287|Dacia|Duster|2022|Vert olive|Hybride|132988|74-GPD-599|Rennes|33989|2
+VEH-288|Dacia|Jogger|2019|Vert olive|Essence|188571|43-KAC-179|Lille|26690|3
+VEH-289|Suzuki|S-Cross|2023|Blanc nacre|GPL|115758|91-RJK-857|Bordeaux|10514|1
+VEH-290|Seat|Cupra Formentor|2021|Orange fusion|Hybride|33210|46-RDA-214|Angers|21069|2
+VEH-291|Citroen|C5 Aircross|2023|Blanc nacre|Hybride|181941|80-WGO-623|Paris|12196|5
+VEH-292|Hyundai|Santa Fe|2023|Noir perla|Essence|21449|24-SWK-829|Paris|26224|3
+VEH-293|Dacia|Spring|2018|Argent|Essence|96010|72-LXV-353|Angers|48017|2
+VEH-294|Citroen|C3|2019|Argent|Hybride|152828|14-UTZ-956|Tours|18264|1
+VEH-295|Opel|Combo|2017|Rouge flamme|GPL|161273|41-CZJ-283|Bordeaux|21986|4
+VEH-296|Audi|A3 Sportback|2023|Gris anthracite|Electrique|151427|22-NQK-395|Bordeaux|16750|3
+VEH-297|Seat|Arona|2021|Orange fusion|Essence|90378|44-TQB-850|Rennes|32306|3
+VEH-298|Kia|EV6|2022|Vert olive|Hybride rechargeable|39103|51-FRI-430|Dijon|36005|1
+VEH-299|Skoda|Kodiaq|2020|Rouge flamme|Essence|172082|61-CGL-606|Bordeaux|31202|1
+VEH-300|Fiat|500X|2021|Gris platine|Electrique|173012|92-TRV-223|Lille|49872|3

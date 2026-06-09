@@ -377,6 +377,7 @@ mod tests {
                         relation_exclusive_parent: true,
                         default: None,
                         enum_options: None,
+                        ..Default::default()
                     },
                     EntityAttribute {
                         nom: "libelle".into(),
@@ -388,6 +389,7 @@ mod tests {
                         relation_exclusive_parent: true,
                         default: None,
                         enum_options: None,
+                        ..Default::default()
                     },
                     EntityAttribute {
                         nom: "heure_debut".into(),
@@ -399,6 +401,7 @@ mod tests {
                         relation_exclusive_parent: true,
                         default: None,
                         enum_options: None,
+                        ..Default::default()
                     },
                 ],
             }],

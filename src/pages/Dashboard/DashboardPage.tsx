@@ -3,10 +3,16 @@ import {
   AI_CONVERSATION_NEW_EVENT,
   AI_CONVERSATION_SELECT_EVENT,
   AI_CONVERSATIONS_REFRESH_EVENT,
+  CLOSE_AI_WINDOW_EVENT,
+  CLOSE_ENTITY_WINDOW_EVENT,
   ENTITY_REGISTRY_SYNCED_EVENT,
+  FOCUS_AI_WINDOW_EVENT,
+  FOCUS_ENTITY_WINDOW_EVENT,
 } from "@/constants/events";
 import { useDashboardChat } from "@/contexts/DashboardChatContext";
+import { useOpenWindows } from "@/contexts/OpenWindowsContext";
 import { useTachesModal } from "@/contexts/TachesModalContext";
+import { useEntityDefLoggyModal } from "@/contexts/EntityDefLoggyModalContext";
 import { invoke } from "@tauri-apps/api/core";
 import { EntityWorkspace } from "@/engine/EntityWorkspace";
 import { CommandBar } from "@/items/CommandBar";
@@ -21,11 +27,20 @@ import {
 import { useEntityBranding } from "@/hooks/useEntityBranding";
 import { randomDelayMs } from "@/lib/randomDelay";
 import { sortEntitySuggestionsByPhrase } from "@/lib/entitySuggestions";
+import {
+  fetchEntityAccess,
+  fetchEntityAccessDeniedMessage,
+} from "@/lib/entityAccess";
 import { parseAssistantChatContent } from "@/lib/chatDisplayParse";
 import { pushLoggyAlert } from "@/contexts/AlertContext";
 import type { AiChatReply, AiStoredMessage } from "@/types/ai";
-import type { EntityCreateDraft, EntitySuggestion } from "@/types/entity";
-import type { ScreenRow } from "@/types/screen";
+import type {
+  EntityCreateDraft,
+  EntityDef,
+  EntitySuggestion,
+  RegistryCreateMatchResult,
+} from "@/types/entity";
+import type { ScreenRow, ScreenConfigFile } from "@/types/screen";
 
 const MAX_PENDING_QUESTIONS = 10;
 const TACHE_ENTITY_KEY = "tache";
@@ -72,14 +87,63 @@ export function DashboardPage() {
   const [chatStarted, setChatStarted] = useState(false);
   const { conversationId, setConversationId } = useDashboardChat();
   const { openTaches } = useTachesModal();
+  const { openRegistryEntityCreate } = useEntityDefLoggyModal();
+  const { openWindow, closeWindow, setActiveWindowId } = useOpenWindows();
   const [thread, setThread] = useState<DashboardChatEntry[]>([]);
   const [pendingQueue, setPendingQueue] = useState<PendingQuestion[]>([]);
   const [suggestionsRefresh, setSuggestionsRefresh] = useState(0);
   const [knownSuggestions, setKnownSuggestions] = useState<EntitySuggestion[]>([]);
   const conversationIdRef = useRef<string | null>(null);
   const pendingQueueRef = useRef<PendingQuestion[]>([]);
+  const activeEntityRef = useRef<string | null>(null);
 
   const chatBusy = thread.some((e) => e.role === "assistant" && e.loading);
+
+  useEffect(() => {
+    activeEntityRef.current = activeEntity;
+    if (!activeEntity) return;
+
+    const windowId = `entity:${activeEntity}`;
+    void invoke<ScreenConfigFile>("entity_get_screen_config", {
+      payload: { entity_key: activeEntity },
+    })
+      .then((cfg) => {
+        openWindow({
+          id: windowId,
+          kind: "entity",
+          title: cfg.screen.label || activeEntity,
+          entityKey: activeEntity,
+        });
+      })
+      .catch(() => {
+        openWindow({
+          id: windowId,
+          kind: "entity",
+          title: activeEntity,
+          entityKey: activeEntity,
+        });
+      });
+  }, [activeEntity, openWindow]);
+
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const key = (e as CustomEvent<{ entityKey?: string }>).detail?.entityKey;
+      if (key) setActiveEntity(key);
+    };
+    const onClose = (e: Event) => {
+      const key = (e as CustomEvent<{ entityKey?: string }>).detail?.entityKey;
+      if (!key || activeEntityRef.current === key) {
+        setActiveEntity(null);
+        setEntityCreateDraft(null);
+      }
+    };
+    window.addEventListener(FOCUS_ENTITY_WINDOW_EVENT, onFocus);
+    window.addEventListener(CLOSE_ENTITY_WINDOW_EVENT, onClose);
+    return () => {
+      window.removeEventListener(FOCUS_ENTITY_WINDOW_EVENT, onFocus);
+      window.removeEventListener(CLOSE_ENTITY_WINDOW_EVENT, onClose);
+    };
+  }, []);
 
   useEffect(() => {
     conversationIdRef.current = conversationId;
@@ -180,6 +244,38 @@ export function DashboardPage() {
     };
   }, [loadConversation, resetChat]);
 
+  useEffect(() => {
+    const onFocusAi = (e: Event) => {
+      const isNew = (e as CustomEvent<{ isNew?: boolean }>).detail?.isNew;
+      setActiveEntity(null);
+      setEntityCreateDraft(null);
+      setActiveWindowId("ai");
+      if (isNew) {
+        setConversationId(null);
+        conversationIdRef.current = null;
+        setThread([]);
+        setPendingQueue([]);
+        pendingQueueRef.current = [];
+        setCommand("");
+      }
+      setChatStarted(true);
+    };
+    const onCloseAi = () => {
+      resetChat();
+    };
+    window.addEventListener(FOCUS_AI_WINDOW_EVENT, onFocusAi);
+    window.addEventListener(CLOSE_AI_WINDOW_EVENT, onCloseAi);
+    return () => {
+      window.removeEventListener(FOCUS_AI_WINDOW_EVENT, onFocusAi);
+      window.removeEventListener(CLOSE_AI_WINDOW_EVENT, onCloseAi);
+    };
+  }, [resetChat, setConversationId, setActiveWindowId]);
+
+  useEffect(() => {
+    if (!chatStarted || activeEntity) return;
+    openWindow({ id: "ai", kind: "ai", title: "Discussion Loggy" });
+  }, [chatStarted, activeEntity, openWindow]);
+
   const patchAssistant = useCallback((assistantId: string, patch: Partial<DashboardChatEntry>) => {
     setThread((prev) =>
       prev.map((e) => (e.id === assistantId && e.role === "assistant" ? { ...e, ...patch } : e)),
@@ -200,13 +296,62 @@ export function DashboardPage() {
     [openTaches],
   );
 
+  const denyEntityAccessInChat = useCallback(
+    async (
+      entityKey: string,
+      userMessage: string,
+      options?: { append?: boolean },
+    ) => {
+      setChatStarted(true);
+      setCommand("");
+      const access = await fetchEntityAccess(entityKey);
+      const assistantId = newEntryId();
+      const userEntry = { id: newEntryId(), role: "user" as const, content: userMessage };
+      const assistantEntry = {
+        id: assistantId,
+        role: "assistant" as const,
+        content: null,
+        loading: true,
+      };
+
+      if (options?.append) {
+        setThread((prev) => [...prev, userEntry, assistantEntry]);
+      } else {
+        setPendingQueue([]);
+        setThread([userEntry, assistantEntry]);
+      }
+
+      const message = await fetchEntityAccessDeniedMessage(entityKey, userMessage, access);
+      patchAssistant(assistantId, { content: message, loading: false });
+    },
+    [patchAssistant],
+  );
+
+  const requestOpenEntity = useCallback(
+    async (
+      entityKey: string,
+      options?: {
+        userMessage?: string;
+        draft?: ScreenRow;
+        appendDenial?: boolean;
+      },
+    ): Promise<boolean> => {
+      const userMessage = options?.userMessage ?? `Gérer ${entityKey}`;
+      const access = await fetchEntityAccess(entityKey);
+      if (!access.allowed) {
+        await denyEntityAccessInChat(entityKey, userMessage, {
+          append: options?.appendDenial ?? false,
+        });
+        return false;
+      }
+      openEntityWorkspace(entityKey, options?.draft);
+      return true;
+    },
+    [denyEntityAccessInChat, openEntityWorkspace],
+  );
+
   const openEntityWithTransition = useCallback(
     async (entityKey: string, userMessage: string) => {
-      if (entityKey === TACHE_ENTITY_KEY) {
-        setCommand("");
-        openTaches();
-        return;
-      }
       setChatStarted(true);
       setCommand("");
       setPendingQueue([]);
@@ -221,6 +366,20 @@ export function DashboardPage() {
           entityLoader: false,
         },
       ]);
+
+      const access = await fetchEntityAccess(entityKey);
+      if (!access.allowed) {
+        const message = await fetchEntityAccessDeniedMessage(entityKey, userMessage, access);
+        patchAssistant(assistantId, { content: message, loading: false });
+        return;
+      }
+
+      if (entityKey === TACHE_ENTITY_KEY) {
+        openTaches();
+        setThread([]);
+        setChatStarted(false);
+        return;
+      }
 
       void invoke<string>("ai_dashboard_transition", {
         payload: { user_message: userMessage, entity_key: entityKey },
@@ -258,19 +417,63 @@ export function DashboardPage() {
         { id: newEntryId(), role: "user", content: userMessage },
         { id: newEntryId(), role: "assistant", content: draft.assistant_message },
       ]);
-      openEntityWorkspace(draft.entity_key, draft.initial_data as ScreenRow);
+      void requestOpenEntity(draft.entity_key, {
+        userMessage,
+        draft: draft.initial_data as ScreenRow,
+      });
     },
-    [openEntityWorkspace],
+    [requestOpenEntity],
+  );
+
+  const openRegistryEntityCreateFromChat = useCallback(
+    async (entity: EntityDef, userMessage: string, assistantMessage: string) => {
+      setChatStarted(true);
+      setCommand("");
+      setPendingQueue([]);
+      setThread([
+        { id: newEntryId(), role: "user", content: userMessage },
+        { id: newEntryId(), role: "assistant", content: assistantMessage },
+      ]);
+      await openRegistryEntityCreate(entity);
+    },
+    [openRegistryEntityCreate],
+  );
+
+  const denyRegistryCreateInChat = useCallback(
+    (userMessage: string) => {
+      setChatStarted(true);
+      setCommand("");
+      setPendingQueue([]);
+      setThread([
+        { id: newEntryId(), role: "user", content: userMessage },
+        {
+          id: newEntryId(),
+          role: "assistant",
+          content:
+            "Tu n'as pas le privilège pour créer une entité dans le registre (parametres:entites:creer). Contacte un administrateur pour obtenir l'accès.",
+        },
+      ]);
+    },
+    [],
   );
 
   const applyCreateActionFromReply = useCallback(
     (reply: AiChatReply) => {
+      if (reply.open_registry_entity_create) {
+        const ent = reply.open_registry_entity_create.initial_entity as EntityDef;
+        void openRegistryEntityCreate(ent);
+        return true;
+      }
       if (!reply.open_entity_create) return false;
       const { entity_key, initial_data } = reply.open_entity_create;
-      openEntityWorkspace(entity_key, initial_data as ScreenRow);
+      void requestOpenEntity(entity_key, {
+        draft: initial_data as ScreenRow,
+        appendDenial: true,
+        userMessage: `Créer un enregistrement ${entity_key}`,
+      });
       return true;
     },
-    [openEntityWorkspace],
+    [requestOpenEntity, openRegistryEntityCreate],
   );
 
   useEffect(() => {
@@ -364,6 +567,28 @@ export function DashboardPage() {
 
     if (!mustQueue) {
       try {
+        const registryMatch = await invoke<RegistryCreateMatchResult>(
+          "entity_match_registry_create_draft",
+          { payload: { message: text } },
+        );
+        if (registryMatch.matched) {
+          setCommand("");
+          if (!registryMatch.allowed || !registryMatch.draft) {
+            denyRegistryCreateInChat(text);
+            return;
+          }
+          void openRegistryEntityCreateFromChat(
+            registryMatch.draft.initial_entity,
+            text,
+            registryMatch.draft.assistant_message,
+          );
+          return;
+        }
+      } catch {
+        /* fallback */
+      }
+
+      try {
         const draft = await invoke<EntityCreateDraft | null>("entity_match_create_draft", {
           payload: { message: text },
         });
@@ -438,7 +663,12 @@ export function DashboardPage() {
             <div className="dashboard-chat-messages-inner">
               <DashboardChatThread
                 entries={thread}
-                onOpenEntityFromChat={(entityKey) => openEntityWorkspace(entityKey)}
+                onOpenEntityFromChat={(entityKey) => {
+                  void requestOpenEntity(entityKey, {
+                    appendDenial: true,
+                    userMessage: `Ouvrir l'écran ${entityKey}`,
+                  });
+                }}
               />
             </div>
           </div>
@@ -458,9 +688,11 @@ export function DashboardPage() {
             initialCreateValues={entityCreateDraft ?? undefined}
             onCreateDraftConsumed={() => setEntityCreateDraft(null)}
             onClose={() => {
+              const key = activeEntity;
               setActiveEntity(null);
               setEntityCreateDraft(null);
               setSuggestionsRefresh((n) => n + 1);
+              if (key) closeWindow(`entity:${key}`);
             }}
           />
         </div>

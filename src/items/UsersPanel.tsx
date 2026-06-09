@@ -180,7 +180,7 @@ export function UsersPanel() {
       header: "",
       className: "w-28",
       render: (row) => (
-        <Guard privilege="users:modifier">
+        <Guard privilege="parametres:utilisateurs">
           <div className="flex gap-1">
             <Button
               variant="ghost"
@@ -225,13 +225,13 @@ export function UsersPanel() {
       {(message || error) && (
         <Alert
           variant={error ? "danger" : "success"}
-          size="inline"
+          size="box"
           role="status"
           message={error ?? message ?? ""}
         />
       )}
 
-      <Guard privilege="users:modifier">
+      <Guard privilege="parametres:utilisateurs">
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => void openCreate()} disabled={roles.length === 0}>
             <UserPlus className="h-4 w-4" />
@@ -241,7 +241,7 @@ export function UsersPanel() {
         {roles.length === 0 && (
           <Alert
             variant="warning"
-            size="inline"
+            size="box"
             message="Créez d'abord un rôle dans le panneau Rôles."
           />
         )}
@@ -254,7 +254,7 @@ export function UsersPanel() {
         emptyMessage="Aucun utilisateur."
       />
 
-      <Guard privilege="users:modifier">
+      <Guard privilege="parametres:utilisateurs">
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}

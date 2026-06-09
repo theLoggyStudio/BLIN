@@ -122,6 +122,42 @@ pub fn apply_compteurs_on_create(
     Ok(())
 }
 
+/// Aperçu des champs auto (date + n°) pour le formulaire de création — avant enregistrement.
+pub fn preview_compteurs_on_create(
+    db: &Database,
+    registry: &EntityRegistry,
+    entity_key: &str,
+) -> Result<Map<String, Value>, String> {
+    let mut data = Map::new();
+    let Some(ent) = registry.find(entity_key) else {
+        return Ok(data);
+    };
+    let table = table_name(entity_key);
+    let today = today_jjmmaaaa();
+
+    for attr in ent.attributs.iter().filter(|a| is_compteur_attr(a)) {
+        if attr.attr_type == COMPTEUR_ATTR_TYPE {
+            data.insert(
+                column_libelle(attr).into(),
+                Value::String(libelle_value(attr, ent)),
+            );
+        }
+        let numero = next_numero(
+            db,
+            &table,
+            &column_jjmmaaaa(attr),
+            &column_numero(attr),
+            &today,
+        )?;
+        data.insert(column_jjmmaaaa(attr).into(), Value::String(today.clone()));
+        data.insert(
+            column_numero(attr).into(),
+            Value::Number(serde_json::Number::from(numero)),
+        );
+    }
+    Ok(data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,6 +174,7 @@ mod tests {
             relation_exclusive_parent: true,
             default: None,
             enum_options: None,
+            ..Default::default()
         };
         assert_eq!(column_libelle(&attr), "ref_doc_libelle");
         assert_eq!(column_jjmmaaaa(&attr), "ref_doc_jjmmaaaa");

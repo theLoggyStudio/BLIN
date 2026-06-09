@@ -237,7 +237,7 @@ export function RolesPanel() {
       {(message || error) && (
         <Alert
           variant={error ? "danger" : "success"}
-          size="inline"
+          size="box"
           role="status"
           message={error ?? message ?? ""}
         />

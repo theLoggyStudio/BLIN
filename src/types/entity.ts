@@ -28,6 +28,14 @@ export interface EntityAttribute {
   relation_multiple?: boolean;
   /** Exclusif parent (one-to-one / one-to-many strict). */
   relation_exclusive_parent?: boolean;
+  /** Champ numérique source (entité porteuse de la liaison) pour l'impact. */
+  relation_impact_source?: string | null;
+  /** Champ cible numérique sur l'entité fille (stock, nombre, compteur…). */
+  relation_impact_target?: string | null;
+  /** Action sur le champ cible : increment | decrement. */
+  relation_impact_action?: "increment" | "decrement" | null;
+  /** Reporter l'impact à la validation de l'entité englobante (hiérarchie). */
+  relation_impact_defer?: boolean;
   default?: string | number | boolean | null;
   enum_options?: string[];
 }
@@ -101,11 +109,33 @@ export interface EntitySuggestion {
   privilege: string;
 }
 
+export interface EntityAccessInfo {
+  allowed: boolean;
+  entity_key: string;
+  entity_label: string;
+  contact_role_names: string[];
+}
+
 export interface EntityCreateDraft {
   entity_key: string;
   entity_label: string;
   initial_data: Record<string, unknown>;
   assistant_message: string;
+}
+
+export interface RegistryEntityCreateDraft {
+  initial_entity: EntityDef;
+  assistant_message: string;
+}
+
+export interface RegistryCreateMatchResult {
+  matched: boolean;
+  allowed: boolean;
+  draft?: RegistryEntityCreateDraft;
+}
+
+export interface RegistryEntityCreateAction {
+  initial_entity: EntityDef;
 }
 
 export type StatAggregate = "count" | "sum" | "avg" | "max" | "min";

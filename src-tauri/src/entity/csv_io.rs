@@ -1,10 +1,10 @@
-//! Import / export CSV des objets d'une entité (séparateur `;`).
+//! Import / export CSV des objets d'une entité (séparateur `|`).
 
 use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 
-use crate::csv_util::{push_row_semicolon, strip_bom};
+use crate::csv_util::{push_row_entity_csv, strip_bom, ENTITY_CSV_DELIMITER};
 use crate::db::Database;
 use crate::dda::config::is_persisted_field;
 use crate::dda::crud::{create_row, update_row};
@@ -63,9 +63,9 @@ pub fn export_entity_csv(
         .collect::<Vec<_>>();
 
     let mut w = String::from("\u{feff}");
-    push_row_semicolon(&mut w, &header);
+    push_row_entity_csv(&mut w, &header);
     for row in rows {
-        push_row_semicolon(&mut w, &row);
+        push_row_entity_csv(&mut w, &row);
     }
     let file_name = format!("blin_{screen_key}.csv");
     Ok((w, file_name))
@@ -189,7 +189,7 @@ fn parse_csv_line(line: &str) -> Result<Vec<String>, String> {
                     in_quotes = false;
                 }
             }
-            ';' if !in_quotes => {
+            c if c == ENTITY_CSV_DELIMITER && !in_quotes => {
                 out.push(cur.trim().to_string());
                 cur.clear();
             }

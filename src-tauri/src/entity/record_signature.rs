@@ -505,6 +505,12 @@ pub fn sign_record(
         }
     }
 
+    super::relation_impact::apply_on_record_validated(db, data_dir, entity_key, record_id)?;
+
+    if let Some(ent) = registry.find(entity_key) {
+        let _ = super::validation::apply_signed_object_title(db, ent, record_id, &row);
+    }
+
     Ok(())
 }
 

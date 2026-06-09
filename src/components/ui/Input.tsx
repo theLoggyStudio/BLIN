@@ -33,7 +33,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           aria-describedby={error ? `${inputId}-error` : undefined}
           {...props}
         />
-        {error && <Alert variant="danger" size="field" message={error} id={`${inputId}-error`} />}
+        {error && (
+          <Alert
+            variant="danger"
+            size="field"
+            message={error}
+            id={`${inputId}-error`}
+          />
+        )}
         {hint && !error && <p className="text-xs text-muted">{hint}</p>}
       </div>
     );

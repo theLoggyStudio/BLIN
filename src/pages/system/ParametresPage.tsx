@@ -66,8 +66,10 @@ export function ParametresPage() {
   const { title } = useEntityBranding();
   const { user, syncSessionPrivileges } = useAuth();
   const canAi = usePrivilege("ai:utiliser");
-  const canRoles = usePrivilege("users:modifier");
-  const canUsers = usePrivilege("users:voir");
+  const canParamAssistant = usePrivilege("parametres:assistant");
+  const canParamEntites = usePrivilege("parametres:entites");
+  const canParamRoles = usePrivilege("parametres:roles");
+  const canParamUtilisateurs = usePrivilege("parametres:utilisateurs");
   const [panelsOpen, setPanelsOpen] = useState<ParametresPanelsState>(loadParametresPanelsState);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -95,8 +97,9 @@ export function ParametresPage() {
   }, []);
 
   useEffect(() => {
+    if (!canParamAssistant) return;
     void loadStatus();
-  }, [loadStatus]);
+  }, [loadStatus, canParamAssistant]);
 
   const runAction = async (key: string, fn: () => Promise<string>) => {
     setBusy(key);
@@ -117,15 +120,15 @@ export function ParametresPage() {
 
   const visiblePanelIds = useMemo((): ParametresPanelId[] => {
     const ids: ParametresPanelId[] = [];
-    if (canAi) ids.push("assistant");
+    if (canParamAssistant) ids.push("assistant");
     ids.push("compte");
     ids.push("theme");
     if (canAi) ids.push("impression");
-    ids.push("entites");
-    if (canRoles) ids.push("roles");
-    if (canUsers) ids.push("utilisateurs");
+    if (canParamEntites) ids.push("entites");
+    if (canParamRoles) ids.push("roles");
+    if (canParamUtilisateurs) ids.push("utilisateurs");
     return ids;
-  }, [canAi, canRoles, canUsers]);
+  }, [canAi, canParamAssistant, canParamEntites, canParamRoles, canParamUtilisateurs]);
 
   const setPanelOpen = useCallback((id: ParametresPanelId, open: boolean) => {
     setPanelsOpen((prev) => {
@@ -201,7 +204,7 @@ export function ParametresPage() {
           </Button>
         </div>
 
-        <Guard privilege="ai:utiliser">
+        <Guard privilege="parametres:assistant">
           <CollapsiblePanel
             title={`Assistant — ${title}`}
             subtitle="Modèle local, recherche Internet optionnelle"
@@ -389,21 +392,23 @@ export function ParametresPage() {
           </CollapsiblePanel>
         </Guard>
 
-        <CollapsiblePanel
-          title="Entités métier"
-          subtitle="Source de vérité — tables SQLite et formulaires auto"
-          open={panelOpen("entites")}
-          onOpenChange={(open) => setPanelOpen("entites", open)}
-        >
-          <EntityPanel
-            onSaved={async () => {
-              await syncSessionPrivileges();
-              window.dispatchEvent(new Event(ENTITY_REGISTRY_SYNCED_EVENT));
-            }}
-          />
-        </CollapsiblePanel>
+        <Guard privilege="parametres:entites">
+          <CollapsiblePanel
+            title="Entités métier"
+            subtitle="Source de vérité — tables SQLite et formulaires auto"
+            open={panelOpen("entites")}
+            onOpenChange={(open) => setPanelOpen("entites", open)}
+          >
+            <EntityPanel
+              onSaved={async () => {
+                await syncSessionPrivileges();
+                window.dispatchEvent(new Event(ENTITY_REGISTRY_SYNCED_EVENT));
+              }}
+            />
+          </CollapsiblePanel>
+        </Guard>
 
-        <Guard privilege="users:modifier">
+        <Guard privilege="parametres:roles">
           <CollapsiblePanel
             title="Rôles"
             subtitle="Création des rôles et affectation des privilèges"
@@ -414,7 +419,7 @@ export function ParametresPage() {
           </CollapsiblePanel>
         </Guard>
 
-        <Guard privilege="users:voir">
+        <Guard privilege="parametres:utilisateurs">
           <CollapsiblePanel
             title="Utilisateurs"
             subtitle="Comptes, e-mail et affectation de rôle"

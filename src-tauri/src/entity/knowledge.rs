@@ -162,7 +162,7 @@ fn format_entity_tools(ent: &EntityDef) -> String {
         );
     }
     format!(
-        "Entité {key} :\n  dda_list {{ screen_key: \"{key}\", filters: {{}} }}\n  dda_get {{ screen_key: \"{key}\", id }}\n  dda_create {{ screen_key: \"{key}\", data: {{...attributs}} }}\n  dda_update {{ screen_key: \"{key}\", id, data }}\n  dda_delete {{ screen_key: \"{key}\", id }}\n  entity_export_csv {{ entity_key: \"{key}\" }} — CSV (;), 1ère ligne = noms des champs\n  entity_import_csv {{ entity_key: \"{key}\", csv }} — import CSV uniquement ; si entité non précisée, demander laquelle\n  Chat liste : « liste les {key} » puis choix colonnes ; « avec <entité liée> » pour jointure.\n  Export multi-entités : appeler entity_export_csv pour chaque entité demandée.\n"
+        "Entité {key} :\n  dda_list {{ screen_key: \"{key}\", filters: {{}} }}\n  dda_get {{ screen_key: \"{key}\", id }}\n  dda_create {{ screen_key: \"{key}\", data: {{...attributs}} }}\n  dda_update {{ screen_key: \"{key}\", id, data }}\n  dda_delete {{ screen_key: \"{key}\", id }}\n  entity_export_csv {{ entity_key: \"{key}\" }} — CSV (|), 1ère ligne = noms des champs ; valeurs contenant | entre guillemets\n  entity_import_csv {{ entity_key: \"{key}\", csv }} — import CSV uniquement (séparateur |) ; si entité non précisée, demander laquelle\n  Chat liste : « liste les {key} » puis choix colonnes ; « avec <entité liée> » pour jointure.\n  Export multi-entités : appeler entity_export_csv pour chaque entité demandée.\n"
     )
 }
 

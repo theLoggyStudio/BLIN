@@ -11,7 +11,7 @@ import {
   defaultListPdfTitle,
   printEntityListPdf,
 } from "@/lib/print/listPrint";
-import { formatTableBlockToken } from "@/lib/print/templateVariables";
+import { formatTableBlockToken } from "@/lib/print/templateAttributes";
 import type { ScreenConfigFile, ScreenRow } from "@/types/screen";
 import { useAlert } from "@/contexts/AlertContext";
 
@@ -184,7 +184,7 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
     >
       <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
         <Text variant="muted" className="text-sm">
-          Le modèle « Liste » insère un tableau HTML pleine largeur via la variable{" "}
+          Le modèle « Liste » insère un tableau HTML pleine largeur via l&apos;attribut{" "}
           <code className="text-secondary">{tableToken}</code> (colonnes et filtres ci-dessous).
         </Text>
 
@@ -290,7 +290,7 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
             {tableToken}.
           </p>
         )}
-        {error && <Alert variant="danger" size="inline" message={error} />}
+        {error && <Alert variant="danger" size="box" message={error} />}
       </div>
     </Modal>
   );

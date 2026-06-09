@@ -49,6 +49,7 @@ pub fn stock_entity_def() -> EntityDef {
                 relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
+                ..Default::default()
             },
             EntityAttribute {
                 nom: "enregistrement_id".into(),
@@ -60,6 +61,7 @@ pub fn stock_entity_def() -> EntityDef {
                 relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
+                ..Default::default()
             },
             EntityAttribute {
                 nom: "libelle".into(),
@@ -71,6 +73,7 @@ pub fn stock_entity_def() -> EntityDef {
                 relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
+                ..Default::default()
             },
             EntityAttribute {
                 nom: "quantite".into(),
@@ -82,6 +85,7 @@ pub fn stock_entity_def() -> EntityDef {
                 relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
+                ..Default::default()
             },
             EntityAttribute {
                 nom: "article_perissable".into(),
@@ -93,6 +97,7 @@ pub fn stock_entity_def() -> EntityDef {
                 relation_exclusive_parent: true,
                 default: Some(json!(false)),
                 enum_options: None,
+                ..Default::default()
             },
             EntityAttribute {
                 nom: "date_peremption".into(),
@@ -104,6 +109,7 @@ pub fn stock_entity_def() -> EntityDef {
                 relation_exclusive_parent: true,
                 default: None,
                 enum_options: None,
+                ..Default::default()
             },
         ],
     }

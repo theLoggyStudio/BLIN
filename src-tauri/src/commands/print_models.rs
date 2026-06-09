@@ -347,7 +347,7 @@ pub fn print_list_render(
     let sous_titre = payload.sous_titre.as_deref().unwrap_or("").to_string();
     let sous_titre = if sous_titre.is_empty() {
         format!(
-            "{} ligne(s) — variable {{{}}}",
+            "{} ligne(s) — attribut {{{}}}",
             filtered.len(),
             table_token_for_entity(&payload.screen_key)
         )

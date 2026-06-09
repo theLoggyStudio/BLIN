@@ -8,9 +8,15 @@ export interface AiToolResult {
   confirm_privilege?: string;
 }
 
+import type { EntityDef } from "@/types/entity";
+
 export interface EntityCreateAction {
   entity_key: string;
   initial_data: Record<string, unknown>;
+}
+
+export interface RegistryEntityCreateAction {
+  initial_entity: EntityDef;
 }
 
 export interface ChatDisplayColumn {
@@ -31,6 +37,7 @@ export interface AiChatReply {
   tool_results: AiToolResult[];
   display_blocks?: ChatDisplayBlock[];
   open_entity_create?: EntityCreateAction;
+  open_registry_entity_create?: RegistryEntityCreateAction;
 }
 
 export interface AiStatus {

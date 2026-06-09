@@ -12,7 +12,8 @@ import { Offpanel } from "@/items/Offpanel";
 import { ScreenHeader } from "@/items/ScreenHeader";
 import { Table, type Column } from "@/items/Table";
 import { TableImageCell } from "@/items/TableImageCell";
-import { formatCellValue } from "@/engine/screenUtils";
+import { FieldReadOnlyValue } from "@/engine/FieldReadOnlyValue";
+import { formatCellValue, isFieldVisible } from "@/engine/screenUtils";
 import {
   issuesByField,
   parseEmbedListValue,
@@ -45,10 +46,16 @@ import {
   isRecordSigned,
   isSignatureRecordReadOnly,
 } from "@/lib/entitySignature";
+import { cn } from "@/lib/utils";
 import { useAlert } from "@/contexts/AlertContext";
 import { useAuth } from "@/hooks/useAuth";
 import type { ReactNode } from "react";
-import { BUSINESS_SESSION_CHANGED_EVENT, ENTITY_CSV_IMPORT_OPEN_EVENT } from "@/constants/events";
+import {
+  BUSINESS_SESSION_CHANGED_EVENT,
+  ENTITY_CSV_IMPORT_OPEN_EVENT,
+  TASK_REMINDERS_REFRESH_EVENT,
+} from "@/constants/events";
+import { clearTaskReminderKeys } from "@/lib/taskReminders";
 import type { ScreenConfigFile, ScreenRow, ValidationIssue } from "@/types/screen";
 
 interface DataScreenProps {
@@ -58,15 +65,57 @@ interface DataScreenProps {
   onInitialCreateApplied?: () => void;
   /** Actions supplémentaires par ligne (ex. déstockage). */
   extraRowActions?: (row: ScreenRow, reload: () => void) => ReactNode;
+  /** Liste compacte : lignes plus basses, texte tronqué (modal au clic). */
+  compactList?: boolean;
+  /** Surcharge le clic ligne (ex. détail en modal). */
+  listRowClick?: "detail" | "edit";
 }
 
 type FormMode = "create" | "edit" | "detail" | null;
+
+const TACHE_ENTITY_KEY = "tache";
+
+function tacheCrudMessage(
+  action: "create" | "update" | "delete",
+  intitule?: string,
+): string {
+  const quoted = intitule?.trim() ? ` « ${intitule.trim()} »` : "";
+  switch (action) {
+    case "create":
+      return `Tâche${quoted} créée avec succès.`;
+    case "update":
+      return `Tâche${quoted} mise à jour.`;
+    case "delete":
+      return `Tâche${quoted} supprimée.`;
+  }
+}
+
+function compactListCell(content: ReactNode, fieldKey: string): ReactNode {
+  const maxW =
+    fieldKey === "description"
+      ? "max-w-[11rem]"
+      : fieldKey === "intitule"
+        ? "max-w-[10rem]"
+        : "max-w-[7rem]";
+  if (content == null || content === false) return "—";
+  if (typeof content === "string" || typeof content === "number") {
+    const text = String(content);
+    return (
+      <span className={cn("block truncate", maxW)} title={text}>
+        {text}
+      </span>
+    );
+  }
+  return <div className={cn("truncate", maxW)}>{content}</div>;
+}
 
 export function DataScreen({
   config,
   initialCreateValues,
   onInitialCreateApplied,
   extraRowActions,
+  compactList = false,
+  listRowClick,
 }: DataScreenProps) {
   const screenKey = config.screen.key;
   const pk = config.screen.primaryKey;
@@ -263,7 +312,8 @@ export function DataScreen({
             const rows = parseEmbedListValue(raw);
             return rows.length > 0 ? `${rows.length} élément(s)` : "—";
           }
-          return formatCellValue(f, raw);
+          const cell = formatCellValue(f, raw);
+          return compactList ? compactListCell(cell, f.key) : cell;
         },
       }));
       if (hasMultilineEmbeds) {
@@ -282,7 +332,7 @@ export function DataScreen({
       }
       return base;
     },
-    [listFields, hasMultilineEmbeds, pk],
+    [listFields, hasMultilineEmbeds, pk, compactList],
   );
 
   const runFormValidation = (values: ScreenRow) => {
@@ -303,7 +353,7 @@ export function DataScreen({
   };
 
   const openCreateWith = useCallback(
-    (prefill?: ScreenRow) => {
+    async (prefill?: ScreenRow) => {
       const fields = formFieldsForMode("create");
       const initial: ScreenRow = {};
       for (const f of fields) {
@@ -312,6 +362,20 @@ export function DataScreen({
         } else if (f.type === "time" && f.required) {
           initial[f.key] = defaultTimeValue();
         }
+      }
+      try {
+        const preview = await invoke<ScreenRow>("entity_compteur_preview", {
+          payload: { entity_key: screenKey },
+        });
+        if (preview) {
+          for (const [key, value] of Object.entries(preview)) {
+            if (value !== null && value !== undefined && value !== "") {
+              initial[key] = value;
+            }
+          }
+        }
+      } catch {
+        /* aperçu matricule optionnel */
       }
       if (prefill) {
         for (const [key, value] of Object.entries(prefill)) {
@@ -324,7 +388,7 @@ export function DataScreen({
       setFormValidation({ errors: [], warnings: [] });
       setFormMode("create");
     },
-    [formFieldsForMode],
+    [formFieldsForMode, screenKey],
   );
 
   const openCreate = () => {
@@ -419,15 +483,24 @@ export function DataScreen({
       }
       closeForm();
       await load();
-      showSuccess(
-        wasCreate
-          ? savedLineCount > 1
-            ? `Enregistrement créé avec ${savedLineCount} lignes (même matricule).`
-            : "Enregistrement créé avec succès."
-          : savedLineCount > 1
-            ? `Enregistrement mis à jour (${savedLineCount} lignes).`
-            : "Enregistrement mis à jour.",
-      );
+      if (screenKey === TACHE_ENTITY_KEY) {
+        const intitule = String(payload.intitule ?? "").trim();
+        if (!wasCreate) {
+          clearTaskReminderKeys(String(payload[pk] ?? ""));
+        }
+        window.dispatchEvent(new CustomEvent(TASK_REMINDERS_REFRESH_EVENT));
+        showSuccess(tacheCrudMessage(wasCreate ? "create" : "update", intitule));
+      } else {
+        showSuccess(
+          wasCreate
+            ? savedLineCount > 1
+              ? `Enregistrement créé avec ${savedLineCount} lignes (même matricule).`
+              : "Enregistrement créé avec succès."
+            : savedLineCount > 1
+              ? `Enregistrement mis à jour (${savedLineCount} lignes).`
+              : "Enregistrement mis à jour.",
+        );
+      }
     } catch (e) {
       const parsed = parseValidationReportFromError(e);
       if (parsed) {
@@ -543,12 +616,28 @@ export function DataScreen({
 
   const deleteRow = async (row: ScreenRow) => {
     const id = String(row[pk] ?? "");
-    if (!id || !window.confirm("Supprimer cet enregistrement ?")) return;
+    const confirmLabel =
+      screenKey === TACHE_ENTITY_KEY
+        ? "Supprimer cette tâche ?"
+        : "Supprimer cet enregistrement ?";
+    if (!id || !window.confirm(confirmLabel)) return;
     try {
       await invoke("dda_delete", { payload: { screen_key: screenKey, id } });
       await load();
+      if (screenKey === TACHE_ENTITY_KEY) {
+        const intitule = String(row.intitule ?? "").trim();
+        clearTaskReminderKeys(id);
+        window.dispatchEvent(new CustomEvent(TASK_REMINDERS_REFRESH_EVENT));
+        showSuccess(tacheCrudMessage("delete", intitule));
+      }
     } catch (e) {
-      setError(String(e));
+      const msg = String(e);
+      setError(msg);
+      if (screenKey === TACHE_ENTITY_KEY) {
+        showError(`Impossible de supprimer la tâche : ${msg}`);
+      } else {
+        showError(msg);
+      }
     }
   };
 
@@ -567,7 +656,8 @@ export function DataScreen({
     (formMode === "edit" && isAutoSignatureTask(formValues)) ||
     isSignedForm ||
     isSignatureReadOnlyForm;
-  const formDisplayOnly = isSignedForm || isSignatureReadOnlyForm;
+  const formDisplayOnly =
+    formMode === "detail" || isSignedForm || isSignatureReadOnlyForm;
   const excludeRecordId =
     formMode === "edit" && formValues[pk] != null ? String(formValues[pk]) : undefined;
 
@@ -602,6 +692,51 @@ export function DataScreen({
       storageFolders={config.screen.storage?.folders}
       excludeRecordId={excludeRecordId}
     />
+  );
+
+  const objetIntitule = String(formValues.intitule ?? "").trim();
+
+  const detailTextBody = (
+    <div className="space-y-4">
+      {isSignedForm && (
+        <Alert
+          variant="info"
+          size="inline"
+          message="Cet objet est signé et ne peut plus être modifié."
+        />
+      )}
+      {!isSignedForm && isRecordRefused(formValues) && (
+        <Alert
+          variant="warning"
+          size="inline"
+          message="Cet objet a été refusé. Seul un signataire peut le réaccepter par signature."
+        />
+      )}
+      {objetIntitule ? (
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Objet concerné
+          </p>
+          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
+            {objetIntitule}
+          </pre>
+        </div>
+      ) : null}
+      <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+        {formFields
+          .filter((f) => isFieldVisible(f, formValues))
+          .filter((f) => f.key !== "intitule" && f.column !== "intitule")
+          .map((field) => (
+            <FieldReadOnlyValue
+              key={field.key}
+              field={field}
+              value={formValues[field.key] ?? formValues[field.column]}
+              screenKey={screenKey}
+              excludeRecordId={excludeRecordId}
+            />
+          ))}
+      </dl>
+    </div>
   );
 
   const formBody = (
@@ -663,7 +798,7 @@ export function DataScreen({
   );
 
   return (
-    <div className="p-8">
+    <div className={compactList ? "p-2" : "p-8"}>
       <ScreenHeader
         layout={config.layout.list}
         privileges={config.screen.privileges}
@@ -688,7 +823,7 @@ export function DataScreen({
         onImported={() => void load()}
       />
 
-      <div className="mb-6 space-y-3">
+      <div className={cn("space-y-3", compactList ? "mb-3" : "mb-6")}>
         <FilterBar
           fields={filterFields}
           values={filters}
@@ -713,6 +848,7 @@ export function DataScreen({
       )}
 
       <Table
+        dense={compactList}
         pageSize={config.layout.list.pagination?.pageSize}
         pageSizeOptions={config.layout.list.pagination?.pageSizeOptions}
         showPageSizeSelector={config.layout.list.pagination?.showPageSizeSelector}
@@ -722,7 +858,7 @@ export function DataScreen({
           {
             key: "_actions",
             header: "",
-            className: "w-36",
+            className: compactList ? "w-28" : "w-36",
             sharedAcrossLines: true,
             render: (row: ListLineRow) =>
               row.__isFirstLine ? rowActions(rows.find((r) => String(r[pk] ?? "") === row.__parentId) ?? row) : null,
@@ -736,9 +872,10 @@ export function DataScreen({
         defaultSortDir="desc"
         emptyMessage={loading ? "Chargement…" : "Aucun enregistrement"}
         onRowClick={(row) => {
-          if (config.layout.list.rowClick === "detail") {
+          const clickMode = listRowClick ?? config.layout.list.rowClick;
+          if (clickMode === "detail") {
             void openRow(row, "detail");
-          } else if (config.layout.list.rowClick === "edit") {
+          } else if (clickMode === "edit") {
             void openRow(row, "edit");
           }
         }}
@@ -803,14 +940,14 @@ export function DataScreen({
           open
           onClose={closeForm}
           title={detailLayout.title}
-          size="lg"
+          size={compactList ? "xl" : "lg"}
           footer={
             <Button variant="ghost" onClick={closeForm}>
               Fermer
             </Button>
           }
         >
-          {formBody}
+          {compactList ? detailTextBody : formBody}
         </Modal>
       )}
 
@@ -855,6 +992,16 @@ export function DataScreen({
           onSigned={() => {
             setEntitySignatureTarget(null);
             void load();
+            if (screenKey === TACHE_ENTITY_KEY) {
+              showSuccess("Tâche traitée — signature enregistrée.");
+            }
+          }}
+          onRejected={() => {
+            setEntitySignatureTarget(null);
+            void load();
+            if (screenKey === TACHE_ENTITY_KEY) {
+              showSuccess("Tâche traitée — refus enregistré.");
+            }
           }}
         />
       )}

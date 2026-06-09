@@ -362,7 +362,7 @@ export function EntityEmbedGroup({
             />
           )}
           {!readOnly && !displayOnly && refEntity && options.filter((o) => o.value).length === 0 && (
-            <Alert variant="warning" size="field" className="text-amber-400" message={NO_OPTIONS_ALERT} />
+            <Alert variant="warning" size="box" message={NO_OPTIONS_ALERT} />
           )}
           {childFields.map((childField) => (
             <FieldRenderer
@@ -530,7 +530,7 @@ export function EntityEmbedListEditor({
         }
       >
         <div className="space-y-2">
-          {optionsError && <Alert variant="danger" size="inline" message={optionsError} />}
+          {optionsError && <Alert variant="danger" size="box" message={optionsError} />}
           {!refEntity && (
             <Alert
               variant="danger"
@@ -539,7 +539,7 @@ export function EntityEmbedListEditor({
             />
           )}
           {fieldError?.message && (
-            <Alert variant="danger" size="inline" message={fieldError.message} />
+            <Alert variant="danger" size="box" message={fieldError.message} />
           )}
           {rows.length === 0 && (
             <p className="text-xs text-muted">Aucune ligne — cliquez sur « Ajouter ».</p>

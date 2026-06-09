@@ -1,6 +1,7 @@
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { usePersonifiedAlertText } from "@/hooks/usePersonifiedAlertText";
 import { cn } from "@/lib/utils";
 import type { ValidationIssue } from "@/types/screen";
 
@@ -62,7 +63,28 @@ const VARIANT_CONFIG: Record<
   },
 };
 
-/** Alerte inline réutilisable (champ, formulaire, bannière). */
+function AlertListItem({
+  item,
+  variant,
+}: {
+  item: AlertItemContent;
+  variant: AlertVariant;
+}) {
+  const combined = [item.label, item.message].filter(Boolean).join(" — ");
+  const display = usePersonifiedAlertText(combined, variant);
+  const hint = usePersonifiedAlertText(item.fixHint, variant);
+
+  return (
+    <li>
+      {display}
+      {hint && (
+        <span className="block text-xs text-muted mt-0.5">→ {hint}</span>
+      )}
+    </li>
+  );
+}
+
+/** Alerte — tout texte affiché est réécrit par Loggy (ton collègue, 1re personne). */
 export function Alert({
   variant = "danger",
   message,
@@ -80,6 +102,10 @@ export function Alert({
   const cfg = VARIANT_CONFIG[variant];
   const Icon = cfg.icon;
   const liveRole = role ?? (variant === "warning" || variant === "success" ? "status" : "alert");
+  const hasList = Boolean(items?.length);
+  const displayMessage = usePersonifiedAlertText(message, variant);
+  const displayTitle = usePersonifiedAlertText(title, variant);
+  const displayFixHint = usePersonifiedAlertText(fixHint, variant);
 
   if (size === "field") {
     if (withIcon) {
@@ -91,8 +117,10 @@ export function Alert({
         >
           <Icon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <div>
-            {message && <p className="text-xs">{message}</p>}
-            {fixHint && <p className="text-xs text-muted mt-0.5">→ {fixHint}</p>}
+            {displayMessage && <p className="text-xs">{displayMessage}</p>}
+            {displayFixHint && (
+              <p className="text-xs text-muted mt-0.5">→ {displayFixHint}</p>
+            )}
           </div>
         </div>
       );
@@ -100,8 +128,12 @@ export function Alert({
 
     return (
       <div className={cn(className)} role={liveRole} id={id}>
-        {message && <p className={cn("text-xs font-medium", cfg.accent)}>{message}</p>}
-        {fixHint && <p className="text-xs text-muted mt-0.5">→ {fixHint}</p>}
+        {displayMessage && (
+          <p className={cn("text-xs font-medium", cfg.accent)}>{displayMessage}</p>
+        )}
+        {displayFixHint && (
+          <p className="text-xs text-muted mt-0.5">→ {displayFixHint}</p>
+        )}
       </div>
     );
   }
@@ -118,7 +150,7 @@ export function Alert({
         role={liveRole}
         id={id}
       >
-        {message}
+        {displayMessage}
       </p>
     );
   }
@@ -137,13 +169,12 @@ export function Alert({
         role={liveRole}
         id={id}
       >
-        {children ?? message}
+        {children ?? displayMessage}
       </div>
     );
   }
 
-  const displayTitle = title ?? (!items?.length ? message : undefined);
-  const hasList = Boolean(items?.length);
+  const resolvedTitle = displayTitle ?? (!hasList ? displayMessage : undefined);
 
   return (
     <div
@@ -152,30 +183,29 @@ export function Alert({
       aria-live={liveRole === "alert" ? "polite" : undefined}
       id={id}
     >
-      {displayTitle && (
+      {resolvedTitle && (
         <div className={cn("flex items-start gap-2", hasList && "mb-2")}>
           <Icon className={cn("h-5 w-5 shrink-0 mt-0.5", cfg.accent)} />
-          <p className={cn("text-sm font-semibold", cfg.accent)}>{displayTitle}</p>
+          <p className={cn("text-sm font-semibold", cfg.accent)}>{resolvedTitle}</p>
         </div>
       )}
       {hasList && items && (
         <ul className="space-y-2 pl-7 text-sm text-foreground list-disc">
           {items.map((item) => (
-            <li key={`${item.label ?? ""}-${item.message}`}>
-              {item.label && <span className="font-medium">{item.label}</span>}
-              {item.label && " — "}
-              {item.message}
-              {item.fixHint && (
-                <span className="block text-xs text-muted mt-0.5">→ {item.fixHint}</span>
-              )}
-            </li>
+            <AlertListItem
+              key={`${item.label ?? ""}-${item.message}-${item.fixHint ?? ""}`}
+              item={item}
+              variant={variant}
+            />
           ))}
         </ul>
       )}
-      {!hasList && message && title && (
-        <p className={cn("text-sm pl-7", cfg.text)}>{message}</p>
+      {!hasList && displayMessage && title && (
+        <p className={cn("text-sm pl-7", cfg.text)}>{displayMessage}</p>
       )}
-      {!hasList && fixHint && <p className="text-xs text-muted mt-1 pl-7">→ {fixHint}</p>}
+      {!hasList && displayFixHint && (
+        <p className="text-xs text-muted mt-1 pl-7">→ {displayFixHint}</p>
+      )}
     </div>
   );
 }
@@ -260,40 +290,58 @@ export function FieldMessages({ error, warning }: FieldMessagesProps) {
   );
 }
 
+const ALERT_AUTHOR_LABEL = "Loggy";
+
 interface AlertBubbleProps {
   message: string;
   variant?: AlertVariant;
+  personify?: boolean;
   time?: string;
   entering?: boolean;
   exiting?: boolean;
+  persistent?: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
   onClose?: () => void;
 }
 
-/** Bulle Loggy (style chat IA) pour notifications toast. */
+/** Bulle toast Loggy pour notifications. */
 export function AlertBubble({
   message,
   variant = "info",
+  personify = true,
   time,
   entering,
   exiting,
+  persistent,
+  actionLabel,
+  onAction,
   onClose,
 }: AlertBubbleProps) {
   const style = VARIANT_CONFIG[variant];
+  const displayMessage = usePersonifiedAlertText(
+    message,
+    variant,
+    personify ? "loggy" : false,
+  );
 
   return (
     <div
       className={cn(
-        "loggy-chat-bubble loggy-alert-bubble pointer-events-auto w-80 max-w-[calc(100vw-2rem)]",
+        "loggy-chat-bubble loggy-alert-bubble pointer-events-auto !w-max !max-w-[min(28vw,calc(100vw-2rem))]",
+        persistent && "loggy-alert-bubble-persistent",
         style.border,
         style.bg,
         entering && "loggy-alert-enter",
         exiting && "loggy-alert-exit",
       )}
       role="status"
-      aria-label="Message de Loggy"
+      aria-label={`Message de ${ALERT_AUTHOR_LABEL}`}
     >
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className={cn("loggy-chat-author !mb-0", style.accent)}>Loggy</span>
+        <span className={cn("loggy-chat-author !mb-0 normal-case", style.accent)}>
+          {ALERT_AUTHOR_LABEL}
+        </span>
         <div className="flex items-center gap-2">
           {time && (
             <span className="text-[10px] text-muted tabular-nums">{time}</span>
@@ -310,7 +358,19 @@ export function AlertBubble({
           )}
         </div>
       </div>
-      <p className={cn("loggy-chat-text whitespace-pre-wrap", style.text)}>{message}</p>
+      <p className={cn("loggy-chat-text whitespace-pre-wrap", style.text)}>{displayMessage}</p>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className={cn(
+            "mt-2 text-left text-sm font-medium underline underline-offset-2 transition-opacity hover:opacity-80",
+            style.accent,
+          )}
+        >
+          {actionLabel}
+        </button>
+      )}
     </div>
   );
 }

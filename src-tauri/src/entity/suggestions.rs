@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::entity::registry::EntityRegistry;
-use crate::privileges::has_privilege;
+use crate::privileges::has_any_entity_privilege;
 use crate::session::SessionUser;
 
 fn humanize_suggestion_label(nom: &str) -> String {
@@ -69,7 +69,7 @@ pub fn list_for_user(_data_dir: &Path, registry: &EntityRegistry, user: &Session
     let mut items: Vec<EntitySuggestion> = build_catalog(registry)
         .items
         .into_iter()
-        .filter(|s| has_privilege(&user.privileges, &s.privilege))
+        .filter(|s| has_any_entity_privilege(&user.privileges, &s.key))
         .collect();
     items.sort_by(|a, b| {
         a.phrase

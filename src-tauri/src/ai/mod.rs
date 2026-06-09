@@ -1,4 +1,6 @@
+pub mod access_denied;
 pub mod agent;
+pub mod alert_personify;
 pub mod dashboard_chat;
 pub mod dashboard_transition;
 pub mod quick_answers;

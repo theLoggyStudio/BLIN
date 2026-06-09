@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Upload } from "lucide-react";
+import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Modal } from "@/items/Modal";
 import { Text } from "@/items/Text";
@@ -108,9 +109,17 @@ export function EntityCsvImportModal({
     >
       <div className="space-y-4">
         <Text variant="muted" className="text-sm">
-          Loggy accepte uniquement les fichiers CSV (séparateur <code>;</code>). La première ligne
+          Loggy accepte uniquement les fichiers CSV (séparateur <code>|</code>). La première ligne
           doit contenir les noms des champs de l&apos;entité.
         </Text>
+        {fileName && (
+          <Alert
+            variant="success"
+            size="box"
+            role="status"
+            message={`Fichier « ${fileName} » prêt à l'import.`}
+          />
+        )}
         <label className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-surface-elevated/40 px-6 py-8 transition-colors hover:border-secondary/50">
           <Upload className="h-8 w-8 text-secondary" />
           <span className="text-sm text-foreground">

@@ -7,7 +7,7 @@ use super::config::ScreenConfigFile;
 use super::knowledge;
 use super::validation::{build_validation_catalog, format_validation_knowledge};
 use crate::db::Database;
-use crate::print_template::{auto_print_description, build_fiche_html_from_config, FICHE_CSS};
+use crate::print_model_sync;
 
 use crate::sync_progress::SyncReporter;
 
@@ -43,7 +43,7 @@ pub fn run_all_with_progress(
             "filters" => trigger_filters(db, data_dir, cfg)?,
             "knowledge" => knowledge::write_screen_knowledge(data_dir, cfg)?,
             "folders" => trigger_folders(data_dir, cfg)?,
-            "print" => trigger_print_model(db, cfg)?,
+            "print" => trigger_print_models(db, cfg)?,
             _ => {}
         }
     }
@@ -179,27 +179,7 @@ fn trigger_folders(data_dir: &Path, cfg: &ScreenConfigFile) -> Result<(), String
     Ok(())
 }
 
-fn trigger_print_model(db: &Database, cfg: &ScreenConfigFile) -> Result<(), String> {
-    let Some(print) = &cfg.screen.print else {
-        return Ok(());
-    };
-    if !print.enabled || !print.single_object {
-        return Ok(());
-    }
-    let screen_key = &print.screen_key;
-    let base_name = print
-        .template_name
-        .clone()
-        .unwrap_or_else(|| format!("Fiche {}", cfg.screen.label));
-    let html = build_fiche_html_from_config(cfg);
-    let description = auto_print_description("fiche", screen_key);
-    db.sync_auto_print_model(
-        screen_key,
-        &base_name,
-        &description,
-        &html,
-        FICHE_CSS,
-        "Fiche",
-    )
-    .map_err(|e| e.to_string())
+/// Synchronise les modèles HTML/CSS de base (fiche + liste) avec les attributs de l'entité.
+fn trigger_print_models(db: &Database, cfg: &ScreenConfigFile) -> Result<(), String> {
+    print_model_sync::sync_entity_base_print_models(db, cfg)
 }

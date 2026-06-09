@@ -58,5 +58,7 @@ export function normalizePrivilegesForSave(
   if (nonStar.length > 0 && nonStar.every((p) => selected.has(p))) {
     return [WILDCARD_PRIVILEGE];
   }
-  return sortPrivileges(selected.filter((p) => p !== WILDCARD_PRIVILEGE));
+  return sortPrivileges(
+    Array.from(selected).filter((p) => p !== WILDCARD_PRIVILEGE),
+  );
 }

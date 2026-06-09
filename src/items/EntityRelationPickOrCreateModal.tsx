@@ -92,7 +92,7 @@ export function EntityRelationPickOrCreateModal({
             {filtered.length === 0 ? (
               <Alert
                 variant="info"
-                size="inline"
+                size="box"
                 centered
                 className="px-3 py-6"
                 message={

@@ -151,7 +151,12 @@ fn build_compteur_fields(attr: &EntityAttribute, list_enabled: bool) -> Vec<Fiel
     .into_iter()
     .map(|mut f| {
         if let Some(form) = f.form.as_mut() {
-            form.placeholder = Some(hint.into());
+            let is_manual_matricule = is_matricule && f.key == libelle_col;
+            if is_manual_matricule {
+                form.placeholder = Some(hint.into());
+            } else if !is_matricule {
+                form.placeholder = Some(hint.into());
+            }
         }
         f
     })
@@ -415,6 +420,16 @@ fn build_embed_fields_for_entity_attr(
 
 fn apply_tache_screen_fields(fields: &mut [FieldDef]) {
     for f in fields.iter_mut() {
+        if f.key == "intitule" {
+            if let Some(list) = f.list.as_mut() {
+                list.enabled = true;
+                list.sortable = false;
+            }
+            if let Some(form) = f.form.as_mut() {
+                form.read_only = Some(true);
+                form.col_span = Some(2);
+            }
+        }
         if matches!(
             f.key.as_str(),
             "entite_a_signer"
@@ -773,6 +788,7 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
     if ent.nom == TACHE_ENTITY_KEY {
         apply_tache_screen_fields(&mut fields);
         list_layout.actions.retain(|a| a != "import" && a != "export");
+        list_layout.row_click = Some("detail".into());
     }
 
     ScreenConfigFile {
@@ -847,6 +863,7 @@ mod tests {
             relation_exclusive_parent: true,
             default: None,
             enum_options: None,
+            ..Default::default()
         }
     }
 

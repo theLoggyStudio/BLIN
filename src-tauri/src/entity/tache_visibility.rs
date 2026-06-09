@@ -33,6 +33,7 @@ pub fn ensure_tache_visibility_in_registry(registry: &mut EntityRegistry) {
         relation_exclusive_parent: true,
         default: Some(Value::String(VIS_PUBLIQUE.into())),
         enum_options: None,
+        ..Default::default()
     });
     ent.attributs.push(EntityAttribute {
         nom: COL_ROLES_VISIBLES.into(),
@@ -44,6 +45,7 @@ pub fn ensure_tache_visibility_in_registry(registry: &mut EntityRegistry) {
         relation_exclusive_parent: true,
         default: None,
         enum_options: None,
+        ..Default::default()
     });
 }
 

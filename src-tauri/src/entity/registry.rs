@@ -19,10 +19,12 @@ pub fn is_orphan_entity_key(key: &str) -> bool {
         .any(|k| k.eq_ignore_ascii_case(key.trim()))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EntityAttribute {
+    #[serde(default)]
     pub nom: String,
     #[serde(rename = "type")]
+    #[serde(default = "default_attr_type_string")]
     pub attr_type: String,
     #[serde(default)]
     pub label: Option<String>,
@@ -38,6 +40,18 @@ pub struct EntityAttribute {
     pub default: Option<Value>,
     #[serde(default)]
     pub enum_options: Option<Vec<String>>,
+    #[serde(default)]
+    pub relation_impact_source: Option<String>,
+    #[serde(default)]
+    pub relation_impact_target: Option<String>,
+    #[serde(default)]
+    pub relation_impact_action: Option<String>,
+    #[serde(default)]
+    pub relation_impact_defer: bool,
+}
+
+fn default_attr_type_string() -> String {
+    "string".into()
 }
 
 fn default_ai_suggestions() -> bool {

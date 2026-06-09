@@ -377,6 +377,12 @@ pub fn create_row_with_user(
     }
     let row = get_row(db, cfg, &id)?;
     crate::entity::validation::after_entity_row_created(db, &cfg.screen.key, &row)?;
+    crate::entity::relation_impact::apply_after_create_if_ready(
+        db,
+        &db.data_dir,
+        &cfg.screen.key,
+        &id,
+    );
     crate::entity::session_scope::activate_if_session_entity(&db.data_dir, &registry, &cfg.screen.key, &row)?;
     Ok(row)
 }

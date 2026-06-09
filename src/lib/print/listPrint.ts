@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { PrintRowRenderResult } from "@/types/print";
 import { exportHtmlToPdf } from "@/lib/print/pdfExport";
-import { tableTokenForEntity } from "@/lib/print/templateVariables";
+import { tableTokenForEntity } from "@/lib/print/templateAttributes";
 
 export interface PrintListRenderOptions {
   screenKey: string;

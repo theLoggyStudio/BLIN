@@ -42,6 +42,16 @@ pub struct AiDashboardTransitionRequest {
 }
 
 #[derive(serde::Deserialize)]
+pub struct AiEntityAccessDeniedRequest {
+    pub user_message: String,
+    pub entity_key: String,
+    #[serde(default)]
+    pub entity_label: Option<String>,
+    #[serde(default)]
+    pub contact_role_names: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
 pub struct AiConfirmRequest {
     pub pending_id: String,
 }
@@ -58,6 +68,9 @@ pub struct AiProfileRequest {
 
 #[tauri::command]
 pub fn ai_status(state: State<'_, AppState>) -> Result<AiStatus, String> {
+    state
+        .desktop_sessions
+        .require_privilege("parametres:assistant")?;
     let db = state.db.lock();
     let (profiled, profile_summary) = hardware_profile::profile_summary(&db)?;
     let (backend, gpu_layers, ctx_size, threads) = LlamaServer::runtime_info(Some(&db));
@@ -95,7 +108,9 @@ pub struct AiWebSearchConfigResponse {
 
 #[tauri::command]
 pub fn ai_web_search_get_config(state: State<'_, AppState>) -> Result<AiWebSearchConfigResponse, String> {
-    state.desktop_sessions.require_privilege("ai:utiliser")?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:assistant")?;
     let db = state.db.lock();
     let cfg = web_search::load_config(&db.data_dir);
     Ok(AiWebSearchConfigResponse {
@@ -108,7 +123,9 @@ pub fn ai_web_search_set_config(
     state: State<'_, AppState>,
     payload: AiWebSearchConfigPayload,
 ) -> Result<AiWebSearchConfigResponse, String> {
-    state.desktop_sessions.require_privilege("ai:utiliser")?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:assistant")?;
     let db = state.db.lock();
     let cfg = WebSearchConfig {
         enabled: payload.enabled,
@@ -124,7 +141,9 @@ pub fn ai_profile_runtime(
     state: State<'_, AppState>,
     payload: Option<AiProfileRequest>,
 ) -> Result<String, String> {
-    state.desktop_sessions.require_privilege("ai:utiliser")?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:assistant")?;
     let force = payload.and_then(|p| p.force).unwrap_or(false);
     let db = state.db.lock();
     if !LlamaServer::model_ready() {
@@ -145,7 +164,9 @@ pub fn ai_profile_runtime(
 
 #[tauri::command]
 pub fn ai_reindex(state: State<'_, AppState>) -> Result<usize, String> {
-    state.desktop_sessions.require_privilege("ai:utiliser")?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:assistant")?;
     let db = state.db.lock();
     Agent::new(&db).reindex()
 }
@@ -196,6 +217,40 @@ pub fn ai_chat(state: State<'_, AppState>, payload: AiChatRequest) -> Result<Cha
 }
 
 #[tauri::command]
+pub fn ai_entity_access_denied(
+    state: State<'_, AppState>,
+    payload: AiEntityAccessDeniedRequest,
+) -> Result<String, String> {
+    state.desktop_sessions.require_session()?;
+    let key = payload.entity_key.trim();
+    if key.is_empty() {
+        return Err("Entité cible manquante.".into());
+    }
+    let db = state.db.lock();
+    let data_dir = db.data_dir.clone();
+    let registry = crate::entity::registry::load(&data_dir)?;
+    let ent = registry.find(key);
+    let label = payload
+        .entity_label
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| ent.and_then(|e| e.label.clone()))
+        .unwrap_or_else(|| key.to_string());
+    let contact_roles = if payload.contact_role_names.is_empty() {
+        db.list_role_names_with_entity_access(key)
+            .map_err(|e| e.to_string())?
+    } else {
+        payload.contact_role_names
+    };
+    crate::ai::access_denied::generate_access_denied_phrase(
+        &db,
+        &payload.user_message,
+        key,
+        &label,
+        &contact_roles,
+    )
+}
+
+#[tauri::command]
 pub fn ai_dashboard_transition(
     state: State<'_, AppState>,
     payload: AiDashboardTransitionRequest,
@@ -220,6 +275,51 @@ pub fn ai_dashboard_transition(
     )
 }
 
+#[derive(serde::Deserialize)]
+pub struct AiAlertPersonifyPayload {
+    pub message: String,
+    #[serde(default = "default_alert_variant")]
+    pub variant: String,
+}
+
+fn default_alert_variant() -> String {
+    "info".into()
+}
+
+/// Réécrit une notification à la première personne (Loggy).
+#[tauri::command]
+pub fn ai_alert_personify(
+    state: State<'_, AppState>,
+    payload: AiAlertPersonifyPayload,
+) -> Result<String, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    Ok(crate::ai::alert_personify::personify_alert(
+        &db,
+        &payload.message,
+        &payload.variant,
+    ))
+}
+
+#[derive(serde::Deserialize)]
+pub struct AiTaskReminderPersonifyPayload {
+    pub message: String,
+}
+
+/// Réécrit un rappel de tâche planifiée (Loggy, persistant).
+#[tauri::command]
+pub fn ai_task_reminder_personify(
+    state: State<'_, AppState>,
+    payload: AiTaskReminderPersonifyPayload,
+) -> Result<String, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    Ok(crate::ai::alert_personify::personify_task_reminder(
+        &db,
+        &payload.message,
+    ))
+}
+
 #[tauri::command]
 pub fn ai_confirm_action(
     state: State<'_, AppState>,
@@ -235,7 +335,7 @@ pub fn ai_dismiss_action(
     state: State<'_, AppState>,
     payload: AiDismissRequest,
 ) -> Result<(), String> {
-    state.desktop_sessions.require_privilege("ai:utiliser")?;
+    let session = state.desktop_sessions.require_privilege("ai:utiliser")?;
     let db = state.db.lock();
     db.ai_delete_pending(&payload.pending_id)
         .map_err(|e| e.to_string())

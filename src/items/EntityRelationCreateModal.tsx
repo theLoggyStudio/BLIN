@@ -163,7 +163,7 @@ export function EntityRelationCreateModal({
       {!loading && config && (
         <div className="space-y-4 pr-1">
           <ValidationBanner errors={validation.errors} warnings={validation.warnings} />
-          {error && <Alert variant="danger" size="inline" message={error} />}
+          {error && <Alert variant="danger" size="box" message={error} />}
           {formFields.map((field) => (
             <FieldRenderer
               key={field.key}

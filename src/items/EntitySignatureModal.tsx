@@ -147,16 +147,16 @@ export function EntitySignatureModal({
       {loading && (
         <p className="py-8 text-center text-sm text-muted">Chargement de la fiche…</p>
       )}
-      {!loading && error && <Alert variant="danger" size="inline" message={error} />}
+      {!loading && error && <Alert variant="danger" size="box" message={error} />}
       {!loading && detail && (
         <div className="flex max-h-[70vh] flex-col gap-4">
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             {showPendingNotice && (
-              <Alert variant="warning" size="box" className="py-3 text-amber-100">
-                <p>
-                  <strong className="text-amber-50">{detail.entityLabel}</strong> non signé.
-                  Veuillez demander aux personnes suivantes :
-                </p>
+              <Alert
+                variant="warning"
+                size="box"
+                title={`${detail.entityLabel} non signé — demandez aux personnes suivantes :`}
+              >
                 <SignatoryContactsList contacts={detail.signatoryContacts} />
               </Alert>
             )}
@@ -165,7 +165,6 @@ export function EntitySignatureModal({
               <Alert
                 variant="info"
                 size="box"
-                className="text-foreground"
                 message="Cet objet doit être signé avant d'être utilisable dans une liaison. Contrôlez la fiche ci-dessous puis signez ou refusez (une seule décision suffit)."
               />
             )}
@@ -174,32 +173,26 @@ export function EntitySignatureModal({
               <Alert
                 variant="success"
                 size="box"
-                className="text-emerald-300"
                 message="Objet signé — modifications interdites."
               />
             )}
 
             {detail.rejected && (
-              <Alert variant="danger" size="box" className="text-red-200">
-                <p>
-                  Signature refusée
-                  {detail.refusedBy ? ` par ${detail.refusedBy}` : ""}.
-                </p>
-                {detail.refusalReason?.trim() && (
-                  <p className="mt-2 text-sm">
-                    <span className="font-medium">Motif :</span> {detail.refusalReason}
-                  </p>
-                )}
-                {detail.canSign ? (
-                  <p className="mt-2 text-sm">
-                    Vous pouvez réaccepter cet objet en le signant ci-dessous.
-                  </p>
-                ) : (
-                  <p className="mt-2 text-sm">
-                    Un signataire peut réaccepter cet objet par signature.
-                  </p>
-                )}
-              </Alert>
+              <Alert
+                variant="danger"
+                size="box"
+                title={`Signature refusée${detail.refusedBy ? ` par ${detail.refusedBy}` : ""}`}
+                message={
+                  detail.refusalReason?.trim()
+                    ? `Motif : ${detail.refusalReason.trim()}`
+                    : undefined
+                }
+                fixHint={
+                  detail.canSign
+                    ? "Vous pouvez réaccepter cet objet en le signant ci-dessous."
+                    : "Un signataire peut réaccepter cet objet par signature."
+                }
+              />
             )}
 
             {detail.canView && detail.fields.length > 0 && (

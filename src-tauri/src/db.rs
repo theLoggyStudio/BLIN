@@ -63,6 +63,8 @@ impl Database {
         db.migrate_v16()?;
         db.migrate_v17()?;
         db.migrate_v18()?;
+        db.migrate_v19()?;
+        db.migrate_v20()?;
         db.seed()?;
         db.ensure_admin_account()?;
         db.ensure_demo_bureau()?;
@@ -213,9 +215,12 @@ impl Database {
                 "Directeur",
                 &[
                     "directeur:confirmer",
-                    "users:voir",
-                    "users:modifier",
                     "ai:utiliser",
+                    "parametres:assistant",
+                    "parametres:entites",
+                    "parametres:entites:creer",
+                    "parametres:roles",
+                    "parametres:utilisateurs",
                 ],
             ),
             ("role-agent", "Agent", &["ai:utiliser"]),
@@ -1118,16 +1123,38 @@ impl Database {
     }
 
     pub fn list_all_privileges(&self) -> Result<Vec<String>, DbError> {
+        use std::collections::HashSet;
+        let mut set: HashSet<String> = crate::privileges::system_privileges()
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
         let mut stmt = self
             .conn
             .prepare("SELECT DISTINCT privilege FROM role_privileges ORDER BY privilege")?;
         let rows = stmt
             .query_map([], |row| row.get(0))?
             .collect::<Result<Vec<String>, _>>()?;
-        Ok(rows
+        for p in rows {
+            if !crate::privileges::is_legacy_immo_privilege(&p) {
+                set.insert(p);
+            }
+        }
+        let mut out: Vec<String> = set.into_iter().collect();
+        out.sort();
+        Ok(out)
+    }
+
+    /// Rôles disposant d'au moins un privilège sur l'entité (`{entité}:*` ou `{entité}:…`).
+    pub fn list_role_names_with_entity_access(&self, entity_key: &str) -> Result<Vec<String>, DbError> {
+        let roles = self.list_roles_with_privileges()?;
+        let mut names: Vec<String> = roles
             .into_iter()
-            .filter(|p| !crate::privileges::is_legacy_immo_privilege(p))
-            .collect())
+            .filter(|r| crate::privileges::has_any_entity_privilege(&r.privileges, entity_key))
+            .map(|r| r.nom)
+            .collect();
+        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names.dedup();
+        Ok(names)
     }
 
     pub fn list_roles_with_privileges(&self) -> Result<Vec<RoleWithPrivilegesRow>, DbError> {

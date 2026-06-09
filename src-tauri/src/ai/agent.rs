@@ -33,6 +33,11 @@ pub struct EntityCreateAction {
     pub initial_data: serde_json::Value,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct RegistryEntityCreateAction {
+    pub initial_entity: serde_json::Value,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatDisplayColumn {
@@ -59,6 +64,8 @@ pub struct ChatReply {
     pub display_blocks: Vec<ChatDisplayBlock>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_entity_create: Option<EntityCreateAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_registry_entity_create: Option<RegistryEntityCreateAction>,
 }
 
 pub struct Agent<'a> {
@@ -87,6 +94,7 @@ impl<'a> Agent<'a> {
             tool_results,
             display_blocks: vec![],
             open_entity_create: None,
+            open_registry_entity_create: None,
         })
     }
 

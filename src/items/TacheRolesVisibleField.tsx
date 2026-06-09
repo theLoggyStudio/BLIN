@@ -81,7 +81,7 @@ export function TacheRolesVisibleField({
           </label>
         ))}
       </div>
-      {error && <Alert variant="danger" size="field" message={error} />}
+      {error && <Alert variant="danger" size="box" message={error} />}
     </div>
   );
 }
