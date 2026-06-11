@@ -21,7 +21,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        "rounded-xl border bg-surface overflow-hidden",
+        "rounded-xl border bg-card overflow-hidden",
         variant === "accent"
           ? "border-secondary/30 shadow-lg shadow-secondary/5"
           : "border-border",

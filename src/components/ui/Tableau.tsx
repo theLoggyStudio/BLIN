@@ -236,7 +236,7 @@ export function Tableau<T extends Record<string, unknown>>({
 
       {showPagination && (
         <div
-          className="flex flex-col gap-3 border-t border-border px-4 py-3 bg-surface sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 border-t border-border px-4 py-3 bg-surface-elevated/50 sm:flex-row sm:items-center sm:justify-between"
           role="navigation"
           aria-label="Pagination du tableau"
         >

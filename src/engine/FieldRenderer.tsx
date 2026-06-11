@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { usePrivilege } from "@/hooks/usePrivilege";
 import { EntityEmbedGroup, EntityEmbedListEditor } from "@/items/EntityEmbedField";
+import { EntityRelationAutocomplete, fetchRelationLabels } from "@/items/EntityRelationAutocomplete";
 import { EntityRelationCreateModal } from "@/items/EntityRelationCreateModal";
 import { EntityRelationPickOrCreateModal } from "@/items/EntityRelationPickOrCreateModal";
 import { TacheRolesVisibleField } from "@/items/TacheRolesVisibleField";
@@ -13,7 +13,6 @@ import { FieldMessages } from "@/items/Alert";
 import { ImageField } from "@/items/ImageField";
 import { ImagesField } from "@/items/ImagesField";
 import type { FieldDef, ScreenRow, ValidationIssue } from "@/types/screen";
-import type { RelationSelectOption } from "@/types/entity";
 import { FieldReadOnlyValue } from "@/engine/FieldReadOnlyValue";
 import { defaultStorageFolder, mediaEntityId } from "./mediaUtils";
 import { isFieldVisible } from "./screenUtils";
@@ -41,9 +40,6 @@ interface FieldRendererProps {
   fieldErrorsMap?: Record<string, ValidationIssue>;
   fieldWarningsMap?: Record<string, ValidationIssue>;
 }
-
-/** Valeur réservée de la première option « Créer un nouveau ». */
-export const ENTITY_REF_CREATE_NEW = "__blin_create_new__";
 
 function parseEntityRefListValue(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -81,6 +77,7 @@ function EntityRefSelect({
   field: FieldDef;
   value: string;
   readOnly?: boolean;
+  displayOnly?: boolean;
   screenKey: string;
   excludeRecordId?: string;
   fieldError?: ValidationIssue;
@@ -89,70 +86,29 @@ function EntityRefSelect({
 }) {
   const refEntity = field.form?.refEntity?.trim() ?? "";
   const canCreate = usePrivilege(refEntity ? `${refEntity}:creer` : "");
-  const [options, setOptions] = useState<RelationSelectOption[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const selectValueRef = useRef(value);
-
-  useEffect(() => {
-    selectValueRef.current = value;
-  }, [value]);
-
-  const load = useCallback(async () => {
-    try {
-      const rows = await invoke<RelationSelectOption[]>("entity_relation_options", {
-        payload: {
-          screen_key: screenKey,
-          field_key: field.key,
-          exclude_record_id: excludeRecordId ?? null,
-        },
-      });
-      setOptions(rows);
-    } catch {
-      setOptions([{ value: "", label: "— Aucun —" }]);
-    }
-  }, [screenKey, field.key, excludeRecordId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const merged =
-    value && !options.some((o) => o.value === value)
-      ? [...options, { value, label: value }]
-      : options;
-
-  const selectOptions = [
-    ...(canCreate && refEntity && !readOnly
-      ? [{ value: ENTITY_REF_CREATE_NEW, label: "Créer un nouveau" }]
-      : []),
-    ...merged.map((o) => ({ value: o.value, label: o.label })),
-  ];
 
   const handleCreated = (row: ScreenRow) => {
     const id = row.id != null ? String(row.id) : "";
     if (!id) return;
     onChange(field.key, id);
-    void load();
   };
 
   return (
     <>
-      <Select
+      <EntityRelationAutocomplete
         label={field.label}
+        screenKey={screenKey}
+        fieldKey={field.key}
+        excludeRecordId={excludeRecordId}
         value={value}
         disabled={readOnly}
         error={fieldError?.message}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v === ENTITY_REF_CREATE_NEW) {
-            setCreateOpen(true);
-            return;
-          }
-          selectValueRef.current = v;
-          onChange(field.key, v);
-        }}
+        onSelect={(option) => onChange(field.key, option.value)}
         onBlur={() => onBlur?.(field.key)}
-        options={selectOptions}
+        onCreateNew={
+          canCreate && refEntity && !readOnly ? () => setCreateOpen(true) : undefined
+        }
       />
       {refEntity && (
         <EntityRelationCreateModal
@@ -172,45 +128,46 @@ function EntityRefListEditor({
   readOnly,
   screenKey,
   excludeRecordId,
-  fieldError,
   onChange,
   onBlur,
 }: {
   field: FieldDef;
   value: unknown;
   readOnly?: boolean;
+  displayOnly?: boolean;
   screenKey: string;
   excludeRecordId?: string;
   fieldError?: ValidationIssue;
   onChange: (key: string, value: unknown) => void;
   onBlur?: (key: string) => void;
 }) {
-  const [options, setOptions] = useState<RelationSelectOption[]>([]);
+  const [labels, setLabels] = useState<Map<string, string>>(new Map());
   const [pickOpen, setPickOpen] = useState(false);
   const rows = parseEntityRefListValue(value);
   const refEntity = field.form?.refEntity?.trim() ?? "";
 
-  const load = useCallback(async () => {
-    try {
-      const fetched = await invoke<RelationSelectOption[]>("entity_relation_options", {
-        payload: {
-          screen_key: screenKey,
-          field_key: field.key,
-          exclude_record_id: excludeRecordId ?? null,
-        },
-      });
-      setOptions(fetched);
-    } catch {
-      setOptions([{ value: "", label: "— Aucun —" }]);
-    }
-  }, [screenKey, field.key, excludeRecordId]);
-
+  // Résolution des libellés des lignes sélectionnées uniquement (pas de chargement total).
+  const rowsKey = rows.join("|");
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    const ids = rowsKey ? rowsKey.split("|").filter(Boolean) : [];
+    if (ids.length === 0) {
+      setLabels(new Map());
+      return;
+    }
+    void fetchRelationLabels(screenKey, field.key, ids, excludeRecordId)
+      .then((map) => {
+        if (!cancelled) setLabels(map);
+      })
+      .catch(() => {
+        if (!cancelled) setLabels(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rowsKey, screenKey, field.key, excludeRecordId]);
 
-  const labelById = (id: string) =>
-    options.find((o) => o.value === id)?.label ?? id;
+  const labelById = (id: string) => labels.get(id) ?? id;
 
   const updateRows = (next: string[]) => {
     onChange(field.key, next);
@@ -263,10 +220,11 @@ function EntityRefListEditor({
           entityKey={refEntity}
           open={pickOpen}
           onClose={() => setPickOpen(false)}
-          options={options}
+          screenKey={screenKey}
+          fieldKey={field.key}
+          excludeRecordId={excludeRecordId}
           excludeIds={rows}
           onSelected={addRow}
-          onOptionsRefresh={() => void load()}
         />
       )}
     </div>

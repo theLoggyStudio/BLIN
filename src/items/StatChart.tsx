@@ -210,7 +210,7 @@ export function StatChart({
   const empty = isMulti ? multiRows.length === 0 : simpleRows.length === 0;
 
   return (
-    <div className={cn("card-panel rounded-xl border border-border p-4", className)}>
+    <div className={cn("rounded-xl border border-border bg-card p-4", className)}>
       {title && (
         <Text variant="label" as="h2" className="mb-3">
           {title}

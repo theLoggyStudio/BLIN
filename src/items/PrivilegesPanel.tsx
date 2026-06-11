@@ -4,6 +4,7 @@ import { Save, Shield } from "lucide-react";
 import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
+import { PaginatedList } from "@/items/PaginatedList";
 import { Select } from "@/items/Select";
 import { Text } from "@/items/Text";
 import {
@@ -142,26 +143,29 @@ export function PrivilegesPanel({ onClose }: PrivilegesPanelProps) {
         placeholder="ex. tache, users, ai"
       />
 
-      <div className="max-h-64 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-        {filteredPrivileges.length === 0 ? (
-          <p className="p-4 text-sm text-muted">Aucun privilège.</p>
-        ) : (
-          filteredPrivileges.map((priv) => (
-            <label
-              key={priv}
-              className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-surface-elevated/50"
-            >
-              <input
-                type="checkbox"
-                checked={isPrivilegeChecked(selected, priv)}
-                onChange={() => toggle(priv)}
-                className="h-4 w-4 rounded border-border accent-secondary"
-              />
-              <span className="font-mono text-sm text-foreground">{priv}</span>
-            </label>
-          ))
+      <PaginatedList
+        items={filteredPrivileges}
+        className="rounded-lg border border-border divide-y divide-border"
+        empty={
+          <div className="rounded-lg border border-border">
+            <p className="p-4 text-sm text-muted">Aucun privilège.</p>
+          </div>
+        }
+        renderItem={(priv) => (
+          <label
+            key={priv}
+            className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-surface-elevated/50"
+          >
+            <input
+              type="checkbox"
+              checked={isPrivilegeChecked(selected, priv)}
+              onChange={() => toggle(priv)}
+              className="h-4 w-4 rounded border-border accent-secondary"
+            />
+            <span className="font-mono text-sm text-foreground">{priv}</span>
+          </label>
         )}
-      </div>
+      />
 
       <div className="flex flex-wrap gap-2 pt-2">
         <Button size="sm" onClick={() => void save()} disabled={saving || !roleId}>

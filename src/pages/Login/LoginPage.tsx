@@ -1,6 +1,6 @@
 import { useCallback, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Copy, Lock } from "lucide-react";
+import { Copy, Lock, QrCode } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEntityBranding } from "@/hooks/useEntityBranding";
 import { Button } from "@/components/ui/Button";
@@ -8,27 +8,15 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/items/Alert";
 import { Modal } from "@/items/Modal";
 import { QRCodeSVG } from "qrcode.react";
+import { DEFAULT_ADMIN_EMAIL} from "@/constants/variable.constant";
 
-const DEFAULT_ADMIN_EMAIL = "admin@blin.local";
+
 
 interface RemoteConnectionResponse {
   ip?: string;
   url?: string;
   frontUrl?: string;
   success?: boolean;
-}
-
-function QrCodeIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 512 512"
-      aria-hidden="true"
-      className={className}
-      fill="currentColor"
-    >
-      <path d="M0 80C0 35.8 35.8 0 80 0H176c44.2 0 80 35.8 80 80V176c0 44.2-35.8 80-80 80H80c-44.2 0-80-35.8-80-80V80zM64 64c-17.7 0-32 14.3-32 32v64c0 17.7 14.3 32 32 32H128c17.7 0 32-14.3 32-32V96c0-17.7-14.3-32-32-32H64zm0 32H128v64H64V96zm128-32c0 17.7 14.3 32 32 32s32-14.3 32-32-14.3-32-32-32-32 14.3-32 32zm32 64c-17.7 0-32 14.3-32 32v32c0 17.7 14.3 32 32 32h32v32c0 17.7 14.3 32 32 32s32-14.3 32-32V224c17.7 0 32-14.3 32-32V160c0-17.7-14.3-32-32-32H224zM352 64c0-17.7-14.3-32-32-32s-32 14.3-32 32V96c0 17.7 14.3 32 32 32h32v32c0 17.7 14.3 32 32 32s32-14.3 32-32V128c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32H384c-17.7 0-32 14.3-32 32V64zM384 256c-17.7 0-32 14.3-32 32v64c0 17.7 14.3 32 32 32h64c17.7 0 32-14.3 32-32V288c0-17.7-14.3-32-32-32H384zm0 32h64v64H384V288z" />
-    </svg>
-  );
 }
 
 export function LoginPage() {
@@ -106,7 +94,7 @@ export function LoginPage() {
 
   return (
     <div className="login-page flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="card-panel relative w-full max-w-md rounded-2xl border border-border p-8 shadow-2xl">
+      <div className="relative w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-2xl">
         <button
           type="button"
           onClick={openQrModal}
@@ -114,7 +102,7 @@ export function LoginPage() {
           aria-label="Scannez pour vous connecter"
           title="Scannez pour vous connecter"
         >
-          <QrCodeIcon className="h-4 w-4" />
+          <QrCode className="h-5 w-5" />
         </button>
         <div className="mb-8 flex flex-col items-center gap-4 text-center">
           <img src={logoSrc} alt={title} className="h-16 w-16 object-contain" />
@@ -170,7 +158,7 @@ export function LoginPage() {
       >
         <div className="flex flex-col items-center gap-4">
           {scanLoading ? (
-            <div className="flex h-[190px] w-[190px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
+            <div className="flex h-[190px] w-[190px] items-center justify-center rounded-lg border border-border bg-surface-elevated text-sm text-muted">
               Chargement...
             </div>
           ) : scanUrl ? (
@@ -178,7 +166,7 @@ export function LoginPage() {
               <QRCodeSVG value={scanUrl} size={190} />
             </div>
           ) : (
-            <div className="flex h-[190px] w-[190px] items-center justify-center rounded-lg bg-muted px-4 text-center text-sm text-muted-foreground">
+            <div className="flex h-[190px] w-[190px] items-center justify-center rounded-lg border border-border bg-surface-elevated px-4 text-center text-sm text-muted">
               {scanError || "Adresse indisponible"}
             </div>
           )}

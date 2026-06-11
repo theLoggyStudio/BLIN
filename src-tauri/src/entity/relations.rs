@@ -295,13 +295,26 @@ pub fn relation_detail(
     Ok(RelationDetailResponse { panels })
 }
 
+/// Échappe les jokers LIKE (`%`, `_`, `\`) d'une recherche utilisateur.
+fn escape_like_pattern(raw: &str) -> String {
+    raw.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
 /// Options pour un champ entity_ref : enregistrements libres (non déjà liés sur cette entité parente).
+///
+/// - `search` : filtre LIKE sur le libellé (autocomplétion).
+/// - `limit` : nombre max de suggestions (0 = pas de listing général, seulement `include_ids`).
+/// - `include_ids` : IDs toujours retournés (valeur courante / résolution de libellés),
+///   indépendamment du filtre de recherche et de l'exclusivité parent.
 pub fn relation_select_options(
     db: &Database,
     data_dir: &std::path::Path,
     screen_key: &str,
     field_key: &str,
     exclude_record_id: Option<&str>,
+    search: Option<&str>,
+    limit: Option<usize>,
+    include_ids: Option<&[String]>,
 ) -> Result<Vec<RelationSelectOptionExt>, String> {
     fn parse_relation_ids(raw: &str) -> Vec<String> {
         let t = raw.trim();
@@ -370,32 +383,6 @@ pub fn relation_select_options(
     let has_status_col =
         ref_requires_signature && table_has_column(db, ref_table, SIGNATURE_STATUS_COLUMN)?;
 
-    let list_sql = if has_status_col {
-        format!(
-            "SELECT {pk}, {label_col}, {SIGNATURE_STATUS_COLUMN} FROM {ref_table} ORDER BY {label_col}"
-        )
-    } else {
-        format!("SELECT {pk}, {label_col} FROM {ref_table} ORDER BY {label_col}")
-    };
-    let mut stmt = db.conn.prepare(&list_sql).map_err(|e| e.to_string())?;
-    let rows: Vec<(String, String, Option<String>)> = if has_status_col {
-        stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })
-        .map_err(|e| e.to_string())?
-        .flatten()
-        .collect()
-    } else {
-        stmt.query_map([], |row| {
-            let id: String = row.get(0)?;
-            let label: String = row.get(1)?;
-            Ok((id, label, None))
-        })
-        .map_err(|e| e.to_string())?
-        .flatten()
-        .collect()
-    };
-
     let current_fks: HashSet<String> = if is_embed {
         HashSet::new()
     } else {
@@ -418,30 +405,115 @@ pub fn relation_select_options(
     };
 
     let mut options = Vec::new();
-    options.push(RelationSelectOptionExt {
-        value: "".into(),
-        label: "— Aucun —".into(),
-    });
-    for (id, label, statut) in rows {
-        let non_signe = !is_embed && statut.as_deref() == Some(STATUS_NON_SIGNE);
-        let refuse = !is_embed && statut.as_deref() == Some(STATUS_REFUSE);
-        if non_signe || refuse {
-            continue;
-        }
-        let is_current = current_fks.contains(id.as_str());
-        if used.contains(&id) && !is_current {
-            continue;
-        }
-        let display = if label.trim().is_empty() {
-            id.clone()
-        } else {
-            label
-        };
+    let mut seen: HashSet<String> = HashSet::new();
+
+    let listing_limit = limit.unwrap_or(usize::MAX);
+    if listing_limit > 0 {
         options.push(RelationSelectOptionExt {
-            value: id,
-            label: display,
+            value: "".into(),
+            label: "— Aucun —".into(),
         });
+
+        let search_term = search.map(str::trim).filter(|s| !s.is_empty());
+        let status_select = if has_status_col {
+            format!(", {SIGNATURE_STATUS_COLUMN}")
+        } else {
+            String::new()
+        };
+        let where_clause = if search_term.is_some() {
+            format!(" WHERE {label_col} LIKE ?1 ESCAPE '\\'")
+        } else {
+            String::new()
+        };
+        let list_sql = format!(
+            "SELECT {pk}, {label_col}{status_select} FROM {ref_table}{where_clause} ORDER BY {label_col}"
+        );
+        let mut stmt = db.conn.prepare(&list_sql).map_err(|e| e.to_string())?;
+        let mut sql_rows = if let Some(q) = search_term {
+            stmt.query(rusqlite::params![format!("%{}%", escape_like_pattern(q))])
+        } else {
+            stmt.query([])
+        }
+        .map_err(|e| e.to_string())?;
+
+        // Lecture en flux : on s'arrête dès que la limite est atteinte (pas de chargement total).
+        let mut count = 0usize;
+        while let Some(row) = sql_rows.next().map_err(|e| e.to_string())? {
+            if count >= listing_limit {
+                break;
+            }
+            let id: String = row.get(0).map_err(|e| e.to_string())?;
+            let label: String = row.get(1).map_err(|e| e.to_string())?;
+            let statut: Option<String> = if has_status_col {
+                row.get(2).map_err(|e| e.to_string())?
+            } else {
+                None
+            };
+            let non_signe = !is_embed && statut.as_deref() == Some(STATUS_NON_SIGNE);
+            let refuse = !is_embed && statut.as_deref() == Some(STATUS_REFUSE);
+            if non_signe || refuse {
+                continue;
+            }
+            let is_current = current_fks.contains(id.as_str());
+            if used.contains(&id) && !is_current {
+                continue;
+            }
+            let display = if label.trim().is_empty() {
+                id.clone()
+            } else {
+                label
+            };
+            seen.insert(id.clone());
+            options.push(RelationSelectOptionExt {
+                value: id,
+                label: display,
+            });
+            count += 1;
+        }
     }
+
+    // IDs explicitement demandés (valeur courante / résolution de libellés) : toujours retournés.
+    if let Some(ids) = include_ids {
+        let wanted: Vec<String> = ids
+            .iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty() && !seen.contains(id.as_str()))
+            .collect();
+        if !wanted.is_empty() {
+            let placeholders = wanted
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", i + 1))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT {pk}, {label_col} FROM {ref_table} WHERE {pk} IN ({placeholders})"
+            );
+            let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let params = rusqlite::params_from_iter(wanted.iter());
+            let rows = stmt
+                .query_map(params, |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            for (id, label) in rows.flatten() {
+                if seen.contains(id.as_str()) {
+                    continue;
+                }
+                let display = if label.trim().is_empty() {
+                    id.clone()
+                } else {
+                    label
+                };
+                seen.insert(id.clone());
+                options.push(RelationSelectOptionExt {
+                    value: id,
+                    label: display,
+                });
+            }
+        }
+    }
+
     Ok(options)
 }
 

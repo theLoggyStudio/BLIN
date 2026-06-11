@@ -683,8 +683,8 @@
     @apply rounded-2xl border border-border bg-card p-6;
   }
 
+  /* Dégradé seul — taille et graisse définies au point d'usage (h1 écran, modal…). */
   .screen-title-gradient {
-    @apply text-3xl font-bold;
     background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;

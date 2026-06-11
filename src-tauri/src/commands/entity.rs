@@ -45,6 +45,15 @@ pub struct EntityRelationFieldPayload {
     pub field_key: String,
     #[serde(default)]
     pub exclude_record_id: Option<String>,
+    /// Filtre texte (LIKE sur le libellé) pour l'autocomplétion.
+    #[serde(default)]
+    pub search: Option<String>,
+    /// Nombre max de suggestions retournées (0 = uniquement `include_ids`).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// IDs toujours inclus dans la réponse (résolution de libellés / valeur courante).
+    #[serde(default)]
+    pub include_ids: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -237,6 +246,9 @@ pub fn entity_relation_options(
         &payload.screen_key,
         &payload.field_key,
         payload.exclude_record_id.as_deref(),
+        payload.search.as_deref(),
+        payload.limit.map(|l| l as usize),
+        payload.include_ids.as_deref(),
     )
 }
 

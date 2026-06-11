@@ -21,7 +21,7 @@ export function FilterBar({
   if (fields.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-3 p-4 rounded-xl border border-border bg-surface">
+    <div className="flex flex-wrap gap-3 p-4 rounded-xl border border-border bg-card">
       {fields.map((field) => {
         const v = values[field.key] ?? "";
         const err = fieldErrors[field.key];

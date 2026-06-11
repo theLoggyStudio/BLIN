@@ -218,6 +218,12 @@ fn extract_embed_lists(
     out
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CreateRowOptions {
+    /// Import CSV en masse : évite les hooks lourds par ligne (tâches, impacts).
+    pub skip_post_create_hooks: bool,
+}
+
 pub fn create_row(
     db: &Database,
     cfg: &ScreenConfigFile,
@@ -231,6 +237,16 @@ pub fn create_row_with_user(
     cfg: &ScreenConfigFile,
     data: &Map<String, Value>,
     user_ctx: Option<RowUserContext<'_>>,
+) -> Result<Map<String, Value>, String> {
+    create_row_with_user_and_options(db, cfg, data, user_ctx, CreateRowOptions::default())
+}
+
+pub fn create_row_with_user_and_options(
+    db: &Database,
+    cfg: &ScreenConfigFile,
+    data: &Map<String, Value>,
+    user_ctx: Option<RowUserContext<'_>>,
+    options: CreateRowOptions,
 ) -> Result<Map<String, Value>, String> {
     let mut data = data.clone();
     let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
@@ -376,14 +392,21 @@ pub fn create_row_with_user(
         );
     }
     let row = get_row(db, cfg, &id)?;
-    crate::entity::validation::after_entity_row_created(db, &cfg.screen.key, &row)?;
-    crate::entity::relation_impact::apply_after_create_if_ready(
-        db,
-        &db.data_dir,
-        &cfg.screen.key,
-        &id,
-    );
-    crate::entity::session_scope::activate_if_session_entity(&db.data_dir, &registry, &cfg.screen.key, &row)?;
+    if !options.skip_post_create_hooks {
+        crate::entity::validation::after_entity_row_created(db, &cfg.screen.key, &row)?;
+        crate::entity::relation_impact::apply_after_create_if_ready(
+            db,
+            &db.data_dir,
+            &cfg.screen.key,
+            &id,
+        );
+        crate::entity::session_scope::activate_if_session_entity(
+            &db.data_dir,
+            &registry,
+            &cfg.screen.key,
+            &row,
+        )?;
+    }
     Ok(row)
 }
 

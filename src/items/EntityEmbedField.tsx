@@ -1,21 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus } from "lucide-react";
 import { FieldRenderer } from "@/engine/FieldRenderer";
 import { FieldReadOnlyValue } from "@/engine/FieldReadOnlyValue";
+import { EntityRelationAutocomplete } from "@/items/EntityRelationAutocomplete";
 import { EntityRelationCreateModal } from "@/items/EntityRelationCreateModal";
 import { EntityRelationPickOrCreateModal } from "@/items/EntityRelationPickOrCreateModal";
 import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { CollapsiblePanel } from "@/items/CollapsiblePanel";
 import { Input } from "@/items/Input";
-import { Select } from "@/items/Select";
 import { embedRefKey } from "@/lib/createFormLines";
 import type { RelationSelectOption } from "@/types/entity";
 import type { FieldDef, ScreenRow, ValidationIssue } from "@/types/screen";
-
-const NO_OPTIONS_ALERT =
-  "Aucun enregistrement disponible — créez-en un nouveau via le bouton « Créer ».";
 
 function parseEmbedListValue(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) {
@@ -212,7 +209,6 @@ export function EntityEmbedGroup({
     [allFields, field.key],
   );
   const storedRefKey = embedRefKey(field.key);
-  const [options, setOptions] = useState<RelationSelectOption[]>([]);
   const [selectedRecordId, setSelectedRecordId] = useState("");
   const [pickOpen, setPickOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -221,32 +217,6 @@ export function EntityEmbedGroup({
     if (!hasCopiedEmbedData(values, childFields)) return "";
     return labelFromCopiedFields(values, childFields);
   }, [values, childFields]);
-
-  const selectValue = useMemo(() => {
-    if (selectedRecordId) return selectedRecordId;
-    if (copiedLabel) return `__copied__${field.key}`;
-    return "";
-  }, [selectedRecordId, copiedLabel, field.key]);
-
-  const loadOptions = useCallback(async () => {
-    if (!refEntity) return;
-    try {
-      const rows = await invoke<RelationSelectOption[]>("entity_relation_options", {
-        payload: {
-          screen_key: screenKey,
-          field_key: field.key,
-          exclude_record_id: excludeRecordId ?? null,
-        },
-      });
-      setOptions(rows);
-    } catch {
-      setOptions([]);
-    }
-  }, [screenKey, field.key, excludeRecordId, refEntity]);
-
-  useEffect(() => {
-    void loadOptions();
-  }, [loadOptions]);
 
   useEffect(() => {
     const stored = values[storedRefKey];
@@ -287,7 +257,6 @@ export function EntityEmbedGroup({
     if (!id) return;
     await applyCopied(id);
     setSelectedRecordId(id);
-    void loadOptions();
     setCreateOpen(false);
   };
 
@@ -330,39 +299,26 @@ export function EntityEmbedGroup({
               Replier ce bloc n&apos;affecte pas les autres liaisons (ex. articles).
             </p>
           )}
-          {!readOnly && !displayOnly && refEntity && (options.some((o) => o.value) || copiedLabel) && (
-            <Select
+          {!readOnly && !displayOnly && refEntity && (
+            <EntityRelationAutocomplete
               label={`Choisir — ${field.label}`}
-              value={selectValue}
-              onChange={(e) => {
-                const id = e.target.value;
-                if (!id || id.startsWith("__copied__")) {
-                  if (!id) {
-                    setSelectedRecordId("");
-                    if (onBatchChange) onBatchChange({ [storedRefKey]: "" });
-                    else onChange(storedRefKey, "");
-                  }
+              screenKey={screenKey}
+              fieldKey={field.key}
+              excludeRecordId={excludeRecordId}
+              value={selectedRecordId}
+              displayLabel={!selectedRecordId ? copiedLabel : undefined}
+              placeholder={`— Choisir un ${refEntity} —`}
+              onSelect={(option) => {
+                if (!option.value) {
+                  setSelectedRecordId("");
+                  if (onBatchChange) onBatchChange({ [storedRefKey]: "" });
+                  else onChange(storedRefKey, "");
                   return;
                 }
-                const opt = options.find((o) => o.value === id);
-                if (opt) void tryPick(opt);
+                void tryPick(option);
               }}
-              options={[
-                { value: "", label: `— Choisir un ${refEntity} —` },
-                ...(copiedLabel && !selectedRecordId
-                  ? [{ value: `__copied__${field.key}`, label: copiedLabel }]
-                  : []),
-                ...options
-                  .filter((o) => o.value)
-                  .map((o) => ({ value: o.value, label: o.label })),
-                ...(selectedRecordId && !options.some((o) => o.value === selectedRecordId)
-                  ? [{ value: selectedRecordId, label: copiedLabel || selectedRecordId }]
-                  : []),
-              ]}
+              onCreateNew={() => setCreateOpen(true)}
             />
-          )}
-          {!readOnly && !displayOnly && refEntity && options.filter((o) => o.value).length === 0 && (
-            <Alert variant="warning" size="box" message={NO_OPTIONS_ALERT} />
           )}
           {childFields.map((childField) => (
             <FieldRenderer
@@ -391,11 +347,12 @@ export function EntityEmbedGroup({
           entityKey={refEntity}
           open={pickOpen}
           onClose={() => setPickOpen(false)}
-          options={options}
+          screenKey={screenKey}
+          fieldKey={field.key}
+          excludeRecordId={excludeRecordId}
           excludeIds={[]}
           embedMode
           onSelected={(id) => void tryPick({ value: id, label: id })}
-          onOptionsRefresh={() => void loadOptions()}
         />
       )}
       {refEntity && (
@@ -436,33 +393,7 @@ export function EntityEmbedListEditor({
 }: EntityEmbedListEditorProps) {
   const refEntity = field.form?.refEntity?.trim() ?? "";
   const rows = parseEmbedListValue(value);
-  const [options, setOptions] = useState<RelationSelectOption[]>([]);
-  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!refEntity) return;
-    try {
-      const fetched = await invoke<RelationSelectOption[]>("entity_relation_options", {
-        payload: {
-          screen_key: screenKey,
-          field_key: field.key,
-          exclude_record_id: excludeRecordId ?? null,
-        },
-      });
-      setOptions(fetched);
-      setOptionsError(null);
-    } catch (e) {
-      setOptions([]);
-      setOptionsError(
-        e instanceof Error ? e.message : "Impossible de charger les enregistrements liés.",
-      );
-    }
-  }, [screenKey, field.key, excludeRecordId, refEntity]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const persist = (next: Record<string, unknown>[]) => {
     onChange(field.key, JSON.stringify(next));
@@ -530,7 +461,6 @@ export function EntityEmbedListEditor({
         }
       >
         <div className="space-y-2">
-          {optionsError && <Alert variant="danger" size="box" message={optionsError} />}
           {!refEntity && (
             <Alert
               variant="danger"
@@ -582,11 +512,12 @@ export function EntityEmbedListEditor({
           entityKey={refEntity}
           open={pickOpen}
           onClose={() => setPickOpen(false)}
-          options={options}
+          screenKey={screenKey}
+          fieldKey={field.key}
+          excludeRecordId={excludeRecordId}
           excludeIds={[]}
           embedMode
           onSelected={(id) => void tryPick({ value: id, label: id })}
-          onOptionsRefresh={() => void load()}
         />
       )}
     </>

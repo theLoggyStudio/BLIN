@@ -31,7 +31,7 @@ export function ScreenHeader({
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between mb-6">
       <div>
-        <Text variant="title" as="h1" className="screen-title-gradient !text-3xl">
+        <Text variant="title" as="h1" className="screen-title-gradient text-3xl">
           {layout.title}
         </Text>
         {layout.subtitle && (

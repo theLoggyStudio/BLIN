@@ -56,7 +56,7 @@ export function Offpanel({
       />
       <aside
         className={cn(
-          "fixed top-0 z-50 h-full bg-surface border-border shadow-2xl",
+          "fixed top-0 z-50 h-full bg-card border-border shadow-2xl",
           "flex flex-col transition-transform duration-300 ease-out",
           side === "right" ? "right-0 border-l" : "left-0 border-r",
           widthClasses[width],

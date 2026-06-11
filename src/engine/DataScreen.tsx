@@ -713,8 +713,8 @@ export function DataScreen({
         />
       )}
       {objetIntitule ? (
-        <div className="rounded-lg border border-border bg-muted/30 p-4">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="rounded-lg border border-border bg-surface-elevated p-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
             Objet concerné
           </p>
           <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">

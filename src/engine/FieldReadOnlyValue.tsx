@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { formatCellValue } from "@/engine/screenUtils";
 import { parseImagesValue } from "@/engine/mediaUtils";
+import { fetchRelationLabels } from "@/items/EntityRelationAutocomplete";
 import { TableImageCell } from "@/items/TableImageCell";
-import type { RelationSelectOption } from "@/types/entity";
 import type { FieldDef } from "@/types/screen";
 
 interface FieldReadOnlyValueProps {
@@ -63,15 +62,8 @@ function EntityRefReadOnlyLabel({
       return;
     }
     try {
-      const rows = await invoke<RelationSelectOption[]>("entity_relation_options", {
-        payload: {
-          screen_key: screenKey,
-          field_key: field.key,
-          exclude_record_id: excludeRecordId ?? null,
-        },
-      });
-      const opt = rows.find((o) => o.value === strVal);
-      setLabel(opt?.label ?? strVal);
+      const map = await fetchRelationLabels(screenKey, field.key, [strVal], excludeRecordId);
+      setLabel(map.get(strVal) ?? strVal);
     } catch {
       setLabel(strVal);
     }
@@ -99,18 +91,10 @@ function EntityRefListReadOnly({
       return;
     }
     let cancelled = false;
-    void invoke<RelationSelectOption[]>("entity_relation_options", {
-      payload: {
-        screen_key: screenKey,
-        field_key: field.key,
-        exclude_record_id: excludeRecordId ?? null,
-      },
-    })
-      .then((rows) => {
+    void fetchRelationLabels(screenKey, field.key, ids, excludeRecordId)
+      .then((map) => {
         if (cancelled) return;
-        setLabels(
-          ids.map((id) => rows.find((o) => o.value === id)?.label ?? id),
-        );
+        setLabels(ids.map((id) => map.get(id) ?? id));
       })
       .catch(() => {
         if (!cancelled) setLabels(ids);

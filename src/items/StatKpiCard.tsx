@@ -11,7 +11,7 @@ interface StatKpiCardProps {
 /** Carte indicateur — synthèse statistique (inspiré LoggPatient). */
 export function StatKpiCard({ label, value, hint, className }: StatKpiCardProps) {
   return (
-    <div className={cn("card-panel rounded-xl border border-border p-4", className)}>
+    <div className={cn("rounded-xl border border-border bg-card p-4", className)}>
       <Text variant="muted" className="uppercase tracking-wide text-[10px]">
         {label}
       </Text>

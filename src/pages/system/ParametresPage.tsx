@@ -162,7 +162,7 @@ export function ParametresPage() {
     <div className="h-full min-h-0 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-6 py-8">
       <header className="mb-8">
-        <Text variant="title" as="h1" className="screen-title-gradient !text-3xl">
+        <Text variant="title" as="h1" className="screen-title-gradient text-3xl">
           Paramètres
         </Text>
         <div className="mt-2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-muted">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Alert } from "@/items/Alert";
+import { PaginatedList } from "@/items/PaginatedList";
 import { Text } from "@/items/Text";
 import type { RoleRow } from "@/types/users";
 
@@ -66,8 +67,10 @@ export function TacheRolesVisibleField({
       {!loading && roles.length === 0 && (
         <p className="text-sm text-muted">Aucun rôle défini dans Paramètres.</p>
       )}
-      <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-        {roles.map((role) => (
+      <PaginatedList
+        items={roles}
+        className="flex flex-col gap-2 rounded-lg border border-border p-3"
+        renderItem={(role) => (
           <label key={role.id} className="flex cursor-pointer items-center gap-3">
             <input
               type="checkbox"
@@ -79,8 +82,8 @@ export function TacheRolesVisibleField({
             <span className="text-sm text-foreground">{role.nom}</span>
             <span className="text-xs text-muted">({role.id})</span>
           </label>
-        ))}
-      </div>
+        )}
+      />
       {error && <Alert variant="danger" size="box" message={error} />}
     </div>
   );

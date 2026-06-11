@@ -44,7 +44,7 @@ export function CollapsiblePanel({
 
   return (
     <section
-      className={cn("collapsible-panel overflow-hidden rounded-xl border border-border bg-surface", className)}
+      className={cn("collapsible-panel overflow-hidden rounded-xl border border-border bg-card", className)}
       aria-labelledby={titleId}
     >
       <div

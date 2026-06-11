@@ -79,7 +79,7 @@ export function EntityWorkspace({
       <Alert
         variant="danger"
         size="box"
-        className="card-panel mx-6 my-8 rounded-xl p-6"
+        className="mx-6 my-8 rounded-xl border border-border bg-card p-6"
         message={error ?? "Configuration introuvable."}
       />
     );
@@ -91,7 +91,7 @@ export function EntityWorkspace({
     <div className="flex flex-col gap-6 px-6 py-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Text variant="title" as="h2" className="screen-title-gradient !text-2xl">
+          <Text variant="title" as="h2" className="screen-title-gradient">
             {label}
           </Text>
           <Text variant="muted" className="mt-1">
