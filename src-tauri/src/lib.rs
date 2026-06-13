@@ -145,6 +145,7 @@ pub fn run() {
             commands::entity::entity_active_session_clear,
             commands::entity::entity_export_csv,
             commands::entity::entity_import_csv,
+            commands::entity::entity_success_message,
             commands::entity::entity_stock_status,
             commands::entity::entity_stock_scan_destock,
             commands::entity::entity_stock_destock,

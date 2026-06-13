@@ -8,6 +8,7 @@ use crate::ai::hardware_profile;
 use crate::ai::tools::{execute_pending, ToolResult};
 use crate::ai::web_search::{self, WebSearchConfig};
 use crate::ai::{ChatReply, LlamaServer};
+use crate::privileges::{has_privilege, require_privilege};
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -141,10 +142,17 @@ pub fn ai_profile_runtime(
     state: State<'_, AppState>,
     payload: Option<AiProfileRequest>,
 ) -> Result<String, String> {
-    state
-        .desktop_sessions
-        .require_privilege("parametres:assistant")?;
+    let session = state.desktop_sessions.require_session()?;
     let force = payload.and_then(|p| p.force).unwrap_or(false);
+    if force {
+        if !has_privilege(&session.user.privileges, "ai:utiliser")
+            && !has_privilege(&session.user.privileges, "parametres:assistant")
+        {
+            return Err("Privilège requis : ai:utiliser ou parametres:assistant".into());
+        }
+    } else {
+        require_privilege(&session.user.privileges, "parametres:assistant")?;
+    }
     let db = state.db.lock();
     if !LlamaServer::model_ready() {
         return Err(

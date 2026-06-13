@@ -2,10 +2,10 @@
 
 use uuid::Uuid;
 
-use crate::ai::agent::{ChatDisplayBlock, ChatReply, EntityCreateAction, RegistryEntityCreateAction};
+use crate::ai::agent::{ChatColsRequest, ChatDisplayBlock, ChatReply, EntityCreateAction, RegistryEntityCreateAction};
 use crate::ai::intent_filters::{extract_web_search_query, wants_internet_research_intent};
 use crate::entity::create_draft;
-use crate::entity::list_preview::{self, parse_display_from_message};
+use crate::entity::list_preview::{self, visible_chat_message};
 use crate::entity::registry;
 use crate::entity::registry_create_draft;
 use crate::privileges::{can_create_registry_entity, has_privilege};
@@ -38,8 +38,8 @@ pub fn answer_practical(
 
     if let Some(result) = try_translate_previous_reply(db, &conv_id, user_message) {
         return match result {
-            Ok(msg) => store_assistant_raw(db, &conv_id, &msg, vec![], None, None, vec![]),
-            Err(e) => store_assistant_raw(db, &conv_id, &e, vec![], None, None, vec![]),
+            Ok(msg) => store_assistant_raw(db, &conv_id, &msg, vec![], None, None, vec![], None),
+            Err(e) => store_assistant_raw(db, &conv_id, &e, vec![], None, None, vec![], None),
         };
     }
 
@@ -95,9 +95,18 @@ pub fn answer_practical(
         }
     }
 
-    if let Ok(Some((raw_msg, blocks))) = list_preview::try_list_preview(db, user, &conv_id, user_message)
+    if let Ok(Some(result)) = list_preview::try_list_preview(db, user, &conv_id, user_message)
     {
-        return store_assistant_raw(db, &conv_id, &raw_msg, vec![], None, None, blocks);
+        return store_assistant_raw(
+            db,
+            &conv_id,
+            &result.raw_message,
+            vec![],
+            None,
+            None,
+            result.display_blocks,
+            result.cols_request,
+        );
     }
 
     if web_search::is_enabled(&db.data_dir) && wants_internet_research_intent(&core) {
@@ -139,6 +148,7 @@ fn store_assistant(
         open_entity_create,
         None,
         display_blocks,
+        None,
     )
 }
 
@@ -158,6 +168,7 @@ fn store_assistant_registry(
         None,
         open_registry_entity_create,
         vec![],
+        None,
     )
 }
 
@@ -169,19 +180,21 @@ fn store_assistant_raw(
     open_entity_create: Option<EntityCreateAction>,
     open_registry_entity_create: Option<RegistryEntityCreateAction>,
     display_blocks: Vec<ChatDisplayBlock>,
+    cols_request: Option<ChatColsRequest>,
 ) -> Result<ChatReply, String> {
     db.ai_add_message(conv_id, "assistant", msg)
         .map_err(|e| e.to_string())?;
     let (visible, blocks) = if display_blocks.is_empty() {
-        parse_display_from_message(msg)
+        visible_chat_message(msg)
     } else {
-        (parse_display_from_message(msg).0, display_blocks)
+        (visible_chat_message(msg).0, display_blocks)
     };
     Ok(ChatReply {
         conversation_id: conv_id.to_string(),
         message: visible,
         tool_results,
         display_blocks: blocks,
+        cols_request,
         open_entity_create,
         open_registry_entity_create,
     })

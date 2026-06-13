@@ -5,8 +5,7 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::ai::agent::ChatDisplayBlock;
-use crate::ai::agent::ChatDisplayColumn;
+use crate::ai::agent::{ChatColsRequest, ChatDisplayBlock, ChatDisplayColumn};
 use crate::ai::intent_filters::{normalize_message, wants_list_intent};
 use crate::dda::config::FieldDef;
 use crate::dda::crud::{list_rows_with_options, ListRowsOptions};
@@ -67,6 +66,18 @@ pub fn embed_display(message: &str, blocks: &[ChatDisplayBlock]) -> String {
 }
 
 pub fn parse_display_from_message(content: &str) -> (String, Vec<ChatDisplayBlock>) {
+    let (visible, blocks) = parse_display_blocks(content);
+    (strip_cols_marker(&visible), blocks)
+}
+
+/// Texte visible pour l'utilisateur : retire les marqueurs internes (JSON machine).
+pub fn visible_chat_message(content: &str) -> (String, Vec<ChatDisplayBlock>) {
+    let (text, blocks) = parse_display_from_message(content);
+    let clean = crate::ai::format_display::sanitize_assistant_message(&text);
+    (clean, blocks)
+}
+
+fn parse_display_blocks(content: &str) -> (String, Vec<ChatDisplayBlock>) {
     if let Some(start) = content.find(DISPLAY_MARKER_START) {
         let end = content.find(DISPLAY_MARKER_END).unwrap_or(content.len());
         let json = content[start + DISPLAY_MARKER_START.len()..end].trim();
@@ -77,6 +88,61 @@ pub fn parse_display_from_message(content: &str) -> (String, Vec<ChatDisplayBloc
         return (visible, vec![]);
     }
     (content.to_string(), vec![])
+}
+
+fn strip_cols_marker(content: &str) -> String {
+    if let Some(start) = content.find(COLS_MARKER_START) {
+        return content[..start].trim_end().to_string();
+    }
+    content.trim().to_string()
+}
+
+fn registry_entity_label(registry: &EntityRegistry, entity_key: &str) -> String {
+    registry
+        .find(entity_key)
+        .and_then(|e| e.label.as_deref())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(entity_key)
+        .to_string()
+}
+
+fn make_cols_request(
+    entity_key: &str,
+    entity_label: &str,
+    available: &[ColMeta],
+    filters: &HashMap<String, String>,
+) -> ChatColsRequest {
+    ChatColsRequest {
+        entity_key: entity_key.to_string(),
+        entity_label: entity_label.to_string(),
+        available: available
+            .iter()
+            .map(|c| ChatDisplayColumn {
+                key: c.key.clone(),
+                label: c.label.clone(),
+            })
+            .collect(),
+        filters: filters.clone(),
+    }
+}
+
+/// Résultat intent « liste les … » pour le chat dashboard.
+pub struct ListPreviewResult {
+    pub raw_message: String,
+    pub display_blocks: Vec<ChatDisplayBlock>,
+    pub cols_request: Option<ChatColsRequest>,
+}
+
+/// Reconstruit la demande de colonnes depuis un message stocké (historique).
+pub fn cols_request_from_message(content: &str, registry: &EntityRegistry) -> Option<ChatColsRequest> {
+    let stored = parse_cols_request(content)?;
+    let entity_label = registry_entity_label(registry, &stored.entity_key);
+    Some(make_cols_request(
+        &stored.entity_key,
+        &entity_label,
+        &stored.available,
+        &stored.filters,
+    ))
 }
 
 fn embed_cols_request(
@@ -332,21 +398,32 @@ fn build_rows_with_joins(
         rows: out_rows,
     };
     let filter_hint = filters_summary(&cfg, filters);
-    let msg = if filter_hint.is_empty() {
-        format!("Voici {count} enregistrement(s) pour « {label} ».")
+    let msg = if count == 0 {
+        if filter_hint.is_empty() {
+            format!(
+                "C'est fait ! Aucun enregistrement pour « {label} ». Clique sur le bouton ci-dessous pour voir le détail."
+            )
+        } else {
+            format!(
+                "C'est fait ! Aucun enregistrement pour « {label} » ({filter_hint}). Clique sur le bouton ci-dessous pour voir le détail."
+            )
+        }
+    } else if filter_hint.is_empty() {
+        format!(
+            "C'est fait ! J'ai préparé {count} enregistrement(s) pour « {label} ». Clique sur le bouton ci-dessous pour afficher la liste dans une fenêtre."
+        )
     } else {
-        format!("Voici {count} enregistrement(s) pour « {label} » ({filter_hint}).")
+        format!(
+            "C'est fait ! J'ai préparé {count} enregistrement(s) pour « {label} » ({filter_hint}). Clique sur le bouton ci-dessous pour afficher la liste dans une fenêtre."
+        )
     };
     Ok((vec![block], msg))
 }
 
-fn ask_columns_message(entity_key: &str, available: &[ColMeta]) -> String {
-    let labels: Vec<String> = available.iter().map(|c| c.label.clone()).collect();
+fn ask_columns_message(entity_label: &str) -> String {
     format!(
-        "Quelles colonnes souhaitez-vous afficher pour « {entity_key} » ?\n\
-         Colonnes disponibles : {}.\n\
-         Répondez avec les noms séparés par des virgules, ou « toutes » pour tout afficher.",
-        labels.join(", ")
+        "J'ai besoin de savoir quelles colonnes afficher pour « {entity_label} ». \
+         Clique sur le bouton ci-dessous pour choisir dans une fenêtre."
     )
 }
 
@@ -356,24 +433,31 @@ pub fn try_list_preview(
     user: &SessionUser,
     conv_id: &str,
     user_message: &str,
-) -> Result<Option<(String, Vec<ChatDisplayBlock>)>, String> {
+) -> Result<Option<ListPreviewResult>, String> {
     let registry = crate::entity::registry::load(&db.data_dir)?;
     let data_dir = &db.data_dir;
 
     if let Some(prev) = last_assistant_message(db, conv_id) {
         if let Some(req) = parse_cols_request(&prev) {
             let available = req.available;
+            let entity_label = registry_entity_label(&registry, &req.entity_key);
             let (msg_filters, text_for_cols) =
                 extract_filters_from_message(user_message, &load_screen_config(data_dir, &req.entity_key)?);
             let mut filters = req.filters.clone();
             filters.extend(msg_filters);
             let cols = parse_requested_columns(&text_for_cols, &available);
             if cols.is_empty() {
-                let msg = ask_columns_message(&req.entity_key, &available);
-                return Ok(Some((
-                    embed_cols_request(&msg, &req.entity_key, &available, &filters),
-                    vec![],
-                )));
+                let msg = ask_columns_message(&entity_label);
+                return Ok(Some(ListPreviewResult {
+                    raw_message: embed_cols_request(&msg, &req.entity_key, &available, &filters),
+                    display_blocks: vec![],
+                    cols_request: Some(make_cols_request(
+                        &req.entity_key,
+                        &entity_label,
+                        &available,
+                        &filters,
+                    )),
+                }));
             }
             let joins = detect_joins(&registry, &req.entity_key, user_message);
             let (blocks, msg) = build_rows_with_joins(
@@ -385,7 +469,11 @@ pub fn try_list_preview(
                 &filters,
                 user,
             )?;
-            return Ok(Some((embed_display(&msg, &blocks), blocks)));
+            return Ok(Some(ListPreviewResult {
+                raw_message: embed_display(&msg, &blocks),
+                display_blocks: blocks,
+                cols_request: None,
+            }));
         }
     }
 
@@ -394,20 +482,31 @@ pub fn try_list_preview(
     };
 
     let cfg = load_screen_config(data_dir, &entity_key)?;
+    let entity_label = cfg.screen.label.clone();
     let (filters, text_for_cols) = extract_filters_from_message(user_message, &cfg);
     let available = list_column_metas(&cfg);
     let cols = columns_from_message(&text_for_cols, &available);
 
     if cols.is_empty() {
-        let msg = ask_columns_message(&entity_key, &available);
-        return Ok(Some((
-            embed_cols_request(&msg, &entity_key, &available, &filters),
-            vec![],
-        )));
+        let msg = ask_columns_message(&entity_label);
+        return Ok(Some(ListPreviewResult {
+            raw_message: embed_cols_request(&msg, &entity_key, &available, &filters),
+            display_blocks: vec![],
+            cols_request: Some(make_cols_request(
+                &entity_key,
+                &entity_label,
+                &available,
+                &filters,
+            )),
+        }));
     }
 
     let joins = detect_joins(&registry, &entity_key, user_message);
     let (blocks, msg) =
         build_rows_with_joins(db, data_dir, &entity_key, &cols, &joins, &filters, user)?;
-    Ok(Some((embed_display(&msg, &blocks), blocks)))
+    Ok(Some(ListPreviewResult {
+        raw_message: embed_display(&msg, &blocks),
+        display_blocks: blocks,
+        cols_request: None,
+    }))
 }

@@ -11,6 +11,9 @@ interface ModalProps {
   children: ReactNode;
   size?: "sm" | "md" | "lg" | "xl" | "2xl";
   footer?: ReactNode;
+  /** Bloque la fermeture et affiche un overlay de chargement. */
+  busy?: boolean;
+  busyLabel?: string;
 }
 
 const sizeClasses = {
@@ -36,6 +39,8 @@ export function Modal({
   children,
   size = "md",
   footer,
+  busy = false,
+  busyLabel = "Chargement…",
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -47,7 +52,7 @@ export function Modal({
     const level = modalStackDepth;
     setStackLevel(level);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && level === modalStackDepth) onClose();
+      if (e.key === "Escape" && level === modalStackDepth && !busy) onClose();
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -57,7 +62,11 @@ export function Modal({
       document.body.style.overflow = prev;
       modalStackDepth = Math.max(0, modalStackDepth - 1);
     };
-  }, [open, onClose]);
+  }, [open, onClose, busy]);
+
+  const requestClose = () => {
+    if (!busy) onClose();
+  };
 
   if (!open) {
     return null;
@@ -77,7 +86,7 @@ export function Modal({
         type="button"
         className="absolute inset-0 cursor-default bg-black/78 max-md:bg-black/85"
         aria-label="Fermer"
-        onClick={onClose}
+        onClick={requestClose}
       />
       <div
         ref={panelRef}
@@ -88,7 +97,18 @@ export function Modal({
         )}
         style={{ zIndex: zBase + 1 }}
         onClick={(e) => e.stopPropagation()}
+        aria-busy={busy}
       >
+        {busy && (
+          <div
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-card/90 backdrop-blur-[2px]"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-secondary border-t-transparent" />
+            <p className="text-sm font-medium text-foreground">{busyLabel}</p>
+          </div>
+        )}
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6 md:py-4">
           <h2
             id={titleId}
@@ -96,7 +116,7 @@ export function Modal({
           >
             {title}
           </h2>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fermer">
+          <Button variant="ghost" size="sm" onClick={requestClose} disabled={busy} aria-label="Fermer">
             <X className="h-4 w-4" />
           </Button>
         </div>

@@ -31,11 +31,19 @@ export interface ChatDisplayBlock {
   rows: Record<string, unknown>[];
 }
 
+export interface ChatColsRequest {
+  entityKey: string;
+  entityLabel?: string;
+  available: ChatDisplayColumn[];
+  filters?: Record<string, string>;
+}
+
 export interface AiChatReply {
   conversation_id: string;
   message: string;
   tool_results: AiToolResult[];
   display_blocks?: ChatDisplayBlock[];
+  cols_request?: ChatColsRequest;
   open_entity_create?: EntityCreateAction;
   open_registry_entity_create?: RegistryEntityCreateAction;
 }

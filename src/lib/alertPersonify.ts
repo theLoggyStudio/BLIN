@@ -19,27 +19,74 @@ export function fallbackExpressiveAlert(message: string, variant: AlertVariant):
     return "C'est bon, j'ai généré le PDF pour toi. Tu peux le récupérer dans tes téléchargements.";
   }
 
-  const importMatch = t.match(
-    /^Import réussi pour « (.+) » : (\d+) créé\(s\), (\d+) mis à jour\./,
+  if (/^Enregistrement créé pour/i.test(t)) {
+    return `Parfait, j'ai bien enregistré la nouvelle fiche. ${ensureSentence(t.replace(/^Enregistrement créé pour/i, "C'est en place pour"))}`;
+  }
+  if (/^Fiche « .+ » créée pour/i.test(t)) {
+    return t.replace(
+      /^Fiche « (.+) » créée pour « (.+) »\./,
+      "Je viens de créer la fiche « $1 » dans $2. Tu peux la consulter dans la liste.",
+    );
+  }
+  if (/^Fiche « .+ » mise à jour pour/i.test(t)) {
+    return t.replace(
+      /^Fiche « (.+) » mise à jour pour « (.+) »\./,
+      "J'ai mis à jour la fiche « $1 » pour $2. Les changements sont bien enregistrés.",
+    );
+  }
+  if (/^Enregistrement supprimé pour/i.test(t)) {
+    return t.replace(
+      /^Enregistrement supprimé pour « (.+) »\./,
+      "C'est fait, j'ai supprimé l'enregistrement pour $1.",
+    );
+  }
+  if (/^Export CSV terminé/i.test(t)) {
+    return t.replace(
+      /^Export CSV terminé pour « (.+) » \((.+)\)\./,
+      "L'export CSV de $1 est prêt ($2). Tu peux ouvrir le fichier téléchargé.",
+    );
+  }
+  if (/^PDF fiche généré/i.test(t)) {
+    return "C'est bon, j'ai généré le PDF de la fiche. Tu peux le récupérer dans tes téléchargements.";
+  }
+  if (/^PDF liste généré/i.test(t)) {
+    return t.replace(
+      /^PDF liste généré pour « (.+) »\./,
+      "J'ai généré le PDF de la liste « $1 ». Tu peux le télécharger tout de suite.",
+    );
+  }
+
+  const importPartial = t.match(
+    /^Import CSV partiel pour « (.+) » : (\d+) créé\(s\), (\d+) mis à jour, (\d+) erreur\(s\)\./,
   );
-  if (importMatch) {
-    const [, entity, created, updated] = importMatch;
-    const nCreated = Number(created);
-    const nUpdated = Number(updated);
-    const parts = [`J'ai terminé l'import des fiches « ${entity} ».`];
-    if (nCreated > 0) {
-      parts.push(
-        `${nCreated} nouvel${nCreated > 1 ? "les" : ""} enregistrement${nCreated > 1 ? "s" : ""} ${nCreated > 1 ? "ont été créés" : "a été créé"}.`,
-      );
+  if (importPartial) {
+    const [, entity, created, updated, errors] = importPartial;
+    return `L'import des fiches « ${entity} » est terminé avec des réserves : ${created} création(s), ${updated} mise(s) à jour, et ${errors} ligne(s) en erreur.`;
+  }
+
+  if (/^Import réussi/i.test(t) || /^Import CSV réussi/i.test(t)) {
+    const importMatch = t.match(
+      /^Import (?:CSV )?réussi pour « (.+) » : (\d+) créé\(s\), (\d+) mis à jour\./,
+    );
+    if (importMatch) {
+      const [, entity, created, updated] = importMatch;
+      const nCreated = Number(created);
+      const nUpdated = Number(updated);
+      const parts = [`J'ai terminé l'import des fiches « ${entity} ».`];
+      if (nCreated > 0) {
+        parts.push(
+          `${nCreated} nouvel${nCreated > 1 ? "les" : ""} enregistrement${nCreated > 1 ? "s" : ""} ${nCreated > 1 ? "ont été créés" : "a été créé"}.`,
+        );
+      }
+      if (nUpdated > 0) {
+        parts.push(
+          `${nUpdated} fiche${nUpdated > 1 ? "s" : ""} ${nUpdated > 1 ? "ont été mises" : "a été mise"} à jour.`,
+        );
+      } else if (nCreated > 0) {
+        parts.push("Aucune mise à jour n'était nécessaire.");
+      }
+      return parts.join(" ");
     }
-    if (nUpdated > 0) {
-      parts.push(
-        `${nUpdated} fiche${nUpdated > 1 ? "s" : ""} ${nUpdated > 1 ? "ont été mises" : "a été mise"} à jour.`,
-      );
-    } else if (nCreated > 0) {
-      parts.push("Aucune mise à jour n'était nécessaire.");
-    }
-    return parts.join(" ");
   }
 
   const taskQuoted = t.match(/^Tâche « (.+) » (créée|mise à jour|supprimée)/);

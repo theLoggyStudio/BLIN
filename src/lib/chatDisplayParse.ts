@@ -1,4 +1,4 @@
-import type { ChatDisplayBlock } from "@/types/ai";
+import type { ChatColsRequest, ChatDisplayBlock } from "@/types/ai";
 import { formatDateTimeFr } from "@/lib/formatDateTime";
 
 const DISPLAY_START = "__BLIN_DISPLAY__\n";
@@ -34,15 +34,78 @@ export function parseChatDisplayBlocks(content: string): ChatDisplayBlock[] {
   }
 }
 
+export function parseChatColsRequest(content: string): ChatColsRequest | undefined {
+  const start = content.indexOf(COLS_START);
+  if (start < 0) return undefined;
+  const end = content.indexOf(COLS_END, start);
+  const json = content.slice(start + COLS_START.length, end >= 0 ? end : undefined).trim();
+  try {
+    const payload = JSON.parse(json) as {
+      entityKey?: string;
+      entity_key?: string;
+      entityLabel?: string;
+      entity_label?: string;
+      available?: { key: string; label: string }[];
+      filters?: Record<string, string>;
+    };
+    const entityKey = payload.entityKey ?? payload.entity_key;
+    if (!entityKey || !payload.available?.length) return undefined;
+    return {
+      entityKey,
+      entityLabel: payload.entityLabel ?? payload.entity_label ?? entityKey,
+      available: payload.available,
+      filters: payload.filters ?? {},
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function hasLoggyAttachments(parsed: {
+  displayBlocks?: ChatDisplayBlock[];
+  colsRequest?: ChatColsRequest;
+}): boolean {
+  return (parsed.displayBlocks?.length ?? 0) > 0 || !!parsed.colsRequest;
+}
+
 export function parseAssistantChatContent(content: string): {
   text: string;
   displayBlocks: ChatDisplayBlock[];
+  colsRequest?: ChatColsRequest;
 } {
   const displayBlocks = parseChatDisplayBlocks(content);
+  const colsRequest = parseChatColsRequest(content);
+  let text = stripMarkers(content);
+  text = stripJsonFences(text);
+  text = stripToolCallLines(text);
   return {
-    text: stripMarkers(content),
-    displayBlocks,
+    text: text.trim(),
+    displayBlocks: displayBlocks.length > 0 ? displayBlocks : [],
+    colsRequest,
   };
+}
+
+function stripJsonFences(text: string): string {
+  let out = text;
+  while (out.includes("```json")) {
+    const start = out.indexOf("```json");
+    const after = start + 7;
+    const end = out.indexOf("```", after);
+    if (end < 0) break;
+    out = out.slice(0, start).trimEnd() + out.slice(end + 3);
+  }
+  return out.trim();
+}
+
+function stripToolCallLines(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      return !(t.startsWith("{") && t.includes('"tool"') && t.endsWith("}"));
+    })
+    .join("\n")
+    .trim();
 }
 
 export function formatCellValue(value: unknown): string {

@@ -55,6 +55,16 @@ pub struct ChatDisplayBlock {
     pub rows: Vec<Map<String, Value>>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatColsRequest {
+    pub entity_key: String,
+    pub entity_label: String,
+    pub available: Vec<ChatDisplayColumn>,
+    #[serde(default)]
+    pub filters: std::collections::HashMap<String, String>,
+}
+
 #[derive(serde::Serialize)]
 pub struct ChatReply {
     pub conversation_id: String,
@@ -62,6 +72,8 @@ pub struct ChatReply {
     pub tool_results: Vec<ToolResult>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub display_blocks: Vec<ChatDisplayBlock>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cols_request: Option<ChatColsRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_entity_create: Option<EntityCreateAction>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,14 +97,16 @@ impl<'a> Agent<'a> {
         tool_results: Vec<ToolResult>,
     ) -> Result<ChatReply, String> {
         let final_msg = finalize_with_translation(user_message_full, &msg)?;
+        let (visible, blocks) = crate::entity::list_preview::visible_chat_message(&final_msg);
         self.db
             .ai_add_message(conv_id, "assistant", &final_msg)
             .map_err(|e| e.to_string())?;
         Ok(ChatReply {
             conversation_id: conv_id.to_string(),
-            message: final_msg,
+            message: visible,
             tool_results,
-            display_blocks: vec![],
+            display_blocks: blocks,
+            cols_request: None,
             open_entity_create: None,
             open_registry_entity_create: None,
         })
@@ -184,12 +198,13 @@ ARCHITECTURE ENTITÉS (prioritaire) :
 
 INTERDIT : LaTeX (\documentclass), code inventé, tutoriels génériques. Pas de module biens/finances immobilier.
 Salutations (bonjour, merci, au revoir) : réponds en français naturel, sans JSON ni outil.
-Pour INTERROGER ou MODIFIER les données entités, utilise UNIQUEMENT un JSON sur une ligne:
+Pour INTERROGER ou MODIFIER les données entités, utilise UNIQUEMENT un JSON sur une ligne (interne, jamais montré à l'utilisateur):
 {{"tool":"nom_outil","params":{{...}},"explain":"raison"}}
 
 Outils clés : dda_list, dda_get, dda_create, dda_update, dda_delete — screen_key = nom d'entité exact.{web_block}
-Après exécution d'outil : courte phrase en français + données en ```json si pertinent.
-- Réponse LISTE → tableau JSON ; réponse FICHE → un seul objet JSON.
+Après exécution d'outil : courte phrase en français + données en liste à puces ou tableau texte (colonnes séparées par |).
+- INTERDIT dans la réponse visible : JSON brut, blocs ```json```, objets {{}}.
+- Réponse LISTE → tableau texte ou liste • ; réponse FICHE → liste « clé : valeur ».
 Écriture (dda_create, dda_update, dda_delete) = confirmation humaine obligatoire.
 {exp_block}
 Contexte:

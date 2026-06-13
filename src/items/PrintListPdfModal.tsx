@@ -14,6 +14,7 @@ import {
 import { formatTableBlockToken } from "@/lib/print/templateAttributes";
 import type { ScreenConfigFile, ScreenRow } from "@/types/screen";
 import { useAlert } from "@/contexts/AlertContext";
+import { notifyEntitySuccess } from "@/lib/entitySuccessAlert";
 
 interface PrintListPdfModalProps {
   open: boolean;
@@ -152,7 +153,7 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
           sousTitre.trim() ||
           defaultListPdfSubtitle(screenKey, filteredPreviewCount),
       });
-      showSuccess(`PDF liste généré pour « ${config.screen.label} ».`);
+      notifyEntitySuccess(showSuccess, screenKey, "export_pdf_list");
       onClose();
     } catch (e) {
       const msg = String(e);

@@ -35,8 +35,9 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
          3) CRUD via outils DDA : dda_list, dda_get, dda_create, dda_update, dda_delete avec screen_key = nom entité.\n\
          4) Liste dans le chat : « liste les {entité} » ou « liste les {entité} de {attribut} = {valeur} » — tableau HTML read-only + bouton ouvrir écran.\n\
          5) Filtres : trigger auto `trigger_filters` — opérateur par type d'attribut (number=equals, string=contains, enum=equals…) ; voir `{nom}_filters.txt` et MASTER_entities_filters.txt.\n\
-         6) Jointures : si l'utilisateur cite une entité liée (entity ref), inclure la colonne libellé de l'entité cible (voir MASTER_entities_relations.txt).\n\
-         7) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\n",
+         6) Alertes succès : trigger `trigger_success_alerts` — toast Loggy après create/update/delete/import/export (voir MASTER_entities_success_alerts.txt).\n\
+         7) Jointures : si l'utilisateur cite une entité liée (entity ref), inclure la colonne libellé de l'entité cible (voir MASTER_entities_relations.txt).\n\
+         8) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\n",
     );
 
     if stock::registry_has_stock(registry) {
@@ -60,6 +61,13 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
     let filters_master = format_filters_master_catalog(data_dir, registry);
     fs::write(dir.join("MASTER_entities_filters.txt"), &filters_master)
         .map_err(|e| e.to_string())?;
+
+    let success_master = crate::dda::success_alerts::format_master_success_alerts(data_dir)
+        .unwrap_or_default();
+    if !success_master.is_empty() {
+        fs::write(dir.join("MASTER_entities_success_alerts.txt"), &success_master)
+            .map_err(|e| e.to_string())?;
+    }
 
     if stock::registry_has_stock(registry) {
         fs::write(dir.join("MASTER_stock_module.txt"), STOCK_MODULE_SCHEMA)

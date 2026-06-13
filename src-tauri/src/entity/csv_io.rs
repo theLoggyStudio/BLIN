@@ -107,71 +107,89 @@ pub fn import_entity_csv(
         skip_post_create_hooks: true,
     };
 
-    for (line_no, line) in lines.iter().skip(1).enumerate() {
-        let cells = parse_csv_line(line)?;
-        if cells.len() != headers.len() {
-            errors.push(format!(
-                "Ligne {} : {} colonne(s) attendue(s), {} reçue(s).",
-                line_no + 2,
-                headers.len(),
-                cells.len()
-            ));
-            continue;
-        }
-        let mut data = Map::new();
-        let mut id: Option<String> = None;
-        for (hdr, val) in headers.iter().zip(cells.iter()) {
-            let hdr = hdr.trim();
-            if hdr.is_empty() {
+    db.conn
+        .execute_batch("BEGIN IMMEDIATE;")
+        .map_err(|e| format!("Début transaction import : {e}"))?;
+
+    let import_result = (|| {
+        for (line_no, line) in lines.iter().skip(1).enumerate() {
+            if line_no > 0 && line_no % 20 == 0 {
+                std::thread::yield_now();
+            }
+            let cells = parse_csv_line(line)?;
+            if cells.len() != headers.len() {
+                errors.push(format!(
+                    "Ligne {} : {} colonne(s) attendue(s), {} reçue(s).",
+                    line_no + 2,
+                    headers.len(),
+                    cells.len()
+                ));
                 continue;
             }
-            let Some(field_key) = resolve_csv_header_key(hdr, &field_by_key, &cfg, &registry) else {
-                continue;
+            let mut data = Map::new();
+            let mut id: Option<String> = None;
+            for (hdr, val) in headers.iter().zip(cells.iter()) {
+                let hdr = hdr.trim();
+                if hdr.is_empty() {
+                    continue;
+                }
+                let Some(field_key) = resolve_csv_header_key(hdr, &field_by_key, &cfg, &registry) else {
+                    continue;
+                };
+                let field = field_by_key.get(&field_key).expect("resolved key exists");
+                if field.column == cfg.screen.primary_key {
+                    if !val.trim().is_empty() {
+                        id = Some(val.trim().to_string());
+                    }
+                    continue;
+                }
+                if val.trim().is_empty() {
+                    continue;
+                }
+                data.insert(
+                    field_key.clone(),
+                    csv_value_to_json(val.trim(), field),
+                );
+            }
+
+            let existing_id = find_existing_record_id(db, &cfg, &registry, &data, id.take());
+
+            let result = if let Some(ref existing_id) = existing_id {
+                update_row(db, &cfg, existing_id, &data).map(|_| {
+                    touched_ids.push(existing_id.clone());
+                    (false, true)
+                })
+            } else {
+                create_row_with_user_and_options(db, &cfg, &data, None, import_opts).map(|row| {
+                    if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
+                        touched_ids.push(id.to_string());
+                    }
+                    (true, false)
+                })
             };
-            let field = field_by_key.get(&field_key).expect("resolved key exists");
-            if field.column == cfg.screen.primary_key {
-                if !val.trim().is_empty() {
-                    id = Some(val.trim().to_string());
+
+            match result {
+                Ok((ins, upd)) => {
+                    if ins {
+                        inserted += 1;
+                    }
+                    if upd {
+                        updated += 1;
+                    }
                 }
-                continue;
+                Err(e) => errors.push(format!("Ligne {} : {e}", line_no + 2)),
             }
-            if val.trim().is_empty() {
-                continue;
-            }
-            data.insert(
-                field_key.clone(),
-                csv_value_to_json(val.trim(), field),
-            );
         }
+        Ok::<(), String>(())
+    })();
 
-        let existing_id = find_existing_record_id(db, &cfg, &registry, &data, id.take());
-
-        let result = if let Some(ref existing_id) = existing_id {
-            update_row(db, &cfg, existing_id, &data).map(|_| {
-                touched_ids.push(existing_id.clone());
-                (false, true)
-            })
-        } else {
-            create_row_with_user_and_options(db, &cfg, &data, None, import_opts).map(|row| {
-                if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
-                    touched_ids.push(id.to_string());
-                }
-                (true, false)
-            })
-        };
-
-        match result {
-            Ok((ins, upd)) => {
-                if ins {
-                    inserted += 1;
-                }
-                if upd {
-                    updated += 1;
-                }
-            }
-            Err(e) => errors.push(format!("Ligne {} : {e}", line_no + 2)),
-        }
+    if let Err(e) = import_result {
+        let _ = db.conn.execute_batch("ROLLBACK;");
+        return Err(e);
     }
+    db.conn
+        .execute_batch("COMMIT;")
+        .map_err(|e| format!("Validation import : {e}"))?;
 
     if let Err(e) = validation::reconcile_signature_tasks(db, data_dir) {
         errors.push(format!("Réconciliation des tâches de signature : {e}"));

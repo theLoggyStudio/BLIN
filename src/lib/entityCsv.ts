@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { pushLoggyAlert } from "@/contexts/AlertContext";
+import { resolveEntitySuccessMessage } from "@/lib/entitySuccessAlert";
 
 interface ExportResponse {
   csv: string;
@@ -17,10 +18,10 @@ export async function exportEntityCsv(entityKey: string, entityLabel?: string): 
   a.download = res.file_name;
   a.click();
   URL.revokeObjectURL(url);
-  pushLoggyAlert(
-    `Export CSV terminé pour « ${entityLabel ?? entityKey} » (${res.file_name}).`,
-    "success",
-  );
+  const msg = await resolveEntitySuccessMessage(entityKey, "export_csv", {
+    file_name: res.file_name,
+  });
+  pushLoggyAlert(msg, "success");
 }
 
 export async function exportMultipleEntitiesCsv(

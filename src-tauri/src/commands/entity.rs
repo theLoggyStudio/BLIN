@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -826,7 +828,7 @@ pub fn entity_export_csv(
 }
 
 #[tauri::command]
-pub fn entity_import_csv(
+pub async fn entity_import_csv(
     state: State<'_, AppState>,
     payload: EntityCsvImportPayload,
 ) -> Result<entity::csv_io::EntityCsvImportResult, String> {
@@ -841,6 +843,47 @@ pub fn entity_import_csv(
         .clone()
         .unwrap_or_else(|| format!("{}:importer", payload.entity_key));
     state.desktop_sessions.require_privilege(&import_priv)?;
+
+    let entity_key = payload.entity_key;
+    let csv = payload.csv;
+    let db = state.db.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = db.lock();
+        entity::csv_io::import_entity_csv(&db, &db.data_dir, &entity_key, &csv)
+    })
+    .await
+    .map_err(|e| format!("Import interrompu : {e}"))?
+}
+
+#[derive(Deserialize)]
+pub struct EntitySuccessMessagePayload {
+    pub entity_key: String,
+    pub action: String,
+    #[serde(default)]
+    pub params: HashMap<String, String>,
+}
+
+#[derive(Serialize)]
+pub struct EntitySuccessMessageResponse {
+    pub message: String,
+}
+
+/// Message succès depuis le catalogue trigger (personnification Loggy côté front).
+#[tauri::command]
+pub fn entity_success_message(
+    state: State<'_, AppState>,
+    payload: EntitySuccessMessagePayload,
+) -> Result<EntitySuccessMessageResponse, String> {
+    state.desktop_sessions.require_session()?;
     let db = state.db.lock();
-    entity::csv_io::import_entity_csv(&db, &db.data_dir, &payload.entity_key, &payload.csv)
+    let catalog = crate::dda::success_alerts::load_catalog(&db.data_dir, &payload.entity_key)?;
+    let message = crate::dda::success_alerts::resolve_message(&catalog, &payload.action, &payload.params)
+        .unwrap_or_else(|| {
+            format!(
+                "Opération « {} » terminée pour « {} ».",
+                payload.action, catalog.entity_label
+            )
+        });
+    Ok(EntitySuccessMessageResponse { message })
 }

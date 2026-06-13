@@ -64,6 +64,7 @@ function messagesToThread(messages: AiStoredMessage[]): DashboardChatEntry[] {
           role: "assistant" as const,
           content: parsed.text || null,
           displayBlocks: parsed.displayBlocks,
+          colsRequest: parsed.colsRequest,
         };
       }
       return {
@@ -502,9 +503,16 @@ export function DashboardPage() {
       });
       conversationIdRef.current = reply.conversation_id;
       setConversationId(reply.conversation_id);
+      const parsed = parseAssistantChatContent(reply.message.trim());
+      const colsRequest = reply.cols_request ?? parsed.colsRequest;
       patchAssistant(assistantId, {
-        content: reply.message.trim(),
-        displayBlocks: reply.display_blocks ?? [],
+        content: parsed.text || null,
+        displayBlocks:
+          reply.display_blocks && reply.display_blocks.length > 0
+            ? reply.display_blocks
+            : parsed.displayBlocks,
+        colsRequest,
+        autoOpenCols: !!colsRequest,
         loading: false,
       });
       applyCreateActionFromReply(reply);
@@ -668,6 +676,9 @@ export function DashboardPage() {
                     appendDenial: true,
                     userMessage: `Ouvrir l'écran ${entityKey}`,
                   });
+                }}
+                onChatFollowUp={(text) => {
+                  void askLoggyPractical(text);
                 }}
               />
             </div>

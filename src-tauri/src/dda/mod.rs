@@ -5,6 +5,7 @@ pub mod knowledge;
 pub mod media;
 pub mod registry;
 pub mod schema;
+pub mod success_alerts;
 pub mod triggers;
 pub mod validation;
 

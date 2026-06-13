@@ -6,6 +6,7 @@ import { Button } from "@/items/Button";
 import { Modal } from "@/items/Modal";
 import { Text } from "@/items/Text";
 import { useAlert } from "@/contexts/AlertContext";
+import { notifyEntitySuccess } from "@/lib/entitySuccessAlert";
 
 interface EntityCsvImportModalProps {
   entityKey: string;
@@ -30,7 +31,7 @@ export function EntityCsvImportModal({
   onClose,
   onImported,
 }: EntityCsvImportModalProps) {
-  const { showSuccess, showError, showWarning } = useAlert();
+  const { showSuccess, showError } = useAlert();
   const [fileName, setFileName] = useState<string | null>(null);
   const [csvText, setCsvText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -41,6 +42,7 @@ export function EntityCsvImportModal({
   };
 
   const handleClose = () => {
+    if (importing) return;
     reset();
     onClose();
   };
@@ -68,18 +70,22 @@ export function EntityCsvImportModal({
     }
     setImporting(true);
     try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const res = await invoke<ImportResult>("entity_import_csv", {
         payload: { entity_key: entityKey, csv: csvText },
       });
       if (res.error_count > 0) {
-        showWarning(
-          `Import partiel pour « ${entityLabel} » : ${res.inserted} créé(s), ${res.updated} mis à jour, ${res.error_count} erreur(s).`,
-        );
+        notifyEntitySuccess(showSuccess, entityKey, "import_partial", {
+          inserted: res.inserted,
+          updated: res.updated,
+          error_count: res.error_count,
+        });
         if (res.errors[0]) showError(res.errors[0]);
       } else {
-        showSuccess(
-          `Import réussi pour « ${entityLabel} » : ${res.inserted} créé(s), ${res.updated} mis à jour.`,
-        );
+        notifyEntitySuccess(showSuccess, entityKey, "import_ok", {
+          inserted: res.inserted,
+          updated: res.updated,
+        });
       }
       onImported();
       handleClose();
@@ -90,12 +96,20 @@ export function EntityCsvImportModal({
     }
   };
 
+  const lineCount = csvText.trim() ? csvText.trim().split(/\r?\n/).filter(Boolean).length - 1 : 0;
+  const busyLabel =
+    lineCount > 0
+      ? `Import de ${Math.max(0, lineCount)} ligne(s) en cours…`
+      : "Import en cours…";
+
   return (
     <Modal
       open={open}
       onClose={handleClose}
       title={`Importer CSV — ${entityLabel}`}
       size="md"
+      busy={importing}
+      busyLabel={busyLabel}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={handleClose} disabled={importing}>

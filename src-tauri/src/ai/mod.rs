@@ -8,6 +8,7 @@ pub mod config;
 pub mod crud;
 pub mod dda_bridge;
 pub mod experience;
+pub mod format_display;
 pub mod fts_rewrite;
 pub mod greetings;
 pub mod hardware_profile;

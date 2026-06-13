@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { usePrivilege } from "@/hooks/usePrivilege";
 import { runAiStartupSequence } from "@/lib/aiStartup";
 
-/** Lance le serveur IA au démarrage de l'application (connexion avec ai:utiliser). */
+/** Lance le profilage matériel forcé puis le serveur IA au démarrage (connexion avec ai:utiliser). */
 export function AiStartupHost() {
   const canAi = usePrivilege("ai:utiliser");
   const startedRef = useRef(false);

@@ -39,6 +39,7 @@ import { PrintListPdfModal } from "@/items/PrintListPdfModal";
 import { EntityCsvImportModal } from "@/items/EntityCsvImportModal";
 import { printEntityRowPdf } from "@/lib/print/rowPrint";
 import { exportEntityCsv } from "@/lib/entityCsv";
+import { notifyEntitySuccess, type EntitySuccessAction } from "@/lib/entitySuccessAlert";
 import {
   canCreatorEditRecord,
   hasSignatureWorkflow,
@@ -75,19 +76,29 @@ type FormMode = "create" | "edit" | "detail" | null;
 
 const TACHE_ENTITY_KEY = "tache";
 
-function tacheCrudMessage(
-  action: "create" | "update" | "delete",
-  intitule?: string,
-): string {
-  const quoted = intitule?.trim() ? ` « ${intitule.trim()} »` : "";
-  switch (action) {
-    case "create":
-      return `Tâche${quoted} créée avec succès.`;
-    case "update":
-      return `Tâche${quoted} mise à jour.`;
-    case "delete":
-      return `Tâche${quoted} supprimée.`;
+function recordLabelFromRow(row: ScreenRow, config: ScreenConfigFile): string | undefined {
+  const lf = config.screen.label_field;
+  const v = row[lf];
+  if (v == null || v === "") return undefined;
+  return String(v).trim() || undefined;
+}
+
+function crudSuccessAction(
+  kind: "create" | "update" | "delete",
+  lineCount: number,
+  recordLabel?: string,
+): EntitySuccessAction {
+  if (kind === "delete") {
+    return recordLabel ? "delete_named" : "delete";
   }
+  if (kind === "create") {
+    if (recordLabel) return "create_named";
+    if (lineCount > 1) return "create_lines";
+    return "create";
+  }
+  if (recordLabel) return "update_named";
+  if (lineCount > 1) return "update_lines";
+  return "update";
 }
 
 function compactListCell(content: ReactNode, fieldKey: string): ReactNode {
@@ -483,24 +494,20 @@ export function DataScreen({
       }
       closeForm();
       await load();
-      if (screenKey === TACHE_ENTITY_KEY) {
-        const intitule = String(payload.intitule ?? "").trim();
-        if (!wasCreate) {
-          clearTaskReminderKeys(String(payload[pk] ?? ""));
-        }
-        window.dispatchEvent(new CustomEvent(TASK_REMINDERS_REFRESH_EVENT));
-        showSuccess(tacheCrudMessage(wasCreate ? "create" : "update", intitule));
-      } else {
-        showSuccess(
-          wasCreate
-            ? savedLineCount > 1
-              ? `Enregistrement créé avec ${savedLineCount} lignes (même matricule).`
-              : "Enregistrement créé avec succès."
-            : savedLineCount > 1
-              ? `Enregistrement mis à jour (${savedLineCount} lignes).`
-              : "Enregistrement mis à jour.",
-        );
+      const recordLabel =
+        screenKey === TACHE_ENTITY_KEY
+          ? String(payload.intitule ?? "").trim() || undefined
+          : recordLabelFromRow(payload, config);
+      if (screenKey === TACHE_ENTITY_KEY && !wasCreate) {
+        clearTaskReminderKeys(String(payload[pk] ?? ""));
       }
+      if (screenKey === TACHE_ENTITY_KEY) {
+        window.dispatchEvent(new CustomEvent(TASK_REMINDERS_REFRESH_EVENT));
+      }
+      notifyEntitySuccess(showSuccess, screenKey, crudSuccessAction(wasCreate ? "create" : "update", savedLineCount, recordLabel), {
+        line_count: savedLineCount,
+        record_label: recordLabel,
+      });
     } catch (e) {
       const parsed = parseValidationReportFromError(e);
       if (parsed) {
@@ -524,7 +531,7 @@ export function DataScreen({
     setError(null);
     try {
       await printEntityRowPdf(screenKey, id);
-      showSuccess("PDF généré et téléchargé.");
+      notifyEntitySuccess(showSuccess, screenKey, "export_pdf_row");
     } catch (e) {
       const msg = String(e);
       setError(msg);
@@ -624,12 +631,14 @@ export function DataScreen({
     try {
       await invoke("dda_delete", { payload: { screen_key: screenKey, id } });
       await load();
+      const recordLabel = recordLabelFromRow(row, config);
       if (screenKey === TACHE_ENTITY_KEY) {
-        const intitule = String(row.intitule ?? "").trim();
         clearTaskReminderKeys(id);
         window.dispatchEvent(new CustomEvent(TASK_REMINDERS_REFRESH_EVENT));
-        showSuccess(tacheCrudMessage("delete", intitule));
       }
+      notifyEntitySuccess(showSuccess, screenKey, crudSuccessAction("delete", 1, recordLabel), {
+        record_label: recordLabel,
+      });
     } catch (e) {
       const msg = String(e);
       setError(msg);
@@ -992,16 +1001,12 @@ export function DataScreen({
           onSigned={() => {
             setEntitySignatureTarget(null);
             void load();
-            if (screenKey === TACHE_ENTITY_KEY) {
-              showSuccess("Tâche traitée — signature enregistrée.");
-            }
+            notifyEntitySuccess(showSuccess, screenKey, "signature_ok");
           }}
           onRejected={() => {
             setEntitySignatureTarget(null);
             void load();
-            if (screenKey === TACHE_ENTITY_KEY) {
-              showSuccess("Tâche traitée — refus enregistré.");
-            }
+            notifyEntitySuccess(showSuccess, screenKey, "signature_refuse");
           }}
         />
       )}

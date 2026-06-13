@@ -110,12 +110,22 @@ fn count_biens_for_mass_delete(db: &Database) -> Result<usize, String> {
 }
 
 pub fn format_tool_reply(tool: &str, tr: &ToolResult) -> String {
+    let intro = tr.message.trim();
     if let Some(data) = &tr.data {
-        if let Ok(pretty) = serde_json::to_string_pretty(data) {
-            return format!("{}\n\n```json\n{pretty}\n```", tr.message);
+        let body = crate::ai::format_display::format_value_for_user(data);
+        if body.is_empty() {
+            return intro.to_string();
         }
+        if intro.is_empty() {
+            return body;
+        }
+        return format!("{intro}\n\n{body}");
     }
-    format!("{} — {}", tool, tr.message)
+    if intro.is_empty() {
+        tool.to_string()
+    } else {
+        intro.to_string()
+    }
 }
 
 pub fn extract_json_value(text: &str) -> Option<Value> {
