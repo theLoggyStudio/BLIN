@@ -18,6 +18,8 @@ export interface Column<T> {
   sortable?: boolean;
   render?: (row: T) => ReactNode;
   className?: string;
+  /** Colonne fixe lors du scroll horizontal (ex. actions à droite). */
+  sticky?: "left" | "right";
   /** Fusion verticale (rowspan) si l'entité mère a plusieurs lignes. */
   sharedAcrossLines?: boolean;
 }
@@ -63,6 +65,25 @@ interface TableauProps<T> extends TablePaginationProps {
 }
 
 const DEFAULT_PAGE_SIZES = [10, 25, 50, 100];
+
+function columnStickySide<T>(col: Column<T>): "left" | "right" | undefined {
+  return col.sticky ?? (col.key === "_actions" ? "right" : undefined);
+}
+
+function stickyColumnClass(
+  side: "left" | "right",
+  variant: "head" | "body",
+): string {
+  const edge =
+    side === "right"
+      ? "right-0 border-l border-border/60 shadow-[-8px_0_12px_-6px_rgba(0,0,0,0.55)]"
+      : "left-0 border-r border-border/60 shadow-[8px_0_12px_-6px_rgba(0,0,0,0.55)]";
+  const bg =
+    variant === "head"
+      ? "bg-surface-elevated"
+      : "bg-background group-hover/tr:bg-surface-elevated/90";
+  return cn("sticky z-[2]", edge, bg);
+}
 
 function compareSortValues(av: unknown, bv: unknown, sortDir: SortDir): number {
   if (av === bv) return 0;
@@ -190,12 +211,15 @@ export function Tableau<T extends Record<string, unknown>>({
         <table className={cn("w-full", dense ? "text-xs" : "text-sm")}>
           <thead>
             <tr className="border-b border-border bg-surface-elevated/50">
-              {columns.map((col) => (
+              {columns.map((col) => {
+                const sticky = columnStickySide(col);
+                return (
                 <th
                   key={col.key}
                   className={cn(
                     "text-left font-medium text-muted",
                     dense ? "px-2 py-2" : "px-4 py-3",
+                    sticky && stickyColumnClass(sticky, "head"),
                     col.className,
                   )}
                 >
@@ -212,7 +236,8 @@ export function Tableau<T extends Record<string, unknown>>({
                     col.header
                   )}
                 </th>
-              ))}
+              );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -230,7 +255,7 @@ export function Tableau<T extends Record<string, unknown>>({
                 <tr
                   key={keyExtractor(row)}
                   className={cn(
-                    "border-b border-border/50 last:border-0 transition-colors",
+                    "group/tr border-b border-border/50 last:border-0 transition-colors",
                     onRowClick && "cursor-pointer hover:bg-surface-elevated/30",
                   )}
                   onClick={() => onRowClick?.(row)}
@@ -244,12 +269,14 @@ export function Tableau<T extends Record<string, unknown>>({
                       shared && isFirstLine(row) && lineCount(row) > 1
                         ? lineCount(row)
                         : undefined;
+                    const sticky = columnStickySide(col);
                     return (
                       <td
                         key={col.key}
                         rowSpan={span}
                         className={cn(
                           dense ? "px-2 py-1.5 align-middle" : "px-4 py-3 align-top",
+                          sticky && stickyColumnClass(sticky, "body"),
                           col.className,
                         )}
                       >

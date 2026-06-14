@@ -718,6 +718,7 @@ export function DataScreen({
     const actionsCol: Column<ListLineRow> = {
       key: "_actions",
       header: "",
+      sticky: "right",
       className: compactList ? "w-28" : "w-36",
       sharedAcrossLines: true,
       render: (row: ListLineRow) =>
