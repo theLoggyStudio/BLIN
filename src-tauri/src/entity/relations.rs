@@ -105,11 +105,77 @@ pub fn field_ref_entity(field: &FieldDef) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+fn format_relation_option_detail(
+    ref_cfg: &crate::dda::config::ScreenConfigFile,
+    row: &Map<String, Value>,
+) -> String {
+    ref_cfg
+        .fields
+        .iter()
+        .filter(|f| {
+            f.field_type != "hidden"
+                && f.field_type != "detail_link"
+                && f.field_type != "entity_embed"
+                && f.field_type != "entity_embed_list"
+                && f.field_type != "image"
+                && f.field_type != "images"
+                && f.form.as_ref().and_then(|m| m.embed_parent.as_ref()).is_none()
+        })
+        .filter_map(|f| {
+            let raw = row.get(&f.key).or_else(|| row.get(&f.column))?;
+            let val = display_value(raw);
+            if val == "—" || val.trim().is_empty() {
+                return None;
+            }
+            Some(format!("{} : {}", f.label, val))
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+fn relation_option_from_id(
+    db: &Database,
+    ref_cfg: &crate::dda::config::ScreenConfigFile,
+    id: String,
+    fallback_label: String,
+) -> RelationSelectOptionExt {
+    let label = if fallback_label.trim().is_empty() {
+        id.clone()
+    } else {
+        fallback_label
+    };
+    let detail = crate::dda::crud::get_row(db, ref_cfg, &id)
+        .map(|row| format_relation_option_detail(ref_cfg, &row))
+        .unwrap_or_default();
+    let detail = if detail.is_empty() {
+        label.clone()
+    } else {
+        detail
+    };
+    RelationSelectOptionExt {
+        value: id,
+        label,
+        detail,
+    }
+}
+
 fn display_value(v: &Value) -> String {
     match v {
         Value::Null => "—".into(),
         Value::Bool(b) => if *b { "Oui" } else { "Non" }.into(),
-        Value::Number(n) => n.to_string(),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(f) = n.as_f64() {
+                if (f - f.round()).abs() < f64::EPSILON {
+                    format!("{}", f as i64)
+                } else {
+                    n.to_string()
+                }
+            } else {
+                n.to_string()
+            }
+        }
         Value::String(s) => s.clone(),
         other => other.to_string(),
     }
@@ -300,9 +366,41 @@ fn escape_like_pattern(raw: &str) -> String {
     raw.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
 }
 
+/// Colonnes SQLite sur lesquelles la recherche de liaison porte (tous attributs persistés).
+fn relation_search_columns(ref_cfg: &crate::dda::config::ScreenConfigFile) -> Vec<String> {
+    let pk = ref_cfg.screen.primary_key.clone();
+    let mut cols: Vec<String> = ref_cfg
+        .persisted_fields()
+        .iter()
+        .map(|f| f.column.clone())
+        .collect();
+    if !cols.iter().any(|c| c == &pk) {
+        cols.push(pk);
+    }
+    cols.sort();
+    cols.dedup();
+    cols
+}
+
+fn relation_search_where_clause(
+    ref_cfg: &crate::dda::config::ScreenConfigFile,
+    label_col: &str,
+) -> String {
+    let cols = relation_search_columns(ref_cfg);
+    if cols.is_empty() {
+        return format!(" WHERE {label_col} LIKE ?1 ESCAPE '\\'");
+    }
+    let parts = cols
+        .iter()
+        .map(|c| format!("CAST({c} AS TEXT) LIKE ?1 ESCAPE '\\'"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    format!(" WHERE ({parts})")
+}
+
 /// Options pour un champ entity_ref : enregistrements libres (non déjà liés sur cette entité parente).
 ///
-/// - `search` : filtre LIKE sur le libellé (autocomplétion).
+/// - `search` : filtre LIKE sur tous les attributs persistés de l'entité cible.
 /// - `limit` : nombre max de suggestions (0 = pas de listing général, seulement `include_ids`).
 /// - `include_ids` : IDs toujours retournés (valeur courante / résolution de libellés),
 ///   indépendamment du filtre de recherche et de l'exclusivité parent.
@@ -407,11 +505,16 @@ pub fn relation_select_options(
     let mut options = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    let listing_limit = limit.unwrap_or(usize::MAX);
+    let listing_limit = match limit {
+        Some(0) => 0,
+        Some(n) => n,
+        None => 50,
+    };
     if listing_limit > 0 {
         options.push(RelationSelectOptionExt {
             value: "".into(),
             label: "— Aucun —".into(),
+            detail: String::new(),
         });
 
         let search_term = search.map(str::trim).filter(|s| !s.is_empty());
@@ -421,7 +524,7 @@ pub fn relation_select_options(
             String::new()
         };
         let where_clause = if search_term.is_some() {
-            format!(" WHERE {label_col} LIKE ?1 ESCAPE '\\'")
+            relation_search_where_clause(&ref_cfg, label_col)
         } else {
             String::new()
         };
@@ -464,10 +567,7 @@ pub fn relation_select_options(
                 label
             };
             seen.insert(id.clone());
-            options.push(RelationSelectOptionExt {
-                value: id,
-                label: display,
-            });
+            options.push(relation_option_from_id(db, &ref_cfg, id, display));
             count += 1;
         }
     }
@@ -506,10 +606,7 @@ pub fn relation_select_options(
                     label
                 };
                 seen.insert(id.clone());
-                options.push(RelationSelectOptionExt {
-                    value: id,
-                    label: display,
-                });
+                options.push(relation_option_from_id(db, &ref_cfg, id, display));
             }
         }
     }

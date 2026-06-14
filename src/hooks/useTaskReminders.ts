@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 import { DateTime } from "luxon";
-import { invoke } from "@tauri-apps/api/core";
 import { useAlert } from "@/contexts/AlertContext";
 import {
   FOCUS_TACHES_WINDOW_EVENT,
@@ -14,7 +13,8 @@ import {
   markReminderFired,
   msUntilNextReminderCheck,
 } from "@/lib/taskReminders";
-import type { ScreenRow } from "@/types/screen";
+import { fetchDdaListPage } from "@/lib/ddaList";
+import { REMINDER_TASKS_PAGE_SIZE } from "@/constants/variable.constant";
 
 const TACHE_ENTITY_KEY = "tache";
 
@@ -32,12 +32,13 @@ export function useTaskReminders() {
     if (runningRef.current) return;
     runningRef.current = true;
     try {
-      const tasks = await invoke<ScreenRow[]>("dda_list", {
-        payload: { screen_key: TACHE_ENTITY_KEY, filters: {} },
+      const data = await fetchDdaListPage(TACHE_ENTITY_KEY, {
+        page: 0,
+        pageSize: REMINDER_TASKS_PAGE_SIZE,
       });
       const now = DateTime.local();
       const fired = loadFiredReminderKeys();
-      const due = findDueTaskReminders(tasks, now, fired);
+      const due = findDueTaskReminders(data.rows, now, fired);
 
       for (const item of due) {
         markReminderFired(item.fireKey);
@@ -50,7 +51,7 @@ export function useTaskReminders() {
         });
       }
 
-      const delay = msUntilNextReminderCheck(tasks, now);
+      const delay = msUntilNextReminderCheck(data.rows, now);
       if (timerRef.current != null) window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(() => {
         void checkReminders();

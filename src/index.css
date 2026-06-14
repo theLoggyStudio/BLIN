@@ -29,6 +29,7 @@
   html {
     @apply h-full antialiased;
     overflow: hidden;
+    color-scheme: dark;
   }
 
   body {
@@ -66,6 +67,38 @@
 
   dialog.app-modal-dialog:not([open]) {
     display: none;
+  }
+
+  /* Icônes natives — color-scheme dark sur html ; pas de invert (double inversion sous WebView2) */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"] {
+    color-scheme: dark;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  input[type="month"]::-webkit-calendar-picker-indicator,
+  input[type="week"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.9;
+  }
+
+  input:disabled::-webkit-calendar-picker-indicator {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    opacity: 0.9;
+  }
+
+  input[type="search"]::-webkit-search-cancel-button {
+    opacity: 0.9;
   }
 }
 

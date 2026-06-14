@@ -124,6 +124,14 @@ export function fallbackExpressiveAlert(message: string, variant: AlertVariant):
     return `Je n'ai pas réussi à aller au bout : ${ensureSentence(t.replace(/^(Échec|Impossible)[^:]*:?\s*/i, ""))}`;
   }
 
+  if (/^Identifiants invalides/i.test(t)) {
+    return "Je n'ai pas reconnu cet e-mail ou ce mot de passe. Vérifie les identifiants et réessaie.";
+  }
+
+  if (/^Connexion —/i.test(t)) {
+    return t.replace(/^Connexion —\s*/i, "").trim() || t;
+  }
+
   switch (variant) {
     case "success":
       return `Parfait ! ${ensureSentence(t)}`;

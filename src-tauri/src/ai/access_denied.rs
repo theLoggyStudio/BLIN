@@ -89,8 +89,12 @@ fn sanitize_phrase(raw: &str) -> String {
         .join(" ")
         .trim()
         .to_string();
-    if line.starts_with("«") && line.ends_with("»") && line.chars().count() > 2 {
-        line = line[1..line.len() - 1].trim().to_string();
+    if line.starts_with('«') && line.ends_with('»') && line.chars().count() > 2 {
+        line = line
+            .trim_start_matches('«')
+            .trim_end_matches('»')
+            .trim()
+            .to_string();
     }
     line = line.trim_matches('"').trim().to_string();
     if line.len() > 320 {

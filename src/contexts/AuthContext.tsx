@@ -14,6 +14,7 @@ interface LoginResponse {
   token: string;
   user: User;
   must_change_password: boolean;
+  login_greeting?: string;
   login_notices?: string[];
 }
 
@@ -21,6 +22,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   mustChangePassword: boolean;
+  loginGreeting: string | null;
   loginNotices: string[];
   clearLoginNotices: () => void;
   login: (email: string, password: string) => Promise<void>;
@@ -36,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [loginNotices, setLoginNotices] = useState<string[]>([]);
+  const [loginGreeting, setLoginGreeting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const applyUser = useCallback((next: User | null) => {
@@ -64,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         payload: { email, password },
       });
       applyUser(response.user);
+      setLoginGreeting(response.login_greeting?.trim() || null);
       setLoginNotices(response.login_notices ?? []);
       setMustChangePassword(
         response.must_change_password || Boolean(response.user.must_change_password),
@@ -76,10 +80,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await invoke("auth_logout");
     applyUser(null);
     setLoginNotices([]);
+    setLoginGreeting(null);
   }, [applyUser]);
 
   const clearLoginNotices = useCallback(() => {
     setLoginNotices([]);
+    setLoginGreeting(null);
   }, []);
 
   const changePassword = useCallback(
@@ -117,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       mustChangePassword,
+      loginGreeting,
       loginNotices,
       clearLoginNotices,
       login,
@@ -129,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       mustChangePassword,
+      loginGreeting,
       loginNotices,
       clearLoginNotices,
       login,

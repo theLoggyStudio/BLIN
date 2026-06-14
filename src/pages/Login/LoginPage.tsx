@@ -8,9 +8,8 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/items/Alert";
 import { Modal } from "@/items/Modal";
 import { QRCodeSVG } from "qrcode.react";
-import { DEFAULT_ADMIN_EMAIL} from "@/constants/variable.constant";
-
-
+import { getInvalidCredentialsMessage } from "@/lib/loginMessagesCache";
+import { DEFAULT_ADMIN_EMAIL } from "@/constants/variable.constant";
 
 interface RemoteConnectionResponse {
   ip?: string;
@@ -69,7 +68,12 @@ export function LoginPage() {
     try {
       await login(email.trim(), password);
     } catch (err) {
-      setError(String(err));
+      const raw = String(err);
+      const isInvalid =
+        raw.includes("Identifiants invalides") ||
+        raw.toLowerCase().includes("mot de passe") ||
+        raw.toLowerCase().includes("e-mail");
+      setError(isInvalid ? getInvalidCredentialsMessage(raw) : raw);
     } finally {
       setSubmitting(false);
     }

@@ -8,6 +8,7 @@ import { EntityStatsPanel } from "@/items/EntityStatsPanel";
 import { StatChartGrid } from "@/items/StatChartGrid";
 import { StatKpiCard } from "@/items/StatKpiCard";
 import { Text } from "@/items/Text";
+import { fetchDdaListCount } from "@/lib/ddaList";
 import type { ScreenConfigFile, ScreenRow } from "@/types/screen";
 
 interface EntityWorkspaceProps {
@@ -49,11 +50,7 @@ export function EntityWorkspace({
         payload: { entity_key: entityKey },
       });
       setConfig(cfg);
-      const rows = await invoke<Record<string, unknown>[]>("dda_list", {
-        payload: { screen_key: entityKey, filters: {} },
-      });
-      setRowCount(rows.length);
-
+      setRowCount(await fetchDdaListCount(entityKey));
     } catch (e) {
       setError(String(e));
       setConfig(null);

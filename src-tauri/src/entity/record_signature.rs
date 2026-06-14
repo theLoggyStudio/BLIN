@@ -267,6 +267,8 @@ pub fn assert_record_editable_by_user(
 pub struct RelationSelectOptionExt {
     pub value: String,
     pub label: String,
+    /// Attributs formatés « Libellé : valeur · … » pour affichage en petit.
+    pub detail: String,
 }
 
 pub fn user_role_id(db: &Database, user_id: &str) -> Result<String, String> {

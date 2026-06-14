@@ -14,7 +14,11 @@ fn variant_tone(variant: &str) -> &'static str {
 fn sanitize_message(raw: &str, max_len: usize) -> String {
     let mut text = raw.trim().to_string();
     if text.starts_with('«') && text.ends_with('»') && text.chars().count() > 2 {
-        text = text[1..text.len() - 1].trim().to_string();
+        text = text
+            .trim_start_matches('«')
+            .trim_end_matches('»')
+            .trim()
+            .to_string();
     }
     text = text.trim_matches('"').trim().to_string();
     let text: String = text

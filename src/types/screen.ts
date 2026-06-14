@@ -157,6 +157,11 @@ export interface FieldOption {
 
 export type ScreenRow = Record<string, unknown>;
 
+export interface DdaListResult {
+  rows: ScreenRow[];
+  total: number;
+}
+
 export interface ValidationIssue {
   field: string;
   label: string;

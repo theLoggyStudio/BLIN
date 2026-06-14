@@ -1,19 +1,13 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Plus, Search } from "lucide-react";
 import { Alert } from "@/items/Alert";
+import { RelationOptionRow } from "@/items/RelationOptionLine";
 import { RELATION_SUGGESTIONS_LIMIT } from "@/constants/variable.constant";
+import { floatingMenuZIndex } from "@/lib/modalStack";
 import { cn } from "@/lib/utils";
 import type { RelationSelectOption } from "@/types/entity";
-
-const SEARCH_DEBOUNCE_MS = 200;
 
 export interface RelationOptionsQuery {
   screenKey: string;
@@ -83,8 +77,7 @@ interface EntityRelationAutocompleteProps {
 
 /**
  * Champ avec suggestions pour choisir un enregistrement d'une entité liée.
- * Recherche côté serveur, max RELATION_SUGGESTIONS_LIMIT résultats —
- * remplace les <select> qui chargeaient la totalité des objets.
+ * Recherche côté serveur au clic sur la loupe uniquement.
  */
 export function EntityRelationAutocomplete({
   label,
@@ -103,15 +96,17 @@ export function EntityRelationAutocomplete({
   onCreateNew,
 }: EntityRelationAutocompleteProps) {
   const inputId = useId();
+  const listboxId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<RelationSelectOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
   const [resolvedLabel, setResolvedLabel] = useState("");
 
-  // Résolution du libellé de la valeur courante (sans tout charger).
   useEffect(() => {
     let cancelled = false;
     const v = value.trim();
@@ -131,49 +126,60 @@ export function EntityRelationAutocomplete({
     };
   }, [value, screenKey, fieldKey, excludeRecordId]);
 
-  // Recherche serveur débouncée (max RELATION_SUGGESTIONS_LIMIT résultats).
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
+  const runSearch = useCallback(async () => {
+    setHasSearched(true);
     setLoading(true);
-    const timer = window.setTimeout(() => {
-      void fetchRelationOptions({
+    try {
+      const rows = await fetchRelationOptions({
         screenKey,
         fieldKey,
         excludeRecordId,
         search: query.trim() || undefined,
         limit: RELATION_SUGGESTIONS_LIMIT,
-      })
-        .then((rows) => {
-          if (cancelled) return;
-          setOptions(rows.filter((o) => o.value));
-          setHighlighted(0);
-        })
-        .catch(() => {
-          if (!cancelled) setOptions([]);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [open, query, screenKey, fieldKey, excludeRecordId]);
+      });
+      setOptions(rows.filter((o) => o.value));
+      setHighlighted(0);
+    } catch {
+      setOptions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [screenKey, fieldKey, excludeRecordId, query]);
 
-  // Fermeture au clic extérieur.
+  const updateMenuRect = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setMenuRect(el.getBoundingClientRect());
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuRect(null);
+      return;
+    }
+    updateMenuRect();
+    const onScrollOrResize = () => updateMenuRect();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [open, updateMenuRect]);
+
   useEffect(() => {
     if (!open) return;
     const onDocMouseDown = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) {
-        setOpen(false);
-        onBlur?.();
-      }
+      const t = e.target as Node;
+      if (containerRef.current?.contains(t)) return;
+      const menu = document.getElementById(listboxId);
+      if (menu?.contains(t)) return;
+      setOpen(false);
+      onBlur?.();
     };
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
-  }, [open, onBlur]);
+  }, [open, onBlur, listboxId]);
 
   const suggestions = useMemo(() => {
     if (!excludeIds?.length) return options;
@@ -183,10 +189,17 @@ export function EntityRelationAutocomplete({
 
   const currentLabel = displayLabel?.trim() || resolvedLabel;
 
+  const resetSearchState = () => {
+    setQuery("");
+    setOptions([]);
+    setHasSearched(false);
+    setHighlighted(0);
+  };
+
   const closeAnd = useCallback(
     (option: RelationSelectOption | null) => {
       setOpen(false);
-      setQuery("");
+      resetSearchState();
       if (option) onSelect(option);
       onBlur?.();
     },
@@ -195,8 +208,7 @@ export function EntityRelationAutocomplete({
 
   const openDropdown = () => {
     if (disabled) return;
-    setQuery("");
-    setOptions([]);
+    if (!open) resetSearchState();
     setOpen(true);
   };
 
@@ -208,6 +220,7 @@ export function EntityRelationAutocomplete({
       }
       return;
     }
+    if (!hasSearched || loading) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlighted((h) => Math.min(h + 1, suggestions.length - 1));
@@ -221,6 +234,7 @@ export function EntityRelationAutocomplete({
     } else if (e.key === "Escape") {
       e.preventDefault();
       setOpen(false);
+      resetSearchState();
       onBlur?.();
     }
   };
@@ -237,19 +251,22 @@ export function EntityRelationAutocomplete({
           id={inputId}
           role="combobox"
           aria-expanded={open}
+          aria-controls={open ? listboxId : undefined}
           aria-autocomplete="list"
+          type={open ? "search" : "text"}
           autoComplete="off"
           disabled={disabled}
           value={open ? query : currentLabel}
           placeholder={
             open
-              ? "Rechercher…"
+              ? "Tapez puis cliquez sur la loupe…"
               : placeholder ?? (allowEmpty ? "— Aucun —" : "Choisir…")
           }
           className={cn(
-            "w-full rounded-lg border bg-background px-3 py-2.5 pr-9 text-sm text-foreground",
+            "w-full rounded-lg border bg-background py-2.5 text-sm text-foreground select-text",
+            open ? "pl-3 pr-11" : "px-3 pr-9",
             "placeholder:text-muted/60 transition-colors duration-200",
-            "focus:border-secondary focus:ring-1 focus:ring-secondary",
+            "focus:border-secondary focus:ring-1 focus:ring-secondary focus:outline-none",
             disabled && "cursor-not-allowed opacity-60",
             error ? "border-primary" : "border-border",
           )}
@@ -264,75 +281,102 @@ export function EntityRelationAutocomplete({
           }}
           onKeyDown={handleKeyDown}
         />
-        <ChevronDown
-          className={cn(
-            "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted transition-transform",
-            open && "rotate-180",
-          )}
-        />
-        {open && (
-          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-xl">
-            {allowEmpty && (
-              <button
-                type="button"
-                className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-muted hover:bg-surface-elevated/80"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => closeAnd({ value: "", label: "" })}
-              >
-                — Aucun —
-              </button>
+        {open ? (
+          <button
+            type="button"
+            className={cn(
+              "absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md",
+              "text-foreground transition-colors hover:bg-surface-elevated hover:text-secondary",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+              loading && "pointer-events-none opacity-60",
             )}
-            {loading ? (
-              <p className="px-3 py-2 text-sm text-muted">Recherche…</p>
-            ) : suggestions.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-muted">
-                {query.trim()
-                  ? "Aucun résultat pour cette recherche."
-                  : "Aucun enregistrement disponible."}
-              </p>
-            ) : (
-              suggestions.map((option, idx) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={cn(
-                    "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm text-foreground",
-                    idx === highlighted
-                      ? "bg-surface-elevated"
-                      : "hover:bg-surface-elevated/80",
-                    option.value === value && "text-secondary",
-                  )}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setHighlighted(idx)}
-                  onClick={() => closeAnd(option)}
-                >
-                  <span className="truncate">{option.label}</span>
-                </button>
-              ))
-            )}
-            {!loading && suggestions.length >= RELATION_SUGGESTIONS_LIMIT && (
-              <p className="border-t border-border px-3 py-1.5 text-xs text-muted">
-                {RELATION_SUGGESTIONS_LIMIT} premiers résultats — affinez votre
-                recherche.
-              </p>
-            )}
-            {onCreateNew && (
-              <button
-                type="button"
-                className="mt-1 flex w-full items-center gap-2 rounded-md border-t border-border px-3 py-2 text-left text-sm text-secondary hover:bg-surface-elevated/80"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setOpen(false);
-                  setQuery("");
-                  onCreateNew();
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Créer un nouveau
-              </button>
-            )}
-          </div>
+            aria-label="Lancer la recherche"
+            disabled={disabled || loading}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => void runSearch()}
+          >
+            <Search className="h-4 w-4" aria-hidden />
+          </button>
+        ) : (
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground"
+          />
         )}
+        {open &&
+          menuRect &&
+          createPortal(
+            <div
+              id={listboxId}
+              role="listbox"
+              aria-labelledby={inputId}
+              className="max-h-[min(20rem,70vh)] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+              style={{
+                position: "fixed",
+                top: menuRect.bottom + 4,
+                left: menuRect.left,
+                width: menuRect.width,
+                zIndex: floatingMenuZIndex(),
+              }}
+            >
+              {allowEmpty && (
+                <button
+                  type="button"
+                  className="flex w-full min-w-0 border-b border-border/50 px-4 py-3 text-left text-sm text-muted transition-colors hover:bg-surface-elevated/70 last:border-b-0"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => closeAnd({ value: "", label: "" })}
+                >
+                  — Aucun —
+                </button>
+              )}
+              {!hasSearched ? (
+                <p className="px-4 py-3 text-sm text-muted">
+                  Saisissez un terme puis cliquez sur la loupe pour lancer la recherche.
+                </p>
+              ) : loading ? (
+                <p className="px-4 py-3 text-sm text-muted">Recherche…</p>
+              ) : suggestions.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-muted">
+                  {query.trim()
+                    ? "Aucun résultat pour cette recherche."
+                    : "Aucun enregistrement disponible."}
+                </p>
+              ) : (
+                suggestions.map((option, idx) => (
+                  <RelationOptionRow
+                    key={option.value}
+                    option={option}
+                    active={idx === highlighted}
+                    selected={option.value === value}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setHighlighted(idx)}
+                    onClick={() => closeAnd(option)}
+                  />
+                ))
+              )}
+              {hasSearched && !loading && suggestions.length >= RELATION_SUGGESTIONS_LIMIT && (
+                <p className="border-t border-border px-3 py-1.5 text-xs text-muted">
+                  {RELATION_SUGGESTIONS_LIMIT} premiers résultats — affinez votre recherche.
+                </p>
+              )}
+              {onCreateNew && (
+                <button
+                  type="button"
+                  className="mt-1 flex w-full items-center gap-2 rounded-md border-t border-border px-3 py-2 text-left text-sm text-secondary hover:bg-surface-elevated/80"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setOpen(false);
+                    resetSearchState();
+                    onCreateNew();
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Créer un nouveau
+                </button>
+              )}
+            </div>,
+            document.body,
+          )}
       </div>
       {error && <Alert variant="danger" size="field" message={error} />}
     </div>

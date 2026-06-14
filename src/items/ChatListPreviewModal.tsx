@@ -1,7 +1,9 @@
 import { ExternalLink } from "lucide-react";
 import { Button } from "@/items/Button";
 import { Modal } from "@/items/Modal";
+import { PaginatedList } from "@/items/PaginatedList";
 import { Table, type Column } from "@/items/Table";
+import { LIST_PAGE_SIZE } from "@/constants/variable.constant";
 import { formatCellValue } from "@/lib/chatDisplayParse";
 import type { ChatDisplayBlock } from "@/types/ai";
 
@@ -60,17 +62,21 @@ export function ChatListPreviewModal({
       }
     >
       {block.kind === "list" && block.columns.length <= 1 ? (
-        <ul className="max-h-[min(60vh,28rem)] list-disc space-y-2 overflow-y-auto pl-5 text-sm text-foreground">
-          {block.rows.length === 0 ? (
-            <li className="list-none pl-0 text-muted">Aucune ligne à afficher.</li>
-          ) : (
-            block.rows.map((row, ri) => {
-              const col = block.columns[0];
-              const val = col ? row[col.key] : Object.values(row)[0];
-              return <li key={ri}>{formatCellValue(val)}</li>;
-            })
-          )}
-        </ul>
+        <PaginatedList
+          items={block.rows}
+          pageSize={LIST_PAGE_SIZE}
+          empty={<p className="text-sm text-muted">Aucune ligne à afficher.</p>}
+          className="max-h-[min(60vh,28rem)] overflow-y-auto text-sm text-foreground"
+          renderItem={(row, ri) => {
+            const col = block.columns[0];
+            const val = col ? row[col.key] : Object.values(row)[0];
+            return (
+              <p key={ri} className="border-b border-border/40 py-2 last:border-b-0">
+                {formatCellValue(val)}
+              </p>
+            );
+          }}
+        />
       ) : (
         <Table
           columns={columns}

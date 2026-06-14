@@ -170,6 +170,25 @@ fn time_greeting_fr() -> &'static str {
     }
 }
 
+/// Message de bienvenue affiché à la connexion (toast Loggy personnifié).
+pub fn format_login_greeting(user_name: &str, app_name: &str) -> String {
+    let t = time_greeting_fr();
+    let name = user_name.trim();
+    let variants = if name.is_empty() {
+        vec![
+            format!("Connexion — {t} ! Bienvenue sur {app_name}. Loggy est prêt à vous accompagner."),
+            format!("Connexion — {t} ! Ravi de vous retrouver sur {app_name}. Que souhaitez-vous faire ?"),
+        ]
+    } else {
+        vec![
+            format!("Connexion — {t} {name} ! Bienvenue sur {app_name}. Loggy est prêt à vous accompagner."),
+            format!("Connexion — {t} {name} ! Content de vous revoir sur {app_name}. Dites-moi ce dont vous avez besoin."),
+            format!("Connexion — {t} {name} ! Heureux de vous accueillir sur {app_name}. Je suis Loggy, à votre service."),
+        ]
+    };
+    pick_variant_owned(&variants, name)
+}
+
 fn stats_snippet(_stats: &DashboardStats) -> String {
     "Consultez vos entités depuis le tableau de bord (barre de commande).".to_string()
 }

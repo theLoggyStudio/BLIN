@@ -310,6 +310,7 @@ fn build_rows_with_joins(
             viewer_user_id: None,
             viewer_privileges: &user.privileges,
         },
+        None,
     )?;
     let rows = apply_exact_filters(rows, &cfg, filters);
 

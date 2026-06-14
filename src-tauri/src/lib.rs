@@ -18,6 +18,7 @@ mod sync_progress;
 use parking_lot::Mutex;
 use session::{RemoteSessionStore, SessionManager, SharedRemoteSessions, SharedSession};
 use std::sync::Arc;
+use ai::login_messages::PreparedLoginMessages;
 use tauri::Manager;
 
 pub use db::Database;
@@ -29,6 +30,7 @@ pub struct AppState {
     pub desktop_sessions: SharedSession,
     pub remote_sessions: SharedRemoteSessions,
     pub pairing_token: Arc<Mutex<String>>,
+    pub login_messages: Arc<Mutex<PreparedLoginMessages>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -71,6 +73,7 @@ pub fn run() {
                 desktop_sessions,
                 remote_sessions,
                 pairing_token: pairing_arc,
+                login_messages: Arc::new(Mutex::new(PreparedLoginMessages::default())),
             });
 
             let data_dir = app.state::<AppState>().db.lock().data_dir.clone();
@@ -86,6 +89,8 @@ pub fn run() {
             commands::auth::auth_current_user,
             commands::auth::auth_change_password,
             commands::auth::auth_sync_session_privileges,
+            commands::auth::auth_prepare_login_messages,
+            commands::auth::auth_get_login_messages,
             commands::ai::ai_status,
             commands::ai::ai_profile_runtime,
             commands::ai::ai_reindex,

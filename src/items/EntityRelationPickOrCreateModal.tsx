@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus } from "lucide-react";
 import { usePrivilege } from "@/hooks/usePrivilege";
 import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
-import { Input } from "@/items/Input";
 import { Modal } from "@/items/Modal";
+import { SearchInput } from "@/items/SearchInput";
+import { RelationOptionRow } from "@/items/RelationOptionLine";
 import { EntityRelationCreateModal } from "@/items/EntityRelationCreateModal";
 import { fetchRelationOptions } from "@/items/EntityRelationAutocomplete";
 import { RELATION_SUGGESTIONS_LIMIT } from "@/constants/variable.constant";
-import type { RelationSelectOption } from "@/types/entity";
+import { blurActiveElement } from "@/lib/focus";
 
-const SEARCH_DEBOUNCE_MS = 200;
+import type { RelationSelectOption } from "@/types/entity";
 
 interface EntityRelationPickOrCreateModalProps {
   entityKey: string;
@@ -44,9 +45,20 @@ export function EntityRelationPickOrCreateModal({
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<RelationSelectOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const canCreate = usePrivilege(`${entityKey}:creer`);
   const [entityLabel, setEntityLabel] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    blurActiveElement();
+    const timer = window.setTimeout(() => {
+      searchRef.current?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
 
   const loadLabel = useCallback(async () => {
     try {
@@ -63,34 +75,24 @@ export function EntityRelationPickOrCreateModal({
     if (open) void loadLabel();
   }, [open, loadLabel]);
 
-  // Recherche serveur débouncée — ne charge jamais la totalité de l'entité cible.
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
+  const runSearch = useCallback(async () => {
+    setHasSearched(true);
     setLoading(true);
-    const timer = window.setTimeout(() => {
-      void fetchRelationOptions({
+    try {
+      const rows = await fetchRelationOptions({
         screenKey,
         fieldKey,
         excludeRecordId,
         search: query.trim() || undefined,
         limit: RELATION_SUGGESTIONS_LIMIT,
-      })
-        .then((rows) => {
-          if (!cancelled) setOptions(rows.filter((o) => o.value));
-        })
-        .catch(() => {
-          if (!cancelled) setOptions([]);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [open, query, screenKey, fieldKey, excludeRecordId]);
+      });
+      setOptions(rows.filter((o) => o.value));
+    } catch {
+      setOptions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [screenKey, fieldKey, excludeRecordId, query]);
 
   const available = useMemo(() => {
     const excluded = new Set(excludeIds);
@@ -99,6 +101,8 @@ export function EntityRelationPickOrCreateModal({
 
   const handleClose = () => {
     setQuery("");
+    setOptions([]);
+    setHasSearched(false);
     setCreateOpen(false);
     onClose();
   };
@@ -116,22 +120,29 @@ export function EntityRelationPickOrCreateModal({
     <>
       <Modal open={open && !createOpen} onClose={handleClose} title={title} size="md">
         <div className="space-y-4">
-          <Input
+          <SearchInput
+            ref={searchRef}
+            id="entity-relation-pick-search"
             label="Rechercher"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Tapez pour rechercher…"
-            autoFocus
+            placeholder="Tapez puis cliquez sur la loupe…"
+            loading={loading}
+            onSearch={() => void runSearch()}
           />
-          <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border p-1">
-            {loading ? (
-              <p className="px-3 py-6 text-center text-sm text-muted">Recherche…</p>
+          <div className="max-h-80 overflow-y-auto rounded-lg border border-border bg-background/40">
+            {!hasSearched ? (
+              <p className="px-4 py-8 text-center text-sm text-muted">
+                Saisissez un terme puis cliquez sur la loupe pour lancer la recherche.
+              </p>
+            ) : loading ? (
+              <p className="px-4 py-8 text-center text-sm text-muted">Recherche…</p>
             ) : available.length === 0 ? (
               <Alert
                 variant="info"
                 size="box"
                 centered
-                className="px-3 py-6"
+                className="mx-2 my-4 px-3 py-6"
                 message={
                   query.trim()
                     ? "Aucun résultat pour cette recherche."
@@ -140,18 +151,15 @@ export function EntityRelationPickOrCreateModal({
               />
             ) : (
               available.map((option) => (
-                <button
+                <RelationOptionRow
                   key={option.value}
-                  type="button"
-                  className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-elevated/80"
+                  option={option}
                   onClick={() => trySelect(option)}
-                >
-                  <span className="text-foreground">{option.label}</span>
-                </button>
+                />
               ))
             )}
           </div>
-          {!loading && available.length >= RELATION_SUGGESTIONS_LIMIT && (
+          {hasSearched && !loading && available.length >= RELATION_SUGGESTIONS_LIMIT && (
             <p className="text-xs text-muted">
               {RELATION_SUGGESTIONS_LIMIT} premiers résultats affichés — affinez votre recherche.
             </p>

@@ -13,6 +13,7 @@ pub mod fts_rewrite;
 pub mod greetings;
 pub mod hardware_profile;
 pub mod intent_filters;
+pub mod login_messages;
 pub mod llama_server;
 pub mod rag;
 pub mod translate;

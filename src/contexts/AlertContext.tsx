@@ -27,6 +27,7 @@ export interface AlertItem {
   exiting?: boolean;
   persistent?: boolean;
   personify?: boolean;
+  loading?: boolean;
   actionLabel?: string;
   onAction?: () => void;
 }
@@ -74,108 +75,118 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     }, 280);
   }, []);
 
-  const mountAlert = useCallback(
-    (
-      message: string,
-      variant: AlertVariant,
-      options?: ShowAlertOptions & { alreadyPersonified?: boolean },
-    ) => {
+  const updateAlert = useCallback((id: number, patch: Partial<AlertItem>) => {
+    setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  }, []);
+
+  const scheduleAutoDismiss = useCallback(
+    (id: number, persistent?: boolean) => {
+      if (persistent || timersRef.current.has(id)) return;
+      const timer = window.setTimeout(() => dismiss(id), ALERT_TTL_MS) as unknown as number;
+      timersRef.current.set(id, timer);
+    },
+    [dismiss],
+  );
+
+  const mountAlertItem = useCallback((item: AlertItem) => {
+    setAlerts((prev) => {
+      const next = [...prev, item];
+      if (!item.persistent) {
+        const ephemeral = next.filter((a) => !a.persistent);
+        if (ephemeral.length > MAX_ALERTS) {
+          const overflow = ephemeral.length - MAX_ALERTS;
+          let removed = 0;
+          return next.filter((a) => {
+            if (a.persistent || removed >= overflow) return true;
+            const t = timersRef.current.get(a.id);
+            if (t) {
+              clearTimeout(t);
+              timersRef.current.delete(a.id);
+            }
+            removed += 1;
+            return false;
+          });
+        }
+      }
+      return next;
+    });
+
+    window.setTimeout(() => {
+      setAlerts((prev) =>
+        prev.map((a) => (a.id === item.id ? { ...a, entering: false } : a)),
+      );
+    }, 320);
+  }, []);
+
+  const showAlert = useCallback(
+    (message: string, variant: AlertVariant = "info", options?: ShowAlertOptions) => {
       const id = ++idRef.current;
+      const needsPersonify = options?.personify !== false;
       const persistent = options?.persistent ?? false;
-      const item: AlertItem = {
+
+      mountAlertItem({
         id,
         message,
         variant,
         createdAt: formatDateTimeFr(new Date()),
         entering: true,
         persistent,
-        personify: options?.alreadyPersonified ? false : options?.personify,
+        personify: false,
+        loading: needsPersonify,
         actionLabel: options?.actionLabel,
         onAction: options?.onAction,
-      };
-
-      setAlerts((prev) => {
-        const next = [...prev, item];
-        if (!persistent) {
-          const ephemeral = next.filter((a) => !a.persistent);
-          if (ephemeral.length > MAX_ALERTS) {
-            const overflow = ephemeral.length - MAX_ALERTS;
-            let removed = 0;
-            return next.filter((a) => {
-              if (a.persistent || removed >= overflow) return true;
-              const t = timersRef.current.get(a.id);
-              if (t) {
-                clearTimeout(t);
-                timersRef.current.delete(a.id);
-              }
-              removed += 1;
-              return false;
-            });
-          }
-        }
-        return next;
       });
 
-      window.setTimeout(() => {
-        setAlerts((prev) =>
-          prev.map((a) => (a.id === id ? { ...a, entering: false } : a)),
-        );
-      }, 320);
-
-      if (!persistent) {
-        const timer = window.setTimeout(() => dismiss(id), ALERT_TTL_MS) as unknown as number;
-        timersRef.current.set(id, timer);
+      if (!needsPersonify) {
+        scheduleAutoDismiss(id, persistent);
+        return;
       }
-    },
-    [dismiss],
-  );
 
-  const showAlert = useCallback(
-    (message: string, variant: AlertVariant = "info", options?: ShowAlertOptions) => {
-      void (async () => {
-        let displayMessage = message;
-        if (options?.personify !== false) {
-          displayMessage = await personifyAlertMessage(message, variant);
-        }
-        mountAlert(displayMessage, variant, { ...options, alreadyPersonified: true });
-      })();
+      void personifyAlertMessage(message, variant)
+        .then((displayMessage) => {
+          updateAlert(id, { message: displayMessage, loading: false });
+          scheduleAutoDismiss(id, persistent);
+        })
+        .catch(() => {
+          updateAlert(id, { loading: false });
+          scheduleAutoDismiss(id, persistent);
+        });
     },
-    [mountAlert],
+    [mountAlertItem, scheduleAutoDismiss, updateAlert],
   );
 
   const showTaskReminder = useCallback(
     (message: string, options: TaskReminderAlertOptions) => {
-      void (async () => {
-        const displayMessage = await personifyTaskReminderMessage(message);
-        const id = ++idRef.current;
-        const item: AlertItem = {
-          id,
-          message: displayMessage,
-          variant: "warning",
-          createdAt: formatDateTimeFr(new Date()),
-          entering: true,
-          persistent: true,
-          personify: false,
-          actionLabel: "Ouvrir les tâches",
-          onAction: () => {
-            dismiss(id);
-            options.onOpenTaches();
-          },
-        };
+      const id = ++idRef.current;
 
-        setAlerts((prev) => [...prev, item]);
+      mountAlertItem({
+        id,
+        message,
+        variant: "warning",
+        createdAt: formatDateTimeFr(new Date()),
+        entering: true,
+        persistent: true,
+        personify: false,
+        loading: true,
+        actionLabel: "Ouvrir les tâches",
+        onAction: () => {
+          dismiss(id);
+          options.onOpenTaches();
+        },
+      });
 
-        window.setTimeout(() => {
-          setAlerts((prev) =>
-            prev.map((a) => (a.id === id ? { ...a, entering: false } : a)),
-          );
-        }, 320);
-      })();
+      void personifyTaskReminderMessage(message)
+        .then((displayMessage) => {
+          updateAlert(id, { message: displayMessage, loading: false });
+        })
+        .catch(() => {
+          updateAlert(id, { loading: false });
+        });
     },
-    [dismiss],
+    [dismiss, mountAlertItem, updateAlert],
   );
 
-  const { loginNotices, clearLoginNotices } = useAuth();
+  const { loginGreeting, loginNotices, clearLoginNotices } = useAuth();
 
   useEffect(() => {
     registerGlobalAlert(showAlert);
@@ -187,12 +198,15 @@ export function AlertProvider({ children }: { children: ReactNode }) {
   }, [showAlert]);
 
   useEffect(() => {
-    if (loginNotices.length === 0) return;
+    if (!loginGreeting && loginNotices.length === 0) return;
+    if (loginGreeting) {
+      showAlert(loginGreeting, "success", { personify: false });
+    }
     for (const message of loginNotices) {
-      showAlert(message, "info");
+      showAlert(message, "warning");
     }
     clearLoginNotices();
-  }, [loginNotices, clearLoginNotices, showAlert]);
+  }, [loginGreeting, loginNotices, clearLoginNotices, showAlert]);
 
   const value: AlertContextValue = {
     showAlert,
@@ -217,6 +231,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
             message={alert.message}
             variant={alert.variant}
             personify={alert.personify}
+            loading={alert.loading}
             time={alert.createdAt}
             entering={alert.entering}
             exiting={alert.exiting}

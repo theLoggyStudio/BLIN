@@ -11,6 +11,7 @@ import { Button } from "@/items/Button";
 import { CollapsiblePanel } from "@/items/CollapsiblePanel";
 import { Input } from "@/items/Input";
 import { embedRefKey } from "@/lib/createFormLines";
+import { blurActiveElement } from "@/lib/focus";
 import type { RelationSelectOption } from "@/types/entity";
 import type { FieldDef, ScreenRow, ValidationIssue } from "@/types/screen";
 
@@ -281,7 +282,10 @@ export function EntityEmbedGroup({
         headerAction={
           !readOnly && !displayOnly && refEntity ? (
             <div className="flex gap-2">
-              <Button size="sm" variant="secondary" type="button" onClick={() => setPickOpen(true)}>
+              <Button size="sm" variant="secondary" type="button" onClick={() => {
+                blurActiveElement();
+                setPickOpen(true);
+              }}>
                 Choisir
               </Button>
               <Button size="sm" variant="outline" type="button" onClick={() => setCreateOpen(true)}>
@@ -454,7 +458,10 @@ export function EntityEmbedListEditor({
         defaultOpen
         headerAction={
           !readOnly && !displayOnly && refEntity ? (
-            <Button size="sm" variant="secondary" type="button" onClick={() => setPickOpen(true)}>
+            <Button size="sm" variant="secondary" type="button" onClick={() => {
+              blurActiveElement();
+              setPickOpen(true);
+            }}>
               Ajouter
             </Button>
           ) : undefined

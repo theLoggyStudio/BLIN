@@ -14,6 +14,7 @@ import { TachesModalProvider } from "@/contexts/TachesModalContext";
 import { StockModalProvider } from "@/contexts/StockModalContext";
 import { EntityDefLoggyModalProvider } from "@/contexts/EntityDefLoggyModalContext";
 import { AlertProvider } from "@/contexts/AlertContext";
+import { AppStartupHost } from "@/items/AppStartupHost";
 
 function LoadingScreen() {
   return (
@@ -83,6 +84,7 @@ export default function App() {
         <EntityBrandingProvider>
           <AuthProvider>
             <AlertProvider>
+              <AppStartupHost />
               <AppRoutes />
             </AlertProvider>
           </AuthProvider>

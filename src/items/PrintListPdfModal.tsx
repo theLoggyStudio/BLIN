@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Alert } from "@/items/Alert";
 import { Modal } from "@/items/Modal";
 import { Button } from "@/items/Button";
@@ -11,8 +10,9 @@ import {
   defaultListPdfTitle,
   printEntityListPdf,
 } from "@/lib/print/listPrint";
+import { fetchDdaListCount, fetchDdaListPage } from "@/lib/ddaList";
 import { formatTableBlockToken } from "@/lib/print/templateAttributes";
-import type { ScreenConfigFile, ScreenRow } from "@/types/screen";
+import type { ScreenConfigFile } from "@/types/screen";
 import { useAlert } from "@/contexts/AlertContext";
 import { notifyEntitySuccess } from "@/lib/entitySuccessAlert";
 
@@ -23,6 +23,7 @@ interface PrintListPdfModalProps {
 }
 
 const STOCK_KEY = "stock";
+const STOCK_SOURCES_SAMPLE_SIZE = 100;
 
 export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalProps) {
   const { showSuccess, showError } = useAlert();
@@ -43,7 +44,8 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
     [config.fields],
   );
 
-  const [rows, setRows] = useState<ScreenRow[]>([]);
+  const [listTotal, setListTotal] = useState(0);
+  const [entitySources, setEntitySources] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,17 +59,50 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
   const [titre, setTitre] = useState("");
   const [sousTitre, setSousTitre] = useState("");
 
-  const loadRows = useCallback(async () => {
+  const serverFilters = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const f of listFields) {
+      const val = columnFilters[f.key]?.trim();
+      if (val && f.filter?.enabled) out[f.key] = val;
+    }
+    return out;
+  }, [columnFilters, listFields]);
+
+  const hasClientOnlyFilters = useMemo(() => {
+    if (entitySourceFilter.trim() && screenKey === STOCK_KEY) return true;
+    if (dateField && (dateFrom || dateTo)) return true;
+    return listFields.some(
+      (f) => columnFilters[f.key]?.trim() && !f.filter?.enabled,
+    );
+  }, [columnFilters, listFields, dateField, dateFrom, dateTo, entitySourceFilter, screenKey]);
+
+  const [serverFilteredTotal, setServerFilteredTotal] = useState<number | null>(null);
+
+  const loadMeta = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await invoke<ScreenRow[]>("dda_list", {
-        payload: { screen_key: screenKey, filters: {} },
-      });
-      setRows(data);
+      const total = await fetchDdaListCount(screenKey);
+      setListTotal(total);
+
+      if (screenKey === STOCK_KEY) {
+        const sample = await fetchDdaListPage(screenKey, {
+          page: 0,
+          pageSize: STOCK_SOURCES_SAMPLE_SIZE,
+        });
+        const set = new Set<string>();
+        for (const r of sample.rows) {
+          const v = r.entite_source;
+          if (v != null && String(v).trim()) set.add(String(v).trim());
+        }
+        setEntitySources(Array.from(set).sort((a, b) => a.localeCompare(b, "fr")));
+      } else {
+        setEntitySources([]);
+      }
     } catch (e) {
       setError(String(e));
-      setRows([]);
+      setListTotal(0);
+      setEntitySources([]);
     } finally {
       setLoading(false);
     }
@@ -84,41 +119,24 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
     setDateFrom("");
     setDateTo("");
     setEntitySourceFilter("");
-    void loadRows();
-  }, [open, config.screen.label, listFields, dateFields, loadRows]);
+    void loadMeta();
+  }, [open, config.screen.label, listFields, dateFields, loadMeta]);
 
-  const entitySources = useMemo(() => {
-    if (screenKey !== STOCK_KEY) return [];
-    const set = new Set<string>();
-    for (const r of rows) {
-      const v = r.entite_source;
-      if (v != null && String(v).trim()) set.add(String(v).trim());
+  useEffect(() => {
+    if (!open) return;
+    const keys = Object.keys(serverFilters);
+    if (keys.length === 0) {
+      setServerFilteredTotal(null);
+      return;
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
-  }, [rows, screenKey]);
-
-  const filteredPreviewCount = useMemo(() => {
-    return rows.filter((row) => {
-      if (entitySourceFilter.trim() && screenKey === STOCK_KEY) {
-        if (String(row.entite_source ?? "").trim() !== entitySourceFilter.trim()) {
-          return false;
-        }
-      }
-      if (dateField && (dateFrom || dateTo)) {
-        const raw = String(row[dateField] ?? "").slice(0, 10);
-        if (raw) {
-          if (dateFrom && raw < dateFrom) return false;
-          if (dateTo && raw > dateTo) return false;
-        }
-      }
-      for (const [key, val] of Object.entries(columnFilters)) {
-        if (!val.trim()) continue;
-        const hay = String(row[key] ?? "").toLowerCase();
-        if (!hay.includes(val.trim().toLowerCase())) return false;
-      }
-      return true;
-    }).length;
-  }, [rows, columnFilters, dateField, dateFrom, dateTo, entitySourceFilter, screenKey]);
+    let cancelled = false;
+    void fetchDdaListCount(screenKey, serverFilters).then((n) => {
+      if (!cancelled) setServerFilteredTotal(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, screenKey, serverFilters]);
 
   const toggleColumn = (key: string) => {
     setVisibleColumns((prev) => {
@@ -131,6 +149,11 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
       return next;
     });
   };
+
+  const previewCount =
+    serverFilteredTotal != null && !hasClientOnlyFilters
+      ? serverFilteredTotal
+      : listTotal;
 
   const handleExport = async () => {
     setExporting(true);
@@ -151,7 +174,7 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
         titre: titre.trim() || undefined,
         sousTitre:
           sousTitre.trim() ||
-          defaultListPdfSubtitle(screenKey, filteredPreviewCount),
+          defaultListPdfSubtitle(screenKey, previewCount),
       });
       notifyEntitySuccess(showSuccess, screenKey, "export_pdf_list");
       onClose();
@@ -283,12 +306,25 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
         </div>
 
         {loading && (
-          <p className="text-sm text-muted">Chargement des données…</p>
+          <p className="text-sm text-muted">Chargement…</p>
         )}
         {!loading && (
           <p className="text-sm text-secondary">
-            Aperçu : {filteredPreviewCount} ligne(s) sur {rows.length} seront incluses dans{" "}
-            {tableToken}.
+            {hasClientOnlyFilters ? (
+              <>
+                Filtres date / colonnes appliqués à l&apos;export — base : {listTotal} ligne(s) au
+                total.
+              </>
+            ) : serverFilteredTotal != null ? (
+              <>
+                Aperçu : {serverFilteredTotal} ligne(s) filtrée(s) sur {listTotal} — tableau{" "}
+                {tableToken}.
+              </>
+            ) : (
+              <>
+                Aperçu : {listTotal} ligne(s) seront incluses dans {tableToken}.
+              </>
+            )}
           </p>
         )}
         {error && <Alert variant="danger" size="box" message={error} />}

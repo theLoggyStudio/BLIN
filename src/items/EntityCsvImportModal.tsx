@@ -31,7 +31,7 @@ export function EntityCsvImportModal({
   onClose,
   onImported,
 }: EntityCsvImportModalProps) {
-  const { showSuccess, showError } = useAlert();
+  const { showSuccess, showError, showWarning } = useAlert();
   const [fileName, setFileName] = useState<string | null>(null);
   const [csvText, setCsvText] = useState("");
   const [importing, setImporting] = useState(false);

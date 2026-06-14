@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { runAppStartupSequence } from "@/lib/appStartup";
 
-/** Relance la séquence si l'utilisateur se connecte avant la fin du premier démarrage. */
-export function AiStartupHost() {
+/** Lance IA + préparation messages connexion dès l'ouverture de l'application. */
+export function AppStartupHost() {
   const startedRef = useRef(false);
 
   useEffect(() => {

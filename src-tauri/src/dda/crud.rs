@@ -29,29 +29,25 @@ impl Default for ListRowsOptions<'_> {
     }
 }
 
-pub fn list_rows(
-    db: &Database,
-    cfg: &ScreenConfigFile,
-    filters: &HashMap<String, String>,
-) -> Result<Vec<Map<String, Value>>, String> {
-    list_rows_with_options(db, cfg, filters, ListRowsOptions::default())
+#[derive(Clone, Copy, Debug)]
+pub struct ListRowsPagination {
+    pub offset: u32,
+    pub limit: u32,
 }
 
-pub fn list_rows_with_options(
-    db: &Database,
+struct PreparedListQuery {
+    select_prefix: String,
+    count_sql: String,
+    order_sql: String,
+    params: Vec<SqlValue>,
+}
+
+fn prepare_list_query(
     cfg: &ScreenConfigFile,
     filters: &HashMap<String, String>,
     options: ListRowsOptions<'_>,
-) -> Result<Vec<Map<String, Value>>, String> {
-    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
-    let mut filters = filters.clone();
-    crate::entity::session_scope::merge_active_session_filter(
-        &db.data_dir,
-        &registry,
-        &cfg.screen.key,
-        &mut filters,
-    )?;
-
+    registry: &crate::entity::registry::EntityRegistry,
+) -> Result<PreparedListQuery, String> {
     let table = &cfg.screen.table;
     let mut cols: Vec<String> = cfg
         .persisted_fields()
@@ -59,7 +55,7 @@ pub fn list_rows_with_options(
         .map(|f| f.column.clone())
         .collect();
     if let Some(ent) = registry.find(&cfg.screen.key) {
-        if crate::entity::parent_lignes::entity_has_embed_children(ent, &registry) {
+        if crate::entity::parent_lignes::entity_has_embed_children(ent, registry) {
             let lignes_col = crate::entity::parent_lignes::LIGNES_COLUMN;
             if !cols.iter().any(|c| c == lignes_col) {
                 cols.push(lignes_col.to_string());
@@ -72,7 +68,7 @@ pub fn list_rows_with_options(
         format!("id, {}", cols.join(", "))
     };
 
-    let mut sql = format!("SELECT {col_list} FROM {table} WHERE 1=1");
+    let mut data_sql = format!("SELECT {col_list} FROM {table} WHERE 1=1");
     let mut sql_params: Vec<SqlValue> = Vec::new();
 
     for field in cfg.filter_fields() {
@@ -82,10 +78,9 @@ pub fn list_rows_with_options(
         if val.trim().is_empty() {
             continue;
         }
-        crate::dda::filters::append_field_filter_sql(&mut sql, &mut sql_params, field, val, false);
+        crate::dda::filters::append_field_filter_sql(&mut data_sql, &mut sql_params, field, val, false);
     }
 
-    // Filtres injectés (session métier, chat Loggy, etc.) sur champs filtrables.
     let filter_field_keys: std::collections::HashSet<String> =
         cfg.filter_fields().into_iter().map(|f| f.key.to_string()).collect();
     for field in cfg.fields.iter().filter(|f| {
@@ -100,13 +95,13 @@ pub fn list_rows_with_options(
         if val.trim().is_empty() {
             continue;
         }
-        crate::dda::filters::append_field_filter_sql(&mut sql, &mut sql_params, field, val, true);
+        crate::dda::filters::append_field_filter_sql(&mut data_sql, &mut sql_params, field, val, true);
     }
 
     if cfg.screen.key == crate::entity::tache_visibility::TACHE_ENTITY_KEY {
         if let Some(role_id) = options.viewer_role_id {
             if !crate::entity::tache_visibility::can_user_see_all_tasks(options.viewer_privileges) {
-                sql.push_str(&crate::entity::tache_visibility::sql_visibility_filter(
+                data_sql.push_str(&crate::entity::tache_visibility::sql_visibility_filter(
                     role_id,
                     options.viewer_user_id,
                 ));
@@ -114,19 +109,92 @@ pub fn list_rows_with_options(
         }
     }
 
+    let count_sql = data_sql.replacen(
+        &format!("SELECT {col_list}"),
+        "SELECT COUNT(*)",
+        1,
+    );
+
     let order = cfg
         .screen
         .default_order_by
         .as_deref()
         .unwrap_or("datetime(created_at) DESC");
-    if order.contains(" DESC")
+    let order_sql = if order.contains(" DESC")
         || order.contains(" ASC")
         || order.contains('(')
         || order.contains(',')
     {
-        sql.push_str(&format!(" ORDER BY {order}"));
+        format!(" ORDER BY {order}")
     } else {
-        sql.push_str(&format!(" ORDER BY {order} COLLATE NOCASE"));
+        format!(" ORDER BY {order} COLLATE NOCASE")
+    };
+
+    Ok(PreparedListQuery {
+        select_prefix: data_sql,
+        count_sql,
+        order_sql,
+        params: sql_params,
+    })
+}
+
+pub fn count_rows_with_options(
+    db: &Database,
+    cfg: &ScreenConfigFile,
+    filters: &HashMap<String, String>,
+    options: ListRowsOptions<'_>,
+) -> Result<u64, String> {
+    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    let mut filters = filters.clone();
+    crate::entity::session_scope::merge_active_session_filter(
+        &db.data_dir,
+        &registry,
+        &cfg.screen.key,
+        &mut filters,
+    )?;
+    let query = prepare_list_query(cfg, &filters, options, &registry)?;
+    let count: i64 = db
+        .conn
+        .query_row(
+            &query.count_sql,
+            rusqlite::params_from_iter(query.params.iter()),
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count.max(0) as u64)
+}
+
+pub fn list_rows(
+    db: &Database,
+    cfg: &ScreenConfigFile,
+    filters: &HashMap<String, String>,
+) -> Result<Vec<Map<String, Value>>, String> {
+    list_rows_with_options(db, cfg, filters, ListRowsOptions::default(), None)
+}
+
+pub fn list_rows_with_options(
+    db: &Database,
+    cfg: &ScreenConfigFile,
+    filters: &HashMap<String, String>,
+    options: ListRowsOptions<'_>,
+    pagination: Option<ListRowsPagination>,
+) -> Result<Vec<Map<String, Value>>, String> {
+    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    let mut filters = filters.clone();
+    crate::entity::session_scope::merge_active_session_filter(
+        &db.data_dir,
+        &registry,
+        &cfg.screen.key,
+        &mut filters,
+    )?;
+
+    let query = prepare_list_query(cfg, &filters, options, &registry)?;
+    let mut sql = format!("{}{}", query.select_prefix, query.order_sql);
+    let mut sql_params = query.params;
+    if let Some(p) = pagination {
+        sql.push_str(" LIMIT ? OFFSET ?");
+        sql_params.push(SqlValue::Integer(i64::from(p.limit)));
+        sql_params.push(SqlValue::Integer(i64::from(p.offset)));
     }
 
     let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;

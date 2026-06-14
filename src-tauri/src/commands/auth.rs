@@ -3,6 +3,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::session::{ActiveSession, SessionUser};
+use crate::ai::login_messages;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -16,6 +17,7 @@ pub struct LoginResponse {
     pub token: String,
     pub user: SessionUser,
     pub must_change_password: bool,
+    pub login_greeting: String,
     pub login_notices: Vec<String>,
 }
 
@@ -43,19 +45,76 @@ fn session_user_from_auth(
     }
 }
 
+#[derive(Serialize)]
+pub struct LoginMessagesPayload {
+    pub greeting: String,
+    pub invalid_credentials: String,
+    pub prepared: bool,
+}
+
+fn cached_login_messages(state: &AppState) -> LoginMessagesPayload {
+    let cache = state.login_messages.lock();
+    LoginMessagesPayload {
+        greeting: cache.greeting.clone(),
+        invalid_credentials: cache.invalid_credentials.clone(),
+        prepared: cache.prepared,
+    }
+}
+
+/// Prépare en arrière-plan la salutation et le message d'identifiants invalides (Loggy).
+#[tauri::command]
+pub fn auth_prepare_login_messages(state: State<'_, AppState>) -> Result<LoginMessagesPayload, String> {
+    let db = state.db.lock();
+    let prepared = login_messages::prepare(&db);
+    drop(db);
+    *state.login_messages.lock() = prepared.clone();
+    Ok(LoginMessagesPayload {
+        greeting: prepared.greeting,
+        invalid_credentials: prepared.invalid_credentials,
+        prepared: prepared.prepared,
+    })
+}
+
+/// Retourne les messages préparés (sans relancer la préparation).
+#[tauri::command]
+pub fn auth_get_login_messages(state: State<'_, AppState>) -> Result<LoginMessagesPayload, String> {
+    Ok(cached_login_messages(&state))
+}
+
 #[tauri::command]
 pub fn auth_login(
     state: State<'_, AppState>,
     payload: LoginRequest,
 ) -> Result<LoginResponse, String> {
     let db = state.db.lock();
-    let (id, nom, role_nom, role_id, privileges, must_change_password) = db
-        .authenticate(&payload.email, &payload.password)
-        .map_err(|e| e.to_string())?;
+    let auth_result = db.authenticate(&payload.email, &payload.password);
+    if auth_result.is_err() {
+        let err = auth_result.err().map(|e| e.to_string()).unwrap_or_default();
+        let cache = state.login_messages.lock();
+        if cache.prepared && !cache.invalid_credentials.is_empty() {
+            return Err(cache.invalid_credentials.clone());
+        }
+        return Err(if err.contains("Identifiants invalides") {
+            login_messages::fallback_invalid()
+        } else {
+            err
+        });
+    }
+    let (id, nom, role_nom, role_id, privileges, must_change_password) = auth_result.unwrap();
 
     let login_notices = crate::entity::validation::login_workflow_notices(&db, &id, &role_id)
         .unwrap_or_default();
+    let app_name = crate::entity::branding::ecosystem_name(&db.data_dir);
     drop(db);
+
+    let login_greeting = {
+        let cache = state.login_messages.lock();
+        if cache.prepared && !cache.greeting.is_empty() {
+            login_messages::inject_user_name_into_greeting(&cache.greeting, &nom)
+        } else {
+            crate::ai::greetings::format_login_greeting(&nom, &app_name)
+        }
+    };
 
     let token = Uuid::new_v4().to_string();
     let user = session_user_from_auth(
@@ -76,6 +135,7 @@ pub fn auth_login(
         token,
         user,
         must_change_password,
+        login_greeting,
         login_notices,
     })
 }

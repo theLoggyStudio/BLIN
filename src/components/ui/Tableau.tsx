@@ -38,6 +38,15 @@ export interface TablePaginationProps {
   defaultSortDir?: SortDir;
 }
 
+export interface TableServerPagination {
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  loading?: boolean;
+}
+
 interface TableauProps<T> extends TablePaginationProps {
   columns: Column<T>[];
   data: T[];
@@ -49,6 +58,8 @@ interface TableauProps<T> extends TablePaginationProps {
   /** Nombre de lignes visuelles par enregistrement (rowspan colonnes partagées). */
   lineCount?: (row: T) => number;
   isFirstLine?: (row: T) => boolean;
+  /** Pagination côté serveur (LIMIT/OFFSET SQL) — pas de slice client. */
+  serverPagination?: TableServerPagination;
 }
 
 const DEFAULT_PAGE_SIZES = [10, 25, 50, 100];
@@ -98,36 +109,57 @@ export function Tableau<T extends Record<string, unknown>>({
   isFirstLine,
   defaultSortKey,
   defaultSortDir = "desc",
+  serverPagination,
 }: TableauProps<T>) {
-  const [sortKey, setSortKey] = useState<string | null>(defaultSortKey ?? null);
-  const [sortDir, setSortDir] = useState<SortDir>(
-    defaultSortKey ? defaultSortDir : "asc",
+  const serverMode = !!serverPagination;
+  const [sortKey, setSortKey] = useState<string | null>(
+    serverMode ? null : (defaultSortKey ?? null),
   );
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [sortDir, setSortDir] = useState<SortDir>(
+    defaultSortKey && !serverMode ? defaultSortDir : "asc",
+  );
+  const [clientPage, setClientPage] = useState(0);
+  const [clientPageSize, setClientPageSize] = useState(initialPageSize);
+
+  const page = serverMode ? serverPagination!.page : clientPage;
+  const pageSize = serverMode ? serverPagination!.pageSize : clientPageSize;
+  const setPage = serverMode
+    ? (next: number | ((p: number) => number)) => {
+        const value = typeof next === "function" ? next(serverPagination!.page) : next;
+        serverPagination!.onPageChange(value);
+      }
+    : setClientPage;
+  const setPageSize = serverMode
+    ? (size: number) => serverPagination!.onPageSizeChange(size)
+    : setClientPageSize;
 
   const sorted = useMemo(() => {
-    if (!sortKey) return data;
+    if (serverMode || !sortKey) return data;
     return [...data].sort((a, b) => compareSortValues(a[sortKey], b[sortKey], sortDir));
-  }, [data, sortKey, sortDir]);
+  }, [data, sortKey, sortDir, serverMode]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const totalItems = serverMode ? serverPagination!.total : sorted.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safePage = Math.min(page, totalPages - 1);
-  const start = safePage * pageSize;
-  const end = Math.min(start + pageSize, sorted.length);
-  const paginated = sorted.slice(start, end);
+  const start = totalItems === 0 ? 0 : safePage * pageSize;
+  const end = serverMode
+    ? Math.min(start + data.length, totalItems)
+    : Math.min(start + pageSize, sorted.length);
+  const paginated = serverMode ? data : sorted.slice(start, end);
 
   useEffect(() => {
-    setPage(0);
-  }, [data.length, pageSize, sortKey, sortDir]);
+    if (serverMode) return;
+    setClientPage(0);
+  }, [data.length, pageSize, sortKey, sortDir, serverMode]);
 
   useEffect(() => {
     if (page >= totalPages) {
       setPage(Math.max(0, totalPages - 1));
     }
-  }, [page, totalPages]);
+  }, [page, totalPages, setPage]);
 
   const toggleSort = (key: string) => {
+    if (serverMode) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
@@ -138,7 +170,7 @@ export function Tableau<T extends Record<string, unknown>>({
   };
 
   const showPagination =
-    sorted.length > 0 && (!hideWhenSinglePage || totalPages > 1);
+    totalItems > 0 && (!hideWhenSinglePage || totalPages > 1);
 
   const pageItems = buildPageList(safePage, totalPages);
 
@@ -167,7 +199,7 @@ export function Tableau<T extends Record<string, unknown>>({
                     col.className,
                   )}
                 >
-                  {col.sortable ? (
+                  {col.sortable && !serverMode ? (
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
@@ -242,9 +274,11 @@ export function Tableau<T extends Record<string, unknown>>({
         >
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
             <span>
-              {sorted.length === 0
-                ? "0 résultat"
-                : `${start + 1}–${end} sur ${sorted.length}`}
+              {totalItems === 0
+                ? serverPagination?.loading
+                  ? "Chargement…"
+                  : "0 résultat"
+                : `${start + 1}–${end} sur ${totalItems}`}
             </span>
             {showPageSizeSelector && (
               <label className="inline-flex items-center gap-2">

@@ -1,6 +1,12 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import {
+  currentModalStackDepth,
+  modalZIndex,
+  popModalStack,
+  pushModalStack,
+} from "@/lib/modalStack";
 import { cn } from "@/lib/utils";
 import { Button } from "./Button";
 
@@ -24,9 +30,6 @@ const sizeClasses = {
   "2xl": "max-w-[min(96vw,72rem)]",
 };
 
-/** Compteur global pour empiler les modales (sélection client/article dans un formulaire, etc.). */
-let modalStackDepth = 0;
-
 /**
  * Overlay div (pas de &lt;dialog showModal&gt;) — les pickers date/heure
  * et certains champs ne fonctionnent pas correctement dans un dialog natif sous WebView2/Tauri.
@@ -46,23 +49,35 @@ export function Modal({
   const titleId = useId();
   const [stackLevel, setStackLevel] = useState(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
-    modalStackDepth += 1;
-    const level = modalStackDepth;
+
+    const level = pushModalStack();
     setStackLevel(level);
+
+    return () => {
+      popModalStack();
+      setStackLevel(0);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || stackLevel === 0) return;
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && level === modalStackDepth && !busy) onClose();
+      if (e.key === "Escape" && stackLevel === currentModalStackDepth() && !busy) {
+        onClose();
+      }
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
-      modalStackDepth = Math.max(0, modalStackDepth - 1);
     };
-  }, [open, onClose, busy]);
+  }, [open, onClose, busy, stackLevel]);
 
   const requestClose = () => {
     if (!busy) onClose();
@@ -72,21 +87,26 @@ export function Modal({
     return null;
   }
 
-  const zBase = 200 + stackLevel * 20;
+  const zBase = modalZIndex(stackLevel || currentModalStackDepth());
+  const isInactive =
+    stackLevel > 0 && stackLevel < currentModalStackDepth();
 
   return createPortal(
     <div
-      className="fixed inset-0 flex items-center justify-center p-4 max-md:items-stretch max-md:justify-stretch max-md:p-0"
+      className={cn(
+        "fixed inset-0 flex items-center justify-center p-4 max-md:items-stretch max-md:justify-stretch max-md:p-0",
+        isInactive && "pointer-events-none",
+      )}
       style={{ zIndex: zBase }}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
+      aria-hidden={isInactive ? true : undefined}
     >
-      <button
-        type="button"
+      <div
+        role="presentation"
         className="absolute inset-0 cursor-default bg-black/78 max-md:bg-black/85"
-        aria-label="Fermer"
-        onClick={requestClose}
+        onMouseDown={isInactive ? undefined : requestClose}
       />
       <div
         ref={panelRef}
@@ -96,7 +116,7 @@ export function Modal({
           sizeClasses[size],
         )}
         style={{ zIndex: zBase + 1 }}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         aria-busy={busy}
       >
         {busy && (

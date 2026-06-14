@@ -2,12 +2,17 @@ import { useEffect, useState } from "react";
 import type { AlertVariant } from "@/items/Alert";
 import { personifyAlertMessage, shouldPersonifyAlertText } from "@/lib/alertPersonify";
 
+export interface PersonifiedAlertTextState {
+  text: string | undefined;
+  loading: boolean;
+}
+
 /** Affiche la version réécrite par Loggy (phrases naturelles). */
 export function usePersonifiedAlertText(
   text: string | undefined,
   variant: AlertVariant,
   persona: "loggy" | false = "loggy",
-): string | undefined {
+): PersonifiedAlertTextState {
   const shouldRewrite = persona !== false && shouldPersonifyAlertText(text);
   const [display, setDisplay] = useState<string | undefined>(
     shouldRewrite ? undefined : text,
@@ -31,5 +36,12 @@ export function usePersonifiedAlertText(
     };
   }, [text, variant, persona, shouldRewrite]);
 
-  return display ?? text;
+  if (!shouldRewrite) {
+    return { text: text ?? undefined, loading: false };
+  }
+
+  return {
+    text: display ?? text,
+    loading: display === undefined,
+  };
 }

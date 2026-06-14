@@ -5,6 +5,8 @@ import { EntityEmbedGroup, EntityEmbedListEditor } from "@/items/EntityEmbedFiel
 import { EntityRelationAutocomplete, fetchRelationLabels } from "@/items/EntityRelationAutocomplete";
 import { EntityRelationCreateModal } from "@/items/EntityRelationCreateModal";
 import { EntityRelationPickOrCreateModal } from "@/items/EntityRelationPickOrCreateModal";
+import { PaginatedList } from "@/items/PaginatedList";
+import { LIST_PAGE_SIZE } from "@/constants/variable.constant";
 import { TacheRolesVisibleField } from "@/items/TacheRolesVisibleField";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
@@ -12,6 +14,7 @@ import { Select } from "@/items/Select";
 import { FieldMessages } from "@/items/Alert";
 import { ImageField } from "@/items/ImageField";
 import { ImagesField } from "@/items/ImagesField";
+import { blurActiveElement } from "@/lib/focus";
 import type { FieldDef, ScreenRow, ValidationIssue } from "@/types/screen";
 import { FieldReadOnlyValue } from "@/engine/FieldReadOnlyValue";
 import { defaultStorageFolder, mediaEntityId } from "./mediaUtils";
@@ -185,32 +188,40 @@ function EntityRefListEditor({
       <p className="text-xs text-muted">
         Liaison multiple sous forme de tableau incrémentable.
       </p>
-      {rows.length === 0 && (
+      {rows.length === 0 ? (
         <p className="text-xs text-muted">Aucune ligne — cliquez sur « Ajouter ».</p>
-      )}
-      {rows.map((rowValue, idx) => (
-        <div
-          key={`${idx}-${rowValue}`}
-          className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2"
-        >
-          <span className="text-sm text-foreground">{labelById(rowValue)}</span>
-          {!readOnly && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                const next = rows.filter((_, i) => i !== idx);
-                updateRows(next);
-              }}
+      ) : (
+        <PaginatedList
+          items={rows}
+          pageSize={LIST_PAGE_SIZE}
+          className="space-y-2"
+          renderItem={(rowValue) => (
+            <div
+              key={rowValue}
+              className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2"
             >
-              Retirer
-            </Button>
+              <span className="text-sm text-foreground">{labelById(rowValue)}</span>
+              {!readOnly && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    updateRows(rows.filter((id) => id !== rowValue));
+                  }}
+                >
+                  Retirer
+                </Button>
+              )}
+            </div>
           )}
-        </div>
-      ))}
+        />
+      )}
       {!readOnly && refEntity && (
         <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setPickOpen(true)}>
+          <Button size="sm" variant="secondary" onClick={() => {
+            blurActiveElement();
+            setPickOpen(true);
+          }}>
             Ajouter
           </Button>
         </div>

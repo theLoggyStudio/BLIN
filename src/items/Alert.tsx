@@ -71,8 +71,8 @@ function AlertListItem({
   variant: AlertVariant;
 }) {
   const combined = [item.label, item.message].filter(Boolean).join(" — ");
-  const display = usePersonifiedAlertText(combined, variant);
-  const hint = usePersonifiedAlertText(item.fixHint, variant);
+  const { text: display } = usePersonifiedAlertText(combined, variant);
+  const { text: hint } = usePersonifiedAlertText(item.fixHint, variant);
 
   return (
     <li>
@@ -103,9 +103,9 @@ export function Alert({
   const Icon = cfg.icon;
   const liveRole = role ?? (variant === "warning" || variant === "success" ? "status" : "alert");
   const hasList = Boolean(items?.length);
-  const displayMessage = usePersonifiedAlertText(message, variant);
-  const displayTitle = usePersonifiedAlertText(title, variant);
-  const displayFixHint = usePersonifiedAlertText(fixHint, variant);
+  const { text: displayMessage } = usePersonifiedAlertText(message, variant);
+  const { text: displayTitle } = usePersonifiedAlertText(title, variant);
+  const { text: displayFixHint } = usePersonifiedAlertText(fixHint, variant);
 
   if (size === "field") {
     if (withIcon) {
@@ -296,6 +296,7 @@ interface AlertBubbleProps {
   message: string;
   variant?: AlertVariant;
   personify?: boolean;
+  loading?: boolean;
   time?: string;
   entering?: boolean;
   exiting?: boolean;
@@ -305,11 +306,24 @@ interface AlertBubbleProps {
   onClose?: () => void;
 }
 
+function AlertBubbleSpinner({ className }: { className?: string }) {
+  return (
+    <div className={cn("flex items-center gap-2.5 py-1", className)} role="status" aria-live="polite">
+      <div
+        className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent opacity-80"
+        aria-hidden
+      />
+      <span className="text-xs text-muted">Loggy rédige le message…</span>
+    </div>
+  );
+}
+
 /** Bulle toast Loggy pour notifications. */
 export function AlertBubble({
   message,
   variant = "info",
   personify = true,
+  loading = false,
   time,
   entering,
   exiting,
@@ -319,11 +333,12 @@ export function AlertBubble({
   onClose,
 }: AlertBubbleProps) {
   const style = VARIANT_CONFIG[variant];
-  const displayMessage = usePersonifiedAlertText(
+  const { text: displayMessage, loading: personifyLoading } = usePersonifiedAlertText(
     message,
     variant,
     personify ? "loggy" : false,
   );
+  const isLoading = loading || personifyLoading;
 
   return (
     <div
@@ -336,6 +351,7 @@ export function AlertBubble({
         exiting && "loggy-alert-exit",
       )}
       role="status"
+      aria-busy={isLoading}
       aria-label={`Message de ${ALERT_AUTHOR_LABEL}`}
     >
       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -343,7 +359,7 @@ export function AlertBubble({
           {ALERT_AUTHOR_LABEL}
         </span>
         <div className="flex items-center gap-2">
-          {time && (
+          {time && !isLoading && (
             <span className="text-[10px] text-muted tabular-nums">{time}</span>
           )}
           {onClose && (
@@ -358,7 +374,11 @@ export function AlertBubble({
           )}
         </div>
       </div>
-      <p className={cn("loggy-chat-text whitespace-pre-wrap", style.text)}>{displayMessage}</p>
+      {isLoading ? (
+        <AlertBubbleSpinner className={style.text} />
+      ) : (
+        <p className={cn("loggy-chat-text whitespace-pre-wrap", style.text)}>{displayMessage}</p>
+      )}
       {actionLabel && onAction && (
         <button
           type="button"

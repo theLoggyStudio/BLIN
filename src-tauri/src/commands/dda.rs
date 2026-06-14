@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tauri::State;
 
 use crate::dda::{
-    self, crud::{self, ListRowsOptions},
+    self, crud::{self, ListRowsOptions, ListRowsPagination},
     load_screen_config,
     media::{absolute_path, decode_base64, delete_media, save_media},
     validation::{validate_screen_data, ValidationReport},
@@ -23,6 +23,17 @@ pub struct DdaListPayload {
     pub screen_key: String,
     #[serde(default)]
     pub filters: HashMap<String, String>,
+    /// Index de page 0-based (pagination serveur).
+    #[serde(default)]
+    pub page: Option<u32>,
+    #[serde(default)]
+    pub page_size: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct DdaListResponse {
+    pub rows: Vec<Map<String, Value>>,
+    pub total: u64,
 }
 
 #[derive(Deserialize)]
@@ -120,7 +131,7 @@ pub fn dda_list_screens(state: State<'_, AppState>) -> Result<Vec<String>, Strin
 pub fn dda_list(
     state: State<'_, AppState>,
     payload: DdaListPayload,
-) -> Result<Vec<Map<String, Value>>, String> {
+) -> Result<DdaListResponse, String> {
     let cfg = load_cfg(&state, &payload.screen_key)?;
     require_view(&state, &cfg)?;
     let session = state.desktop_sessions.require_session()?;
@@ -131,7 +142,25 @@ pub fn dda_list(
         viewer_user_id: Some(session.user.id.as_str()),
         viewer_privileges: &session.user.privileges,
     };
-    crud::list_rows_with_options(&db, &cfg, &payload.filters, opts)
+    let pagination = match (payload.page, payload.page_size) {
+        (Some(page), Some(size)) if size > 0 => ListRowsPagination {
+            offset: page.saturating_mul(size),
+            limit: size,
+        },
+        _ => ListRowsPagination {
+            offset: 0,
+            limit: 500,
+        },
+    };
+    let total = crud::count_rows_with_options(&db, &cfg, &payload.filters, opts)?;
+    let rows = crud::list_rows_with_options(
+        &db,
+        &cfg,
+        &payload.filters,
+        opts,
+        Some(pagination),
+    )?;
+    Ok(DdaListResponse { rows, total })
 }
 
 #[tauri::command]

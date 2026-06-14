@@ -175,6 +175,8 @@ export interface RelationDetailResponse {
 export interface RelationSelectOption {
   value: string;
   label: string;
+  /** Attributs formatés « Libellé : valeur · … » */
+  detail?: string;
 }
 
 export interface SignatoryContact {

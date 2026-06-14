@@ -10,7 +10,7 @@ import { EntitySignatureModal } from "@/items/EntitySignatureModal";
 import { Modal } from "@/items/Modal";
 import { Offpanel } from "@/items/Offpanel";
 import { ScreenHeader } from "@/items/ScreenHeader";
-import { Table, type Column } from "@/items/Table";
+import { Table, type Column, type TableServerPagination } from "@/items/Table";
 import { TableImageCell } from "@/items/TableImageCell";
 import { FieldReadOnlyValue } from "@/engine/FieldReadOnlyValue";
 import { formatCellValue, isFieldVisible } from "@/engine/screenUtils";
@@ -57,7 +57,7 @@ import {
   TASK_REMINDERS_REFRESH_EVENT,
 } from "@/constants/events";
 import { clearTaskReminderKeys } from "@/lib/taskReminders";
-import type { ScreenConfigFile, ScreenRow, ValidationIssue } from "@/types/screen";
+import type { DdaListResult, ScreenConfigFile, ScreenRow, ValidationIssue } from "@/types/screen";
 
 interface DataScreenProps {
   config: ScreenConfigFile;
@@ -143,6 +143,11 @@ export function DataScreen({
   );
 
   const [rows, setRows] = useState<ScreenRow[]>([]);
+  const [listTotal, setListTotal] = useState(0);
+  const [listPage, setListPage] = useState(0);
+  const [listPageSize, setListPageSize] = useState(
+    () => config.layout.list.pagination?.pageSize ?? 10,
+  );
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [formMode, setFormMode] = useState<FormMode>(null);
@@ -251,16 +256,41 @@ export function DataScreen({
     setLoading(true);
     setError(null);
     try {
-      const data = await invoke<ScreenRow[]>("dda_list", {
-        payload: { screen_key: screenKey, filters },
+      const result = await invoke<DdaListResult>("dda_list", {
+        payload: {
+          screen_key: screenKey,
+          filters,
+          page: listPage,
+          page_size: listPageSize,
+        },
       });
-      setRows(data);
+      setRows(result.rows);
+      setListTotal(result.total);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, [screenKey, filters]);
+  }, [screenKey, filters, listPage, listPageSize]);
+
+  useEffect(() => {
+    setListPage(0);
+  }, [filters, screenKey]);
+
+  const serverPagination = useMemo<TableServerPagination>(
+    () => ({
+      total: listTotal,
+      page: listPage,
+      pageSize: listPageSize,
+      loading,
+      onPageChange: setListPage,
+      onPageSizeChange: (size) => {
+        setListPageSize(size);
+        setListPage(0);
+      },
+    }),
+    [listTotal, listPage, listPageSize, loading],
+  );
 
   useEffect(() => {
     void load();
@@ -430,6 +460,15 @@ export function DataScreen({
           })),
     [hasMultilineEmbeds, rows, pk, config.fields],
   );
+
+  const rowsByParentId = useMemo(() => {
+    const map = new Map<string, ScreenRow>();
+    for (const row of rows) {
+      const id = String(row[pk] ?? "");
+      if (id) map.set(id, row);
+    }
+    return map;
+  }, [rows, pk]);
 
   const openRow = async (row: ListLineRow, mode: "edit" | "detail") => {
     const id = row.__parentId || String(row[pk] ?? "");
@@ -675,6 +714,20 @@ export function DataScreen({
   const filterErrorsMap = issuesByField(filterValidation.errors);
   const filterWarningsMap = issuesByField(filterValidation.warnings);
 
+  const tableColumns = useMemo((): Column<ListLineRow>[] => {
+    const actionsCol: Column<ListLineRow> = {
+      key: "_actions",
+      header: "",
+      className: compactList ? "w-28" : "w-36",
+      sharedAcrossLines: true,
+      render: (row: ListLineRow) =>
+        row.__isFirstLine
+          ? rowActions(rowsByParentId.get(row.__parentId) ?? row)
+          : null,
+    };
+    return [...columns, actionsCol];
+  }, [columns, compactList, rowsByParentId, rowActions]);
+
   const renderFormField = (field: (typeof formFields)[number]) => (
     <FieldRenderer
       key={field.key}
@@ -858,21 +911,12 @@ export function DataScreen({
 
       <Table
         dense={compactList}
-        pageSize={config.layout.list.pagination?.pageSize}
+        pageSize={listPageSize}
         pageSizeOptions={config.layout.list.pagination?.pageSizeOptions}
         showPageSizeSelector={config.layout.list.pagination?.showPageSizeSelector}
         hideWhenSinglePage={config.layout.list.pagination?.hideWhenSinglePage}
-        columns={[
-          ...columns,
-          {
-            key: "_actions",
-            header: "",
-            className: compactList ? "w-28" : "w-36",
-            sharedAcrossLines: true,
-            render: (row: ListLineRow) =>
-              row.__isFirstLine ? rowActions(rows.find((r) => String(r[pk] ?? "") === row.__parentId) ?? row) : null,
-          } as Column<ListLineRow>,
-        ]}
+        serverPagination={serverPagination}
+        columns={tableColumns}
         data={displayRows}
         keyExtractor={(row) => `${row.__parentId}-${row.__lineIndex}`}
         lineCount={(row) => row.__lineCount}
