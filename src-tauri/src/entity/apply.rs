@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::dda;
 use crate::db::Database;
 use crate::entity::{config, knowledge, registry, relations, schema, suggestions};
+use crate::print_model_sync;
 use crate::sync_progress::SyncReporter;
 
 use super::generated_config_dir;
@@ -98,6 +99,7 @@ pub fn apply_registry(
         super::stock::purge_stock_for_entity(db, orphan)?;
     }
     let _ = db.dedupe_print_model_names();
+    print_model_sync::resync_all_registry_print_models(&db, data_dir, &registry)?;
     let _ = super::validation::reconcile_signature_tasks(db, data_dir);
     Ok(synced)
 }

@@ -1347,45 +1347,15 @@ impl Database {
         use crate::print_seed::AUTO_PRINT_DESCRIPTION_PREFIX;
         use rusqlite::OptionalExtension;
 
-        let like_kind = format!("{AUTO_PRINT_DESCRIPTION_PREFIX} — {kind} —%");
-        let like_auto = format!("{AUTO_PRINT_DESCRIPTION_PREFIX}%");
-        let mut existing_id: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT id FROM document_print_models
-                 WHERE screen_key = ?1 AND description LIKE ?2
-                 ORDER BY created_at ASC LIMIT 1",
-                params![screen_key, like_kind],
-                |r| r.get(0),
-            )
-            .optional()?;
-
-        // Modèles de base créés avant le format « — fiche/liste — » (évite doublon UNIQUE sur name).
-        if existing_id.is_none() {
-            existing_id = self
-                .conn
-                .query_row(
-                    "SELECT id FROM document_print_models
-                     WHERE screen_key = ?1
-                       AND (
-                         description LIKE ?2
-                         OR description LIKE '%généré DDA%'
-                         OR (name = ?3 AND description NOT LIKE 'Mon %')
-                       )
-                     ORDER BY created_at ASC LIMIT 1",
-                    params![screen_key, like_auto, name],
-                    |r| r.get(0),
-                )
-                .optional()?;
-        }
+        let existing_id = self.find_base_print_model_id(screen_key, kind, name)?;
 
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         if let Some(id) = existing_id {
             self.conn.execute(
                 "UPDATE document_print_models
-                 SET html_content = ?1, css_content = ?2, description = ?3, updated_at = ?4
-                 WHERE id = ?5",
-                params![html_content, css_content, description, &now, id],
+                 SET html_content = ?1, css_content = ?2, description = ?3, name = ?4, updated_at = ?5
+                 WHERE id = ?6",
+                params![html_content, css_content, description, name, &now, id],
             )?;
             return Ok(());
         }
@@ -1407,6 +1377,86 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+
+    /// Repère le modèle auto DDA fiche ou liste sans confondre les deux variantes d'un même écran.
+    fn find_base_print_model_id(
+        &self,
+        screen_key: &str,
+        kind: &str,
+        expected_name: &str,
+    ) -> Result<Option<String>, DbError> {
+        use crate::print_seed::AUTO_PRINT_DESCRIPTION_PREFIX;
+        use rusqlite::OptionalExtension;
+
+        let like_kind = format!("{AUTO_PRINT_DESCRIPTION_PREFIX} — {kind} —%");
+        let mut existing_id: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM document_print_models
+                 WHERE screen_key = ?1 AND description LIKE ?2
+                 ORDER BY created_at ASC LIMIT 1",
+                params![screen_key, like_kind],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if existing_id.is_some() {
+            return Ok(existing_id);
+        }
+
+        // Nom exact (legacy) — ex. « Fiche Client », « Liste — Client »
+        existing_id = self
+            .conn
+            .query_row(
+                "SELECT id FROM document_print_models
+                 WHERE screen_key = ?1 AND name = ?2
+                   AND description NOT LIKE 'Mon %'
+                 ORDER BY created_at ASC LIMIT 1",
+                params![screen_key, expected_name],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if existing_id.is_some() {
+            return Ok(existing_id);
+        }
+
+        // Legacy par préfixe de nom — jamais de fallback générique « Modèle auto DDA% »
+        // (sinon la fiche écrase la liste ou l'inverse).
+        let name_prefix = if kind == "fiche" {
+            "Fiche%"
+        } else {
+            "Liste%"
+        };
+        let legacy_desc = if kind == "fiche" {
+            "%fiche%"
+        } else {
+            "%liste%"
+        };
+        existing_id = self
+            .conn
+            .query_row(
+                "SELECT id FROM document_print_models
+                 WHERE screen_key = ?1
+                   AND name LIKE ?2
+                   AND (
+                     description LIKE ?3
+                     OR description LIKE '%généré DDA%'
+                     OR description LIKE ?4
+                   )
+                   AND description NOT LIKE 'Mon %'
+                 ORDER BY created_at ASC LIMIT 1",
+                params![
+                    screen_key,
+                    name_prefix,
+                    format!("{AUTO_PRINT_DESCRIPTION_PREFIX}%"),
+                    legacy_desc,
+                ],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        Ok(existing_id)
     }
 
     /// @deprecated Préférer `sync_base_print_model`.

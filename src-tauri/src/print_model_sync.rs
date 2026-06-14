@@ -1,8 +1,11 @@
 //! Synchronisation des modèles d'impression de base (HTML/CSS) avec les colonnes d'entité.
 //! Ne modifie jamais les modèles créés par les utilisateurs.
 
+use std::path::Path;
+
 use crate::dda::config::ScreenConfigFile;
 use crate::db::Database;
+use crate::entity::registry::{self, EntityRegistry};
 use crate::entity::stock::STOCK_ENTITY_KEY;
 use crate::print_seed::AUTO_PRINT_DESCRIPTION_PREFIX;
 use crate::print_template::{
@@ -57,6 +60,22 @@ pub fn sync_entity_base_print_models(db: &Database, cfg: &ScreenConfigFile) -> R
     )
     .map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+/// Resynchronise tous les modèles auto DDA après enregistrement du registre (filet de sécurité).
+pub fn resync_all_registry_print_models(
+    db: &Database,
+    _data_dir: &Path,
+    registry: &EntityRegistry,
+) -> Result<(), String> {
+    for ent in &registry.entities {
+        if registry::is_orphan_entity_key(&ent.nom) {
+            continue;
+        }
+        let cfg = crate::entity::config::build_screen_config(ent, registry);
+        sync_entity_base_print_models(db, &cfg)?;
+    }
     Ok(())
 }
 
