@@ -507,10 +507,14 @@ fn maybe_spawn_destock_task(db: &Database, data_dir: &Path, row: &Map<String, Va
         .get("libelle")
         .and_then(|v| v.as_str())
         .unwrap_or("article");
-    let libelle = format!("Déstockage — {libelle_src} (péremption {date_str})");
+    let libelle = format!(
+        "Déstockage — {libelle_src} (péremption {})",
+        crate::date_format::format_iso_date_str(date_str)
+    );
     let description = format!(
-        "Article périssable : péremption dans {days} jour(s) ({date_str}).\n\
-         Ligne stock : {stock_id}"
+        "Article périssable : péremption dans {days} jour(s) ({}).\n\
+         Ligne stock : {stock_id}",
+        crate::date_format::format_iso_date_str(date_str)
     );
 
     insert_destock_task(db, tache_ent, &libelle, &description, stock_id)?;

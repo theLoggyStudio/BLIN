@@ -1,6 +1,6 @@
 import type { FieldDef, ScreenRow } from "@/types/screen";
 import { entityRowDisplayLabel } from "@/lib/entityRowLabel";
-import { formatDateFr, formatDateTimeFr, formatTimeFr } from "@/lib/formatDateTime";
+import { formatDateFr, formatDateTimeFr, formatJjmmaaaaFr, formatTimeFr } from "@/lib/formatDateTime";
 import { parseImagesValue } from "./mediaUtils";
 
 function fieldValuesMatch(current: unknown, expected: unknown): boolean {
@@ -39,6 +39,7 @@ export function formatCellValue(field: FieldDef | undefined, value: unknown): st
     return n > 0 ? `${n} photo${n > 1 ? "s" : ""}` : "—";
   }
   if (value == null || value === "") return "—";
+  if (field?.key.endsWith("_jjmmaaaa")) return formatJjmmaaaaFr(value);
   if (field?.type === "date") return formatDateFr(value);
   if (field?.type === "time") return formatTimeFr(value);
   if (field?.type === "datetime") return formatDateTimeFr(value);

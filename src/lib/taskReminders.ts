@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import { formatDateFr } from "@/lib/formatDateTime";
 import type { ScreenRow } from "@/types/screen";
 
 const FIRED_STORAGE_KEY = "loggmagic-task-reminders-fired";
@@ -109,9 +110,7 @@ export function buildTaskReminderMessage(task: ScreenRow): string {
   const timeLabel = timeParts
     ? `${String(timeParts.hour).padStart(2, "0")}:${String(timeParts.minute).padStart(2, "0")}`
     : String(task.heure_debut ?? "").trim();
-  const dateLabel = dateRaw
-    ? DateTime.fromISO(dateRaw, { zone: "local" }).toFormat("dd/MM/yyyy")
-    : "aujourd'hui";
+  const dateLabel = dateRaw ? formatDateFr(dateRaw) : "aujourd'hui";
   const priorite = String(task.priorite ?? "").trim();
 
   let msg = `Rappel de tâche : « ${title} » prévue le ${dateLabel} à ${timeLabel}.`;

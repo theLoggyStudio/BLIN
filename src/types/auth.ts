@@ -1,7 +1,11 @@
 export type Privilege =
   | "users:voir"
   | "users:modifier"
+  | "parametres:voir"
   | "parametres:assistant"
+  | "parametres:compte"
+  | "parametres:theme"
+  | "parametres:impression"
   | "parametres:entites"
   | "parametres:entites:creer"
   | "parametres:roles"

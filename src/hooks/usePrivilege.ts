@@ -18,7 +18,7 @@ export function usePrivilege(required: Privilege | string): boolean {
   }, [user, required]);
 }
 
-export function usePrivileges(required: Privilege[], mode: "all" | "any" = "all"): boolean {
+export function usePrivileges(required: (Privilege | string)[], mode: "all" | "any" = "all"): boolean {
   const { user } = useAuth();
   return useMemo(() => {
     if (!user) return false;

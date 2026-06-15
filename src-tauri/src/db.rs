@@ -65,6 +65,7 @@ impl Database {
         db.migrate_v18()?;
         db.migrate_v19()?;
         db.migrate_v20()?;
+        db.migrate_v21()?;
         db.seed()?;
         db.ensure_admin_account()?;
         db.ensure_demo_bureau()?;
@@ -216,7 +217,11 @@ impl Database {
                 &[
                     "directeur:confirmer",
                     "ai:utiliser",
+                    "parametres:voir",
                     "parametres:assistant",
+                    "parametres:compte",
+                    "parametres:theme",
+                    "parametres:impression",
                     "parametres:entites",
                     "parametres:entites:creer",
                     "parametres:roles",

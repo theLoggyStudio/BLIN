@@ -236,7 +236,7 @@ fn escape_html_attr(s: &str) -> String {
 pub fn apply_document_placeholders(html: &str, societe_nom: &str, societe_slogan: &str) -> String {
     let mut out = html.to_string();
     let now = chrono::Local::now();
-    out = out.replace("{{date.aujourdhui}}", &now.format("%d/%m/%Y").to_string());
+    out = out.replace("{{date.aujourdhui}}", &crate::date_format::format_local_now_date());
     out = out.replace("{{date.heure}}", &now.format("%H:%M").to_string());
     out = out.replace("{{societe.nom}}", &escape_html_attr(societe_nom));
     out = out.replace("{{societe.slogan}}", &escape_html_attr(societe_slogan));
@@ -251,7 +251,7 @@ pub fn substitute_row(
 ) -> String {
     let mut out = html.to_string();
     let now = chrono::Local::now();
-    out = out.replace("{{date.aujourdhui}}", &now.format("%d/%m/%Y").to_string());
+    out = out.replace("{{date.aujourdhui}}", &crate::date_format::format_local_now_date());
     out = out.replace("{{date.heure}}", &now.format("%H:%M").to_string());
 
     for field in fields {
@@ -404,7 +404,7 @@ pub fn substitute_list_document(
 ) -> String {
     let mut out = html.to_string();
     let now = chrono::Local::now();
-    out = out.replace("{{date.aujourdhui}}", &now.format("%d/%m/%Y").to_string());
+    out = out.replace("{{date.aujourdhui}}", &crate::date_format::format_local_now_date());
     out = out.replace("{{date.heure}}", &now.format("%H:%M").to_string());
     out = out.replace("{{titre}}", &escape_html_attr(titre));
     out = out.replace("{{sousTitre}}", &escape_html_attr(sous_titre));
@@ -441,7 +441,7 @@ fn format_list_cell_display(value: Option<&Value>, field: &FieldDef) -> String {
 
 fn value_to_list_display(value: Option<&Value>, field_type: &str, field_key: &str) -> String {
     let raw = value_to_display(value, field_type, field_key);
-    if field_type == "date" {
+    if field_type == "date" || field_key.ends_with("_jjmmaaaa") {
         return format_iso_date(&raw);
     }
     if field_type == "datetime" || field_key.ends_with("_at") || field_key.contains("date") {
@@ -463,37 +463,11 @@ fn trim_trailing_zero_decimal(s: &str) -> String {
 }
 
 fn format_iso_date(s: &str) -> String {
-    if s == "—" || s.is_empty() {
-        return s.to_string();
-    }
-    if let Some(day) = s.get(0..10) {
-        if let Ok(parsed) = chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d") {
-            return parsed.format("%d/%m/%Y").to_string();
-        }
-    }
-    format_iso_datetime(s)
+    crate::date_format::format_iso_date_str(s)
 }
 
 fn format_iso_datetime(s: &str) -> String {
-    if s == "—" || s.is_empty() {
-        return s.to_string();
-    }
-    let trimmed = s.trim();
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
-        return dt.format("%d/%m/%Y %H:%M").to_string();
-    }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S%.f") {
-        return dt.format("%d/%m/%Y %H:%M").to_string();
-    }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S") {
-        return dt.format("%d/%m/%Y %H:%M").to_string();
-    }
-    if let Some(day) = trimmed.get(0..10) {
-        if let Ok(parsed) = chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d") {
-            return parsed.format("%d/%m/%Y").to_string();
-        }
-    }
-    s.to_string()
+    crate::date_format::format_iso_datetime_str(s)
 }
 
 fn map_signature_status(raw: &str) -> String {
@@ -563,7 +537,7 @@ mod tests {
     #[test]
     fn list_datetime_formats_readable() {
         let out = format_iso_datetime("2026-06-08T10:35:52.007736600+00:00");
-        assert!(out.contains("08/06/2026"));
+        assert!(out.contains("08/juin/2026"));
         assert!(out.contains("10:35") || out.contains("12:35"));
     }
 

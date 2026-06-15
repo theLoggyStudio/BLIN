@@ -1108,6 +1108,18 @@ impl Database {
         Ok(())
     }
 
+    /// Privilèges de visibilité des panneaux Paramètres (voir, compte, thème, impression).
+    pub fn migrate_v21(&self) -> Result<(), DbError> {
+        self.ensure_parametres_privileges()?;
+        for privilege in ["parametres:voir", "parametres:compte", "parametres:theme"] {
+            let _ = self.conn.execute(
+                "INSERT OR IGNORE INTO role_privileges (role_id, privilege) VALUES ('role-agent', ?1)",
+                params![privilege],
+            );
+        }
+        Ok(())
+    }
+
     /// Renommage LoggMagic → Blin : e-mails locaux des comptes seed.
     pub fn migrate_v18(&self) -> Result<(), DbError> {
         for (from_suffix, to_email) in [

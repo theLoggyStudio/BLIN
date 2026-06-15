@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { formatDateFr, formatDateTimeFr, formatTimeFr, parseToDate } from "@/lib/formatDateTime";
+import { formatDateFr, formatDateTimeFr, formatJjmmaaaaFr, formatTimeFr, parseToDate } from "@/lib/formatDateTime";
 import { cn } from "@/lib/utils";
 import type { RelationSelectOption } from "@/types/entity";
 
@@ -25,6 +25,9 @@ function formatSegmentValue(value: string, label: string): string {
     const n = Number(value);
     if (Number.isFinite(n) && Number.isInteger(n)) return String(Math.trunc(n));
     if (Number.isFinite(n) && n === Math.trunc(n)) return String(Math.trunc(n));
+  }
+  if (labelLc.includes("jjmmaaaa") || labelLc.endsWith("— date")) {
+    return formatJjmmaaaaFr(value);
   }
   if (parseToDate(value)) {
     if (labelLc.includes("heure") && !labelLc.includes("date")) return formatTimeFr(value);

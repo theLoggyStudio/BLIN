@@ -10,6 +10,8 @@ import { ForbiddenPage } from "@/pages/Forbidden/ForbiddenPage";
 import { LoginPage } from "@/pages/Login/LoginPage";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { ParametresPage } from "@/pages/system/ParametresPage";
+import { RequireAnyPrivilege } from "@/components/RequirePrivilege";
+import { PARAMETRES_VISIBILITY_PRIVILEGES } from "@/lib/parametresPrivileges";
 import { TachesModalProvider } from "@/contexts/TachesModalContext";
 import { StockModalProvider } from "@/contexts/StockModalContext";
 import { EntityDefLoggyModalProvider } from "@/contexts/EntityDefLoggyModalContext";
@@ -61,7 +63,14 @@ function ProtectedRoutes() {
         }
       >
         <Route index element={<DashboardPage />} />
-        <Route path="parametres" element={<ParametresPage />} />
+        <Route
+          path="parametres"
+          element={
+            <RequireAnyPrivilege privileges={PARAMETRES_VISIBILITY_PRIVILEGES}>
+              <ParametresPage />
+            </RequireAnyPrivilege>
+          }
+        />
       </Route>
       <Route path="interdit" element={<ForbiddenPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

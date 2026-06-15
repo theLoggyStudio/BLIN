@@ -7,10 +7,14 @@ pub fn system_privileges() -> &'static [&'static str] {
         "users:voir",
         "users:modifier",
         "parametres:assistant",
+        "parametres:compte",
+        "parametres:theme",
+        "parametres:impression",
         "parametres:entites",
         "parametres:entites:creer",
         "parametres:roles",
         "parametres:utilisateurs",
+        "parametres:voir",
         "documents:voir",
         "documents:importer",
         "documents:exporter",
@@ -20,14 +24,33 @@ pub fn system_privileges() -> &'static [&'static str] {
     ]
 }
 
-/// Privilèges Paramètres accordés par défaut au rôle Directeur.
-pub fn default_directeur_parametres_privileges() -> &'static [&'static str] {
+/// Privilèges de visibilité des panneaux Paramètres (un par section repliable).
+pub fn parametres_panel_privileges() -> &'static [&'static str] {
     &[
+        "parametres:voir",
         "parametres:assistant",
+        "parametres:compte",
+        "parametres:theme",
+        "parametres:impression",
         "parametres:entites",
         "parametres:entites:creer",
         "parametres:roles",
         "parametres:utilisateurs",
+    ]
+}
+
+/// Privilèges Paramètres accordés par défaut au rôle Directeur.
+pub fn default_directeur_parametres_privileges() -> &'static [&'static str] {
+    &[
+        "parametres:assistant",
+        "parametres:compte",
+        "parametres:theme",
+        "parametres:impression",
+        "parametres:entites",
+        "parametres:entites:creer",
+        "parametres:roles",
+        "parametres:utilisateurs",
+        "parametres:voir",
     ]
 }
 

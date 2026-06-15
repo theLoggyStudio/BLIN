@@ -12,6 +12,9 @@ import {
   type ParametresPanelsState,
 } from "@/lib/parametresPanels";
 import { usePrivilege } from "@/hooks/usePrivilege";
+import {
+  privilegeForParametresPanel,
+} from "@/lib/parametresPrivileges";
 import { RolesPanel } from "@/items/RolesPanel";
 import { UsersPanel } from "@/items/UsersPanel";
 import { EntityPanel } from "@/items/EntityPanel";
@@ -65,9 +68,12 @@ import { ENTITY_REGISTRY_SYNCED_EVENT } from "@/constants/events";
 export function ParametresPage() {
   const { title } = useEntityBranding();
   const { user, syncSessionPrivileges } = useAuth();
-  const canAi = usePrivilege("ai:utiliser");
   const canParamAssistant = usePrivilege("parametres:assistant");
+  const canParamCompte = usePrivilege("parametres:compte");
+  const canParamTheme = usePrivilege("parametres:theme");
+  const canParamImpression = usePrivilege("parametres:impression");
   const canParamEntites = usePrivilege("parametres:entites");
+  const canParamEntitesCreer = usePrivilege("parametres:entites:creer");
   const canParamRoles = usePrivilege("parametres:roles");
   const canParamUtilisateurs = usePrivilege("parametres:utilisateurs");
   const [panelsOpen, setPanelsOpen] = useState<ParametresPanelsState>(loadParametresPanelsState);
@@ -121,14 +127,23 @@ export function ParametresPage() {
   const visiblePanelIds = useMemo((): ParametresPanelId[] => {
     const ids: ParametresPanelId[] = [];
     if (canParamAssistant) ids.push("assistant");
-    ids.push("compte");
-    ids.push("theme");
-    if (canAi) ids.push("impression");
-    if (canParamEntites) ids.push("entites");
+    if (canParamCompte) ids.push("compte");
+    if (canParamTheme) ids.push("theme");
+    if (canParamImpression) ids.push("impression");
+    if (canParamEntites || canParamEntitesCreer) ids.push("entites");
     if (canParamRoles) ids.push("roles");
     if (canParamUtilisateurs) ids.push("utilisateurs");
     return ids;
-  }, [canAi, canParamAssistant, canParamEntites, canParamRoles, canParamUtilisateurs]);
+  }, [
+    canParamAssistant,
+    canParamCompte,
+    canParamTheme,
+    canParamImpression,
+    canParamEntites,
+    canParamEntitesCreer,
+    canParamRoles,
+    canParamUtilisateurs,
+  ]);
 
   const setPanelOpen = useCallback((id: ParametresPanelId, open: boolean) => {
     setPanelsOpen((prev) => {
@@ -181,6 +196,15 @@ export function ParametresPage() {
       )}
 
       <div className="space-y-6">
+        {visiblePanelIds.length === 0 ? (
+          <Alert
+            variant="info"
+            size="box"
+            className="px-4 py-3"
+            message="Aucune section Paramètres n'est accessible avec votre rôle actuel."
+          />
+        ) : (
+          <>
         <div className="parametres-panels-toolbar" role="toolbar" aria-label="Panneaux Paramètres">
           <Button
             type="button"
@@ -204,7 +228,7 @@ export function ParametresPage() {
           </Button>
         </div>
 
-        <Guard privilege="parametres:assistant">
+        <Guard privilege={privilegeForParametresPanel("assistant")}>
           <CollapsiblePanel
             title={`Assistant — ${title}`}
             subtitle="Modèle local, recherche Internet optionnelle"
@@ -353,6 +377,7 @@ export function ParametresPage() {
           </CollapsiblePanel>
         </Guard>
 
+        <Guard privilege={privilegeForParametresPanel("compte")}>
         <CollapsiblePanel
           title="Compte"
           subtitle="Session active sur ce poste"
@@ -370,7 +395,9 @@ export function ParametresPage() {
             </div>
           </div>
         </CollapsiblePanel>
+        </Guard>
 
+        <Guard privilege={privilegeForParametresPanel("theme")}>
         <CollapsiblePanel
           title="Thème de couleurs"
           subtitle="Apparence de l'interface — enregistré sur ce poste"
@@ -380,8 +407,9 @@ export function ParametresPage() {
         >
           <ThemePanel />
         </CollapsiblePanel>
+        </Guard>
 
-        <Guard privilege="ai:utiliser">
+        <Guard privilege={privilegeForParametresPanel("impression")}>
           <CollapsiblePanel
             title="Création de modèles d'impression"
             subtitle="Éditeur HTML/CSS — fiche PDF par ligne de tableau"
@@ -392,7 +420,7 @@ export function ParametresPage() {
           </CollapsiblePanel>
         </Guard>
 
-        <Guard privilege="parametres:entites">
+        <Guard anyOf={["parametres:entites", "parametres:entites:creer"]}>
           <CollapsiblePanel
             title="Entités métier"
             subtitle="Source de vérité — tables SQLite et formulaires auto"
@@ -408,9 +436,9 @@ export function ParametresPage() {
           </CollapsiblePanel>
         </Guard>
 
-        <Guard privilege="parametres:roles">
+        <Guard privilege={privilegeForParametresPanel("roles")}>
           <CollapsiblePanel
-            title="Rôles"
+            title="Rôles et Privilèges"
             subtitle="Création des rôles et affectation des privilèges"
             open={panelOpen("roles")}
             onOpenChange={(open) => setPanelOpen("roles", open)}
@@ -419,7 +447,7 @@ export function ParametresPage() {
           </CollapsiblePanel>
         </Guard>
 
-        <Guard privilege="parametres:utilisateurs">
+        <Guard privilege={privilegeForParametresPanel("utilisateurs")}>
           <CollapsiblePanel
             title="Utilisateurs"
             subtitle="Comptes, e-mail et affectation de rôle"
@@ -429,6 +457,8 @@ export function ParametresPage() {
             <UsersPanel />
           </CollapsiblePanel>
         </Guard>
+          </>
+        )}
       </div>
     </div>
     </div>

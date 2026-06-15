@@ -25,6 +25,7 @@ import { AiStartupHost } from "@/items/AiStartupHost";
 import { useTachesModal } from "@/contexts/TachesModalContext";
 import { useStockModal } from "@/contexts/StockModalContext";
 import { ENTITY_REGISTRY_SYNCED_EVENT } from "@/constants/events";
+import { PARAMETRES_VISIBILITY_PRIVILEGES } from "@/lib/parametresPrivileges";
 import { cn } from "@/lib/utils";
 
 export function AppLayout() {
@@ -161,12 +162,14 @@ export function AppLayout() {
                 </button>
               </Guard>
             )}
-            <MenuItem
-              to="/parametres"
-              label="Paramètres"
-              icon={Settings}
-              collapsed={sidebarCollapsed}
-            />
+            <Guard anyOf={PARAMETRES_VISIBILITY_PRIVILEGES}>
+              <MenuItem
+                to="/parametres"
+                label="Paramètres"
+                icon={Settings}
+                collapsed={sidebarCollapsed}
+              />
+            </Guard>
           </div>
           <SidebarWindowsPanel collapsed={sidebarCollapsed} />
         </nav>
@@ -244,7 +247,9 @@ export function AppLayout() {
                 </button>
               </Guard>
             )}
-            <NavLinkBtn to="/parametres" label="Réglages" icon={Settings} />
+            <Guard anyOf={PARAMETRES_VISIBILITY_PRIVILEGES}>
+              <NavLinkBtn to="/parametres" label="Réglages" icon={Settings} />
+            </Guard>
           </nav>
         )}
       </div>

@@ -28,7 +28,10 @@ fn esc(s: &str) -> String {
 }
 
 pub fn build_bien_report_html(bien: &BienRow, contrats: &[ContratRow], app_name: &str) -> String {
-    let now = chrono::Local::now().format("%d/%m/%Y %H:%M").to_string();
+    let now = {
+        let dt = chrono::Local::now().naive_local();
+        crate::date_format::format_naive_datetime(dt)
+    };
     let prix = bien
         .prix_defaut
         .map(|p| format!("{p:.2} {}", bien.devise))
@@ -50,7 +53,7 @@ pub fn build_bien_report_html(bien: &BienRow, contrats: &[ContratRow], app_name:
                 esc(&c.statut),
                 c.loyer_mensuel,
                 esc(&c.devise),
-                esc(&c.date_debut),
+                esc(&crate::date_format::format_iso_date_str(&c.date_debut)),
             ));
         }
     }
@@ -154,7 +157,7 @@ pub fn build_finances_month_html(
             esc(&f.libelle),
             f.montant,
             esc(&f.devise),
-            esc(&f.date_echeance),
+            esc(&crate::date_format::format_iso_date_str(&f.date_echeance)),
             esc(&f.statut),
         ));
     }

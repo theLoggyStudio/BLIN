@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import type { Privilege } from "@/types/auth";
-import { usePrivilege } from "@/hooks/usePrivilege";
+import { usePrivilege, usePrivileges } from "@/hooks/usePrivilege";
 import { cn } from "@/lib/utils";
 
 interface GuardProps {
-  privilege: Privilege | string;
+  privilege?: Privilege | string;
+  anyOf?: (Privilege | string)[];
   children: ReactNode;
   fallback?: ReactNode;
   mode?: "hide" | "disable";
@@ -13,12 +14,15 @@ interface GuardProps {
 
 export function Guard({
   privilege,
+  anyOf,
   children,
   fallback = null,
   mode = "hide",
   className,
 }: GuardProps) {
-  const allowed = usePrivilege(privilege);
+  const allowedSingle = usePrivilege(privilege ?? "");
+  const allowedAny = usePrivileges(anyOf ?? [], "any");
+  const allowed = anyOf?.length ? allowedAny : privilege ? allowedSingle : false;
 
   if (!allowed) {
     if (mode === "hide") return <>{fallback}</>;
