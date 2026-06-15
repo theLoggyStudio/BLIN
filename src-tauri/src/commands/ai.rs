@@ -328,6 +328,117 @@ pub fn ai_task_reminder_personify(
     ))
 }
 
+/// Commentaire Loggy sur un graphique — thread dédié, sans bloquer entity_stats.
+#[tauri::command]
+pub async fn ai_stats_interpret(
+    state: State<'_, AppState>,
+    payload: crate::ai::stats_interpret::StatsInterpretPayload,
+) -> Result<String, String> {
+    state.desktop_sessions.require_session()?;
+
+    if payload.series.is_empty()
+        || payload.series.iter().all(|s| s.points.is_empty())
+    {
+        return Ok("Je n'ai pas encore de données à commenter sur ce graphique.".into());
+    }
+
+    let fallback = crate::ai::stats_interpret::fallback_interpretation(&payload);
+    if !crate::ai::llama_server::LlamaServer::model_ready() {
+        return Ok(fallback);
+    }
+
+    let db_arc = state.db.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let app_name = {
+            let db = db_arc.lock();
+            crate::entity::branding::ecosystem_name(&db.data_dir)
+        };
+
+        let needs_prepare = {
+            let db = db_arc.lock();
+            crate::ai::hardware_profile::profile_summary(&db)
+                .map(|(profiled, _)| !profiled)
+                .unwrap_or(false)
+        };
+        if needs_prepare {
+            let db = db_arc.lock();
+            let _ = crate::ai::llama_server::LlamaServer::prepare(&db, false);
+        }
+
+        Ok(crate::ai::stats_interpret::interpret_stats_with_llm(
+            &payload,
+            &fallback,
+            &app_name,
+        ))
+    })
+    .await
+    .map_err(|e| format!("Analyse Loggy interrompue : {e}"))?
+}
+
+/// Questions de suivi sur un graphique — contexte courbe uniquement.
+#[tauri::command]
+pub async fn ai_stats_chat(
+    state: State<'_, AppState>,
+    payload: crate::ai::stats_interpret::StatsChatPayload,
+) -> Result<String, String> {
+    state.desktop_sessions.require_session()?;
+
+    if payload.chart.series.is_empty()
+        || payload.chart.series.iter().all(|s| s.points.is_empty())
+    {
+        return Err("Aucune donnée de courbe à discuter.".into());
+    }
+
+    let message = payload.message.trim().to_string();
+    if message.is_empty() {
+        return Err("Message vide.".into());
+    }
+
+    let fallback = crate::ai::stats_interpret::fallback_stats_chat_answer(
+        &payload.chart,
+        &message,
+        &payload.initial_analysis,
+    );
+
+    if !crate::ai::llama_server::LlamaServer::model_ready() {
+        return Ok(fallback);
+    }
+
+    let db_arc = state.db.clone();
+    let chart = payload.chart;
+    let initial_analysis = payload.initial_analysis;
+    let history = payload.history;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let app_name = {
+            let db = db_arc.lock();
+            crate::entity::branding::ecosystem_name(&db.data_dir)
+        };
+
+        let needs_prepare = {
+            let db = db_arc.lock();
+            crate::ai::hardware_profile::profile_summary(&db)
+                .map(|(profiled, _)| !profiled)
+                .unwrap_or(false)
+        };
+        if needs_prepare {
+            let db = db_arc.lock();
+            let _ = crate::ai::llama_server::LlamaServer::prepare(&db, false);
+        }
+
+        Ok(crate::ai::stats_interpret::stats_chat_with_llm(
+            &chart,
+            &initial_analysis,
+            &message,
+            &history,
+            &app_name,
+        ))
+    })
+    .await
+    .map_err(|e| format!("Discussion Loggy interrompue : {e}"))?
+}
+
 #[tauri::command]
 pub fn ai_confirm_action(
     state: State<'_, AppState>,

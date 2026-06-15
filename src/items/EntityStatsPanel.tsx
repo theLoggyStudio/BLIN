@@ -1,21 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  startTransition,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, MessageCircle, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Alert } from "@/items/Alert";
 import { Button } from "@/items/Button";
 import { CollapsiblePanel } from "@/items/CollapsiblePanel";
 import { Select } from "@/items/Select";
 import { StatChart, type StatChartMultiDatum, type StatChartSeriesDef, type StatChartType } from "@/items/StatChart";
+import { StatsLoggyChatModal } from "@/items/StatsLoggyChatModal";
 import { isOrphanEntityKey } from "@/lib/orphanEntities";
 import {
   abscissaFields,
   aggregateNeedsValueField,
+  isTemporalAbscissa,
   mergeStatSeries,
   numericFields,
   SERIES_COLORS,
   STAT_AGGREGATE_OPTIONS,
   type StatAggregate,
 } from "@/lib/entityStats";
+import {
+  fallbackStatsInterpretation,
+  enrichStatsInterpretationWithAi,
+  type StatsInterpretPayload,
+} from "@/lib/statsInterpret";
 import type { EntityRegistryResponse, EntityStatRow } from "@/types/entity";
 import type { ScreenConfigFile } from "@/types/screen";
 
@@ -52,6 +66,13 @@ function defaultSeries(entityKey: string, cfg: ScreenConfigFile | null): StatSer
   };
 }
 
+interface StatSeriesResult {
+  seriesKey: string;
+  rows: EntityStatRow[];
+  def: StatChartSeriesDef;
+  draft: StatSeriesDraft;
+}
+
 interface EntityStatsPanelProps {
   defaultEntityKey: string;
 }
@@ -64,8 +85,13 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
   const [chartType, setChartType] = useState<StatChartType>("bar");
   const [multiData, setMultiData] = useState<StatChartMultiDatum[]>([]);
   const [chartSeries, setChartSeries] = useState<StatChartSeriesDef[]>([]);
+  const [seriesResults, setSeriesResults] = useState<StatSeriesResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [interpretation, setInterpretation] = useState("");
+  const [interpretLoading, setInterpretLoading] = useState(false);
+  const [loggyModalOpen, setLoggyModalOpen] = useState(false);
+  const interpretRequestId = useRef(0);
 
   const entityOptions = useMemo(
     () => [{ value: "", label: "— Choisir —" }, ...entities],
@@ -118,47 +144,55 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
     if (valid.length === 0) {
       setMultiData([]);
       setChartSeries([]);
+      setSeriesResults([]);
       return;
     }
 
     setLoading(true);
     try {
-      const results: { seriesKey: string; rows: EntityStatRow[]; def: StatChartSeriesDef }[] = [];
+      const temporal = valid.some((s) =>
+        isTemporalAbscissa(configs[s.entityKey] ?? null, s.groupBy),
+      );
 
-      for (let i = 0; i < valid.length; i++) {
-        const s = valid[i];
-        const cfg = configs[s.entityKey] ?? (await loadConfig(s.entityKey));
-        const entLabel =
-          entities.find((e) => e.value === s.entityKey)?.label ?? s.entityKey;
-        const seriesKey = `s${i}`;
-        const rows = await invoke<EntityStatRow[]>("entity_stats", {
-          payload: {
-            entity_key: s.entityKey,
-            group_by: s.groupBy,
-            aggregate: s.aggregate,
-            value_field: aggregateNeedsValueField(s.aggregate) ? s.valueField || null : null,
-          },
-        });
-        results.push({
-          seriesKey,
-          rows,
-          def: {
-            key: seriesKey,
-            name: entLabel,
-            color: SERIES_COLORS[i % SERIES_COLORS.length],
-          },
-        });
-      }
+      const results = await Promise.all(
+        valid.map(async (s, i) => {
+          await loadConfig(s.entityKey);
+          const entLabel =
+            entities.find((e) => e.value === s.entityKey)?.label ?? s.entityKey;
+          const seriesKey = `s${i}`;
+          const rows = await invoke<EntityStatRow[]>("entity_stats", {
+            payload: {
+              entity_key: s.entityKey,
+              group_by: s.groupBy,
+              aggregate: s.aggregate,
+              value_field: aggregateNeedsValueField(s.aggregate) ? s.valueField || null : null,
+            },
+          });
+          return {
+            seriesKey,
+            rows,
+            draft: s,
+            def: {
+              key: seriesKey,
+              name: entLabel,
+              color: SERIES_COLORS[i % SERIES_COLORS.length],
+            },
+          } satisfies StatSeriesResult;
+        }),
+      );
 
       const merged = mergeStatSeries(
         results.map((r) => ({ seriesKey: r.seriesKey, rows: r.rows })),
+        { temporal },
       );
       setMultiData(merged.data);
       setChartSeries(results.map((r) => r.def));
+      setSeriesResults(results);
     } catch (e) {
       setError(String(e));
       setMultiData([]);
       setChartSeries([]);
+      setSeriesResults([]);
     } finally {
       setLoading(false);
     }
@@ -169,7 +203,106 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
       void refreshChart();
     }, 400);
     return () => clearTimeout(t);
-  }, [refreshChart, chartType]);
+  }, [refreshChart]);
+
+  const xLabel = series[0]?.groupBy
+    ? (configs[series[0].entityKey]
+        ? abscissaFields(configs[series[0].entityKey]).find((f) => f.key === series[0].groupBy)?.label
+        : series[0].groupBy) ?? "Abscisse"
+    : "Abscisse";
+
+  const yLabel =
+    series[0]?.aggregate === "count"
+      ? "Nombre"
+      : STAT_AGGREGATE_OPTIONS.find((o) => o.value === series[0]?.aggregate)?.label ?? "Ordonnée";
+
+  const statsDataVersion = useMemo(() => {
+    if (seriesResults.length === 0 || multiData.length === 0) return "";
+    return JSON.stringify({
+      multiData,
+      series: seriesResults.map((r) => ({
+        seriesKey: r.seriesKey,
+        entityKey: r.draft.entityKey,
+        groupBy: r.draft.groupBy,
+        aggregate: r.draft.aggregate,
+        valueField: r.draft.valueField,
+        rows: r.rows,
+      })),
+      xLabel,
+      yLabel,
+    });
+  }, [seriesResults, multiData, xLabel, yLabel]);
+
+  const interpretPayload = useMemo((): StatsInterpretPayload | null => {
+    if (!statsDataVersion) return null;
+    return {
+      chart_type: chartType,
+      x_label: xLabel,
+      y_label: yLabel,
+      series: seriesResults.map((r) => ({
+        name: r.def.name,
+        entity_key: r.draft.entityKey,
+        aggregate: r.draft.aggregate,
+        group_by: r.draft.groupBy,
+        value_field: aggregateNeedsValueField(r.draft.aggregate) ? r.draft.valueField : null,
+        points: multiData.map((row) => ({
+          label: row.label,
+          value: Number(row[r.seriesKey] ?? 0),
+        })),
+      })),
+    };
+  }, [statsDataVersion, chartType, xLabel, yLabel, seriesResults, multiData]);
+
+  const interpretPayloadRef = useRef(interpretPayload);
+  interpretPayloadRef.current = interpretPayload;
+
+  useEffect(() => {
+    if (!statsDataVersion) {
+      setInterpretation("");
+      setInterpretLoading(false);
+      return;
+    }
+    if (loading) {
+      interpretRequestId.current += 1;
+      setInterpretLoading(false);
+      return;
+    }
+
+    const payload = interpretPayloadRef.current;
+    if (!payload) return;
+
+    const requestId = ++interpretRequestId.current;
+    setInterpretLoading(true);
+
+    const fallbackTimer = window.setTimeout(() => {
+      const text = fallbackStatsInterpretation(payload);
+      startTransition(() => {
+        if (interpretRequestId.current === requestId) {
+          setInterpretation(text);
+        }
+      });
+    }, 0);
+
+    const aiTimer = window.setTimeout(() => {
+      void enrichStatsInterpretationWithAi(payload)
+        .then((enriched) => {
+          if (interpretRequestId.current !== requestId) return;
+          if (enriched) {
+            startTransition(() => setInterpretation(enriched));
+          }
+        })
+        .finally(() => {
+          if (interpretRequestId.current === requestId) {
+            setInterpretLoading(false);
+          }
+        });
+    }, 600);
+
+    return () => {
+      clearTimeout(fallbackTimer);
+      clearTimeout(aiTimer);
+    };
+  }, [statsDataVersion, loading]);
 
   const updateSeries = (id: string, patch: Partial<StatSeriesDraft>) => {
     setSeries((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -185,17 +318,6 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
       valueField: y[0]?.key ?? "",
     });
   };
-
-  const xLabel = series[0]?.groupBy
-    ? (configs[series[0].entityKey]
-        ? abscissaFields(configs[series[0].entityKey]).find((f) => f.key === series[0].groupBy)?.label
-        : series[0].groupBy) ?? "Abscisse"
-    : "Abscisse";
-
-  const yLabel =
-    series[0]?.aggregate === "count"
-      ? "Nombre"
-      : STAT_AGGREGATE_OPTIONS.find((o) => o.value === series[0]?.aggregate)?.label ?? "Ordonnée";
 
   return (
     <CollapsiblePanel
@@ -328,6 +450,38 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
         xLabel={xLabel}
         yLabel={yLabel}
         height={320}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-muted">
+          {interpretLoading
+            ? "Loggy prépare son analyse en arrière-plan…"
+            : statsDataVersion
+              ? "Discutez avec Loggy des paliers et variations de cette courbe."
+              : "Ajustez l'abscisse et l'ordonnée pour activer l'analyse."}
+        </p>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!statsDataVersion || loading}
+          onClick={() => setLoggyModalOpen(true)}
+        >
+          {interpretLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : (
+            <MessageCircle className="h-4 w-4" aria-hidden />
+          )}
+          Demander l&apos;avis de Loggy
+        </Button>
+      </div>
+
+      <StatsLoggyChatModal
+        open={loggyModalOpen}
+        onClose={() => setLoggyModalOpen(false)}
+        interpretPayload={interpretPayload}
+        interpretation={interpretation}
+        interpretLoading={interpretLoading}
+        statsDataVersion={statsDataVersion}
       />
       </div>
     </CollapsiblePanel>

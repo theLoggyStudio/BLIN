@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ChatLinkifiedText } from "@/items/ChatLinkifiedText";
 import { ChatLoggyAttachments } from "@/items/ChatLoggyAttachments";
@@ -7,6 +8,8 @@ export interface DashboardChatEntry {
   id: string;
   role: "user" | "assistant";
   content: string | null;
+  /** Contenu utilisateur riche (remplace content pour les bulles user). */
+  userContent?: React.ReactNode;
   displayBlocks?: ChatDisplayBlock[];
   colsRequest?: ChatColsRequest;
   /** Ouvre le sélecteur de colonnes à l'arrivée (réponse live). */
@@ -45,7 +48,9 @@ export function DashboardChatThread({
           return (
             <div key={entry.id} className="user-chat-bubble" aria-label="Votre message">
               <span className="user-chat-author">Vous</span>
-              <p className="user-chat-text">{entry.content}</p>
+              {entry.userContent ?? (
+                <p className="user-chat-text">{entry.content}</p>
+              )}
             </div>
           );
         }

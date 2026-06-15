@@ -90,7 +90,7 @@ pub struct EntityIntentPayload {
     pub message: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct EntityStatsPayload {
     pub entity_key: String,
     pub group_by: String,
@@ -109,6 +109,9 @@ pub struct EntityStatsPayload {
 pub struct EntityStatRow {
     pub label: String,
     pub value: f64,
+    /// Valeur brute du regroupement (tri chronologique dates, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_key: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -670,7 +673,7 @@ pub fn entity_stock_scan_destock(state: State<'_, AppState>) -> Result<u32, Stri
 }
 
 #[tauri::command]
-pub fn entity_stats(
+pub async fn entity_stats(
     state: State<'_, AppState>,
     payload: EntityStatsPayload,
 ) -> Result<Vec<EntityStatRow>, String> {
@@ -688,27 +691,36 @@ pub fn entity_stats(
         payload.metric.as_deref(),
     )?;
 
-    let db = state.db.lock();
-    let registry = entity::registry::load(&db.data_dir)?;
-    let ent = registry
-        .find(&payload.entity_key)
-        .ok_or_else(|| format!("Entité « {} » introuvable.", payload.entity_key))?;
+    let db_arc = state.db.clone();
+    let entity_key = payload.entity_key;
+    let group_by = payload.group_by;
 
-    let rows = entity::stats::query_entity_stats(
-        &db,
-        &cfg,
-        ent,
-        &payload.group_by,
-        op,
-        value_field.as_deref(),
-    )?;
-    Ok(rows
-        .into_iter()
-        .map(|r| EntityStatRow {
-            label: r.label,
-            value: r.value,
-        })
-        .collect())
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = db_arc.lock();
+        let registry = entity::registry::load(&db.data_dir)?;
+        let ent = registry
+            .find(&entity_key)
+            .ok_or_else(|| format!("Entité « {} » introuvable.", entity_key))?;
+
+        let rows = entity::stats::query_entity_stats(
+            &db,
+            &cfg,
+            ent,
+            &group_by,
+            op,
+            value_field.as_deref(),
+        )?;
+        Ok(rows
+            .into_iter()
+            .map(|r| EntityStatRow {
+                label: r.label,
+                value: r.value,
+                sort_key: r.sort_key,
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("Statistiques interrompues : {e}"))?
 }
 
 #[derive(Serialize)]

@@ -15,7 +15,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import type { TooltipProps } from "recharts";
+import { memo } from "react";
 import { Text } from "@/items/Text";
+import { formatStatValue } from "@/lib/statsInterpret";
 import { cn } from "@/lib/utils";
 
 export type StatChartType = "bar" | "line" | "area" | "pie";
@@ -52,15 +55,70 @@ interface StatChartProps {
   className?: string;
 }
 
-function tooltipStyle() {
-  return {
-    contentStyle: { background: "#1e1e1e", border: "1px solid #404040", borderRadius: 8 },
-    labelStyle: { color: "#fafafa" },
-  };
+function StatChartTooltip({
+  active,
+  payload,
+  label,
+  xLabel,
+  yLabel,
+  series,
+  chartType,
+}: TooltipProps<number, string> & {
+  xLabel: string;
+  yLabel: string;
+  series: StatChartSeriesDef[];
+  chartType: StatChartType;
+}) {
+  if (!active || !payload?.length) return null;
+
+  const entries = payload.filter((p) => p.value != null && !Number.isNaN(Number(p.value)));
+  if (entries.length === 0) return null;
+
+  const total = entries.reduce((sum, p) => sum + Number(p.value ?? 0), 0);
+  const xValue = label != null && String(label).trim() !== "" ? String(label) : "—";
+
+  return (
+    <div
+      className="rounded-lg border border-border bg-[#1e1e1e] px-3 py-2.5 shadow-xl text-xs max-w-[280px]"
+      role="tooltip"
+    >
+      <p className="font-semibold text-foreground border-b border-border pb-1.5 mb-2">
+        {xLabel} : {xValue}
+      </p>
+      <div className="space-y-2">
+        {entries.map((entry) => {
+          const dataKey = String(entry.dataKey ?? "");
+          const seriesDef = series.find((s) => s.key === dataKey);
+          const name = entry.name ?? seriesDef?.name ?? dataKey;
+          const color = entry.color ?? seriesDef?.color ?? "#4DB6AC";
+          const val = Number(entry.value);
+          const pct = total > 0 && chartType === "pie" ? ((val / total) * 100).toFixed(1) : null;
+
+          return (
+            <div key={dataKey} className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: color }}
+                  aria-hidden
+                />
+                <span className="font-medium text-foreground truncate">{name}</span>
+              </div>
+              <p className="pl-4 text-muted">
+                {yLabel} :{" "}
+                <span className="font-mono text-foreground">{formatStatValue(val)}</span>
+                {pct != null ? ` · ${pct} % du total` : ""}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /** Graphique statistique (barres, courbes, aires, secteurs, multi-séries). */
-export function StatChart({
+export const StatChart = memo(function StatChart({
   title,
   type = "bar",
   data,
@@ -81,6 +139,21 @@ export function StatChart({
       ? multiData.map((d) => ({ name: d.label, ...d }))
       : [];
 
+  const tooltipSeries = isMulti ? series : [{ key: "value", name: yLabel, color: "#4DB6AC" }];
+  const chartTooltip = (
+    <Tooltip
+      content={
+        <StatChartTooltip
+          xLabel={xLabel}
+          yLabel={yLabel}
+          series={tooltipSeries}
+          chartType={type}
+        />
+      }
+      cursor={{ fill: "rgba(77, 182, 172, 0.08)", stroke: "#4DB6AC", strokeOpacity: 0.35 }}
+    />
+  );
+
   const chart = (() => {
     if (isMulti && type === "pie") {
       const first = series[0];
@@ -95,7 +168,7 @@ export function StatChart({
               <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
             ))}
           </Pie>
-          <Tooltip {...tooltipStyle()} />
+          {chartTooltip}
           <Legend />
         </PieChart>
       );
@@ -107,7 +180,7 @@ export function StatChart({
         <>
           <XAxis dataKey="name" stroke="#a3a3a3" tick={{ fontSize: 11 }} />
           <YAxis stroke="#a3a3a3" tick={{ fontSize: 11 }} />
-          <Tooltip {...tooltipStyle()} />
+          {chartTooltip}
           <Legend />
         </>
       );
@@ -124,7 +197,8 @@ export function StatChart({
                 name={s.name}
                 stroke={s.color}
                 strokeWidth={2}
-                dot={{ r: 3 }}
+                dot={{ r: 4, strokeWidth: 1 }}
+                activeDot={{ r: 6 }}
               />
             ))}
           </LineChart>
@@ -166,7 +240,7 @@ export function StatChart({
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
             <XAxis dataKey="name" stroke="#a3a3a3" tick={{ fontSize: 11 }} />
             <YAxis stroke="#a3a3a3" tick={{ fontSize: 11 }} />
-            <Tooltip {...tooltipStyle()} />
+            {chartTooltip}
             <Legend />
             <Line type="monotone" dataKey="value" stroke="#4DB6AC" strokeWidth={2} dot={{ r: 3 }} />
           </LineChart>
@@ -177,7 +251,7 @@ export function StatChart({
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
             <XAxis dataKey="name" stroke="#a3a3a3" />
             <YAxis stroke="#a3a3a3" />
-            <Tooltip {...tooltipStyle()} />
+            {chartTooltip}
             <Area type="monotone" dataKey="value" stroke="#4DB6AC" fill="#4DB6AC33" />
           </AreaChart>
         );
@@ -189,7 +263,7 @@ export function StatChart({
                 <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip {...tooltipStyle()} />
+            {chartTooltip}
             <Legend />
           </PieChart>
         );
@@ -199,7 +273,7 @@ export function StatChart({
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
             <XAxis dataKey="name" stroke="#a3a3a3" tick={{ fontSize: 11 }} />
             <YAxis stroke="#a3a3a3" tick={{ fontSize: 11 }} />
-            <Tooltip {...tooltipStyle()} />
+            {chartTooltip}
             <Legend />
             <Bar dataKey="value" fill="#4DB6AC" radius={[4, 4, 0, 0]} />
           </BarChart>
@@ -229,4 +303,4 @@ export function StatChart({
       )}
     </div>
   );
-}
+});

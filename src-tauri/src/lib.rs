@@ -100,6 +100,8 @@ pub fn run() {
             commands::ai::ai_entity_access_denied,
             commands::ai::ai_alert_personify,
             commands::ai::ai_task_reminder_personify,
+            commands::ai::ai_stats_interpret,
+            commands::ai::ai_stats_chat,
             commands::ai::ai_dashboard_answer,
             commands::ai::ai_list_conversations,
             commands::ai::ai_conversation_messages,

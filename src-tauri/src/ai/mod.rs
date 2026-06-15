@@ -19,6 +19,7 @@ pub mod rag;
 pub mod translate;
 pub mod web_search;
 pub mod reports;
+pub mod stats_interpret;
 pub mod store;
 pub mod tools;
 

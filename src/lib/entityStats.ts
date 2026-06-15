@@ -63,18 +63,40 @@ export function aggregateNeedsValueField(agg: StatAggregate): boolean {
   return agg !== "count";
 }
 
+function labelSortKey(row: EntityStatRow): string {
+  return row.sort_key ?? row.label;
+}
+
+function compareStatLabels(
+  a: { label: string; sortKey: string },
+  b: { label: string; sortKey: string },
+  temporal: boolean,
+): number {
+  if (temporal) {
+    return a.sortKey.localeCompare(b.sortKey, undefined, { numeric: true });
+  }
+  return a.label.localeCompare(b.label, "fr", { sensitivity: "base" });
+}
+
 export function mergeStatSeries(
   seriesResults: { seriesKey: string; rows: EntityStatRow[] }[],
+  options?: { temporal?: boolean },
 ): { data: StatChartMultiDatum[]; series: StatChartSeriesDef[] } {
-  const labelSet = new Set<string>();
+  const temporal = options?.temporal ?? false;
+  const labelMap = new Map<string, string>();
+
   for (const { rows } of seriesResults) {
     for (const r of rows) {
-      labelSet.add(r.label);
+      if (!labelMap.has(r.label)) {
+        labelMap.set(r.label, labelSortKey(r));
+      }
     }
   }
-  const labels = [...labelSet].sort((a, b) =>
-    a.localeCompare(b, "fr", { sensitivity: "base" }),
-  );
+
+  const labels = [...labelMap.entries()]
+    .map(([label, sortKey]) => ({ label, sortKey }))
+    .sort((a, b) => compareStatLabels(a, b, temporal))
+    .map((e) => e.label);
 
   const data: StatChartMultiDatum[] = labels.map((label) => {
     const row: StatChartMultiDatum = { label };
@@ -86,4 +108,10 @@ export function mergeStatSeries(
   });
 
   return { data, series: [] };
+}
+
+export function isTemporalAbscissa(cfg: ScreenConfigFile | null, groupBy: string): boolean {
+  if (!cfg || !groupBy) return false;
+  const field = abscissaFields(cfg).find((f) => f.key === groupBy);
+  return field?.type === "date" || field?.type === "datetime" || field?.type === "time";
 }

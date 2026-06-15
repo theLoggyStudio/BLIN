@@ -68,6 +68,19 @@ fn resolve_group_column(cfg: &ScreenConfigFile, ent: &EntityDef, key: &str) -> R
     Ok(attr_column(attr))
 }
 
+fn resolve_group_field_type(cfg: &ScreenConfigFile, ent: &EntityDef, key: &str) -> String {
+    if let Some(f) = cfg
+        .fields
+        .iter()
+        .find(|f| f.key == key || f.column == key)
+    {
+        return f.field_type.clone();
+    }
+    find_attr(ent, key)
+        .map(|a| a.attr_type.clone())
+        .unwrap_or_else(|_| "text".into())
+}
+
 fn is_numeric_field_type(field_type: &str) -> bool {
     matches!(field_type, "number" | "integer" | "float" | "stock")
 }
@@ -79,9 +92,32 @@ fn is_numeric_attr(attr: &EntityAttribute) -> bool {
     )
 }
 
+fn is_temporal_group_type(field_type: &str) -> bool {
+    matches!(field_type, "date" | "datetime" | "time")
+}
+
+fn format_group_label(raw: &str, field_type: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "—".to_string();
+    }
+    if field_type == "boolean" {
+        return match trimmed {
+            "1" | "true" | "True" => "Oui".into(),
+            "0" | "false" | "False" => "Non".into(),
+            other => other.to_string(),
+        };
+    }
+    if is_temporal_group_type(field_type) {
+        return crate::date_format::format_iso_date_str(trimmed);
+    }
+    trimmed.to_string()
+}
+
 pub struct EntityStatRow {
     pub label: String,
     pub value: f64,
+    pub sort_key: Option<String>,
 }
 
 pub fn query_entity_stats(
@@ -94,12 +130,18 @@ pub fn query_entity_stats(
 ) -> Result<Vec<EntityStatRow>, String> {
     let table = table_name(&ent.nom);
     let group_col = resolve_group_column(cfg, ent, group_by)?;
+    let group_field_type = resolve_group_field_type(cfg, ent, group_by);
+    let temporal = is_temporal_group_type(&group_field_type);
 
     let (select_expr, order_sql) = match op {
-        AggregateOp::Count => (
-            "COUNT(*)".to_string(),
-            "ORDER BY val DESC, lbl ASC".to_string(),
-        ),
+        AggregateOp::Count => {
+            let order = if temporal {
+                format!("ORDER BY {group_col} ASC")
+            } else {
+                "ORDER BY val DESC, lbl ASC".to_string()
+            };
+            ("COUNT(*)".to_string(), order)
+        }
         AggregateOp::Sum | AggregateOp::Avg | AggregateOp::Max | AggregateOp::Min => {
             let vf = value_field.ok_or_else(|| {
                 "Champ ordonnée requis pour somme / moyenne / min / max.".to_string()
@@ -123,7 +165,12 @@ pub fn query_entity_stats(
                 AggregateOp::Min => format!("MIN(COALESCE({val_col}, 0))"),
                 _ => unreachable!(),
             };
-            (agg, "ORDER BY val DESC, lbl ASC".to_string())
+            let order = if temporal {
+                format!("ORDER BY {group_col} ASC")
+            } else {
+                "ORDER BY val DESC, lbl ASC".to_string()
+            };
+            (agg, order)
         }
     };
 
@@ -137,22 +184,37 @@ pub fn query_entity_stats(
 
     let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([], map_stat_row)
+        .query_map([], |row| map_stat_row(row, &group_field_type))
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(rows)
 }
 
-fn map_stat_row(row: &Row<'_>) -> rusqlite::Result<EntityStatRow> {
-    let label: String = row.get(0)?;
+fn map_stat_row(row: &Row<'_>, group_field_type: &str) -> rusqlite::Result<EntityStatRow> {
+    let raw_label: String = row.get(0)?;
     let value: f64 = row.get(1)?;
+    let sort_key = if raw_label.trim().is_empty() {
+        None
+    } else {
+        Some(raw_label.clone())
+    };
     Ok(EntityStatRow {
-        label: if label.trim().is_empty() {
-            "—".to_string()
-        } else {
-            label
-        },
+        label: format_group_label(&raw_label, group_field_type),
         value,
+        sort_key,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_date_group_label() {
+        assert_eq!(
+            format_group_label("2026-06-14", "date"),
+            "14/juin/2026"
+        );
+    }
 }

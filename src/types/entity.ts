@@ -152,6 +152,8 @@ export interface EntityStatsPayload {
 export interface EntityStatRow {
   label: string;
   value: number;
+  /** Valeur brute du regroupement (tri chronologique). */
+  sort_key?: string;
 }
 
 export interface RelationPanelField {
