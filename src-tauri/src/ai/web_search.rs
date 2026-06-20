@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -217,7 +216,9 @@ pub fn finalize_web_answer(body: &str, result: &WebSearchResult) -> String {
     if footer.is_empty() {
         return body.to_string();
     }
-    if body.contains("Sources (cliquez") || body.contains("Sources :") {
+    // On n'évite l'ajout que si le bloc cliquable exact est déjà présent
+    // (ne pas se fier au simple mot « Sources » que le LLM peut écrire en prose).
+    if body.contains("Sources (cliquez") {
         return body.to_string();
     }
     format!("{body}\n\n{footer}")
@@ -396,63 +397,32 @@ fn search_ddg_powershell(query: &str) -> Option<WebSearchResult> {
     merge_ddg_parts(query, "duckduckgo-powershell", instant, hits)
 }
 
-/// Lance les 3 canaux en parallèle ; renvoie le premier résultat DuckDuckGo non vide.
-fn search_ddg_first_wins(query: &str) -> Option<WebSearchResult> {
-    let (tx, rx) = mpsc::channel::<WebSearchResult>();
-    let q = query.to_string();
+/// Essaie les canaux l'un APRÈS l'autre (jamais en parallèle).
+///
+/// DuckDuckGo bloque les rafales de requêtes simultanées (page « anomaly »
+/// vide). En envoyant une seule requête à la fois, chaque canal sert aussi de
+/// nouvel essai espacé : reqwest → curl → PowerShell.
+fn search_ddg_sequential(query: &str) -> Option<WebSearchResult> {
+    type Channel = fn(&str) -> Option<WebSearchResult>;
+    let channels: [Channel; 3] = [
+        search_ddg_reqwest,
+        search_ddg_curl,
+        search_ddg_powershell,
+    ];
 
-    let _t1 = {
-        let tx = tx.clone();
-        let q = q.clone();
-        thread::spawn(move || {
-            if let Some(r) = search_ddg_reqwest(&q) {
-                let _ = tx.send(r);
-            }
-        })
-    };
-    let _t2 = {
-        let tx = tx.clone();
-        let q = q.clone();
-        thread::spawn(move || {
-            if let Some(r) = search_ddg_curl(&q) {
-                let _ = tx.send(r);
-            }
-        })
-    };
-    let tx3 = tx.clone();
-    let _t3 = thread::spawn(move || {
-        if let Some(r) = search_ddg_powershell(&q) {
-            let _ = tx3.send(r);
+    for (i, channel) in channels.iter().enumerate() {
+        if let Some(result) = channel(query) {
+            return Some(result);
         }
-    });
-
-    drop(tx);
-
-    let deadline = Duration::from_secs(SEARCH_TIMEOUT_SECS + 2);
-    let start = std::time::Instant::now();
-    let mut best: Option<WebSearchResult> = None;
-
-    while start.elapsed() < deadline {
-        match rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(r) => {
-                if best.is_none() {
-                    best = Some(r);
-                    break;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if best.is_some() {
-                    break;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        // Petite pause entre deux canaux pour éviter d'être pris pour un bot.
+        if i + 1 < channels.len() {
+            thread::sleep(Duration::from_millis(350));
         }
     }
-
-    best
+    None
 }
 
-/// Recherche web DuckDuckGo — HTTP + terminal (curl / PowerShell), premier résultat gagnant.
+/// Recherche web DuckDuckGo — canaux séquentiels (HTTP direct, curl, PowerShell).
 pub fn search(data_dir: &Path, query: &str) -> Result<WebSearchResult, String> {
     if !is_enabled(data_dir) {
         return Err(
@@ -465,7 +435,7 @@ pub fn search(data_dir: &Path, query: &str) -> Result<WebSearchResult, String> {
         return Err("Requête de recherche trop courte.".into());
     }
 
-    if let Some(result) = search_ddg_first_wins(q) {
+    if let Some(result) = search_ddg_sequential(q) {
         return Ok(result);
     }
 
@@ -527,7 +497,8 @@ pub fn synthesize_answer(
     let system = "Tu es Loggy, assistant de l'application. Tu réponds en français à la PREMIÈRE personne (je). \
          Tu t'appuies UNIQUEMENT sur les extraits de recherche web fournis. \
          Si les sources sont insuffisantes, dis-le honnêtement. \
-         Cite brièvement les sources par leur titre dans le texte ; les URLs cliquables seront ajoutées automatiquement après ta réponse. \
+         Ne rédige PAS toi-même de liste de sources ni d'URL et n'écris pas de section « Sources » : \
+         les liens cliquables vers les sources seront ajoutés automatiquement après ta réponse. \
          Pas de JSON, pas de LaTeX.";
     let user = format!(
         "Question utilisateur : {user_message}\n\nExtraits web :\n{context}\n\n\
