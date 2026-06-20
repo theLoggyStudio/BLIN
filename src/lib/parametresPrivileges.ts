@@ -6,6 +6,7 @@ export const PARAMETRES_PAGE_PRIVILEGE = "parametres:voir";
 /** Privilège de visibilité par panneau repliable. */
 export const PARAMETRES_PANEL_PRIVILEGES: Record<ParametresPanelId, string> = {
   assistant: "parametres:assistant",
+  personnalisation_ia: "parametres:assistant",
   compte: "parametres:compte",
   theme: "parametres:theme",
   impression: "parametres:impression",

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Privilege, User } from "@/types/auth";
+import { setLoggyVoiceCurrentUser } from "@/lib/loggyVoice";
 
 interface LoginResponse {
   token: string;
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applyUser = useCallback((next: User | null) => {
     setUser(next);
     setMustChangePassword(Boolean(next?.must_change_password));
+    setLoggyVoiceCurrentUser(next?.id ?? null);
   }, []);
 
   const loadSession = useCallback(async () => {

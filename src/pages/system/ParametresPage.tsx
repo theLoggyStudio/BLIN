@@ -23,6 +23,7 @@ import { PrintModelsPanel } from "@/items/PrintModelsPanel";
 import { ThemePanel } from "@/items/ThemePanel";
 import { useAuth } from "@/hooks/useAuth";
 import { useEntityBranding } from "@/hooks/useEntityBranding";
+import { PersonnalisationIaPanel } from "@/items/PersonnalisationIaPanel";
 import { Button } from "@/items/Button";
 import { CollapsiblePanel } from "@/items/CollapsiblePanel";
 import { Text } from "@/items/Text";
@@ -129,6 +130,7 @@ export function ParametresPage() {
   const visiblePanelIds = useMemo((): ParametresPanelId[] => {
     const ids: ParametresPanelId[] = [];
     if (canParamAssistant) ids.push("assistant");
+    if (canParamAssistant) ids.push("personnalisation_ia");
     if (canParamCompte) ids.push("compte");
     if (canParamTheme) ids.push("theme");
     if (canParamImpression) ids.push("impression");
@@ -377,6 +379,18 @@ export function ParametresPage() {
                 {busy === "reindex" ? "Indexation…" : "Réindexer la mémoire IA"}
               </Button>
             </div>
+          </CollapsiblePanel>
+        </Guard>
+
+        <Guard privilege={privilegeForParametresPanel("personnalisation_ia")}>
+          <CollapsiblePanel
+            title="Personnalisation IA"
+            subtitle="Voix de Loggy — activation, réglages et voix personnelles"
+            open={panelOpen("personnalisation_ia")}
+            onOpenChange={(open) => setPanelOpen("personnalisation_ia", open)}
+            overflowVisibleWhenOpen
+          >
+            <PersonnalisationIaPanel />
           </CollapsiblePanel>
         </Guard>
 

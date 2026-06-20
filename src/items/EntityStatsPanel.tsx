@@ -30,7 +30,7 @@ import {
   enrichStatsInterpretationWithAi,
   type StatsInterpretPayload,
 } from "@/lib/statsInterpret";
-import type { EntityRegistryResponse, EntityStatRow } from "@/types/entity";
+import type { EntityRegistryResponse, EntityStatRow, StatsCatalog } from "@/types/entity";
 import type { ScreenConfigFile } from "@/types/screen";
 
 const CHART_TYPES: { value: StatChartType; label: string }[] = [
@@ -81,6 +81,7 @@ interface EntityStatsPanelProps {
 export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
   const [entities, setEntities] = useState<{ value: string; label: string }[]>([]);
   const [configs, setConfigs] = useState<Record<string, ScreenConfigFile>>({});
+  const [statsCatalogs, setStatsCatalogs] = useState<Record<string, StatsCatalog>>({});
   const [series, setSeries] = useState<StatSeriesDraft[]>([]);
   const [chartType, setChartType] = useState<StatChartType>("bar");
   const [multiData, setMultiData] = useState<StatChartMultiDatum[]>([]);
@@ -121,6 +122,15 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
         payload: { entity_key: entityKey },
       });
       setConfigs((prev) => (prev[entityKey] ? prev : { ...prev, [entityKey]: cfg }));
+      void invoke<StatsCatalog>("entity_stats_config", {
+        payload: { entity_key: entityKey },
+      })
+        .then((catalog) => {
+          setStatsCatalogs((prev) => ({ ...prev, [entityKey]: catalog }));
+        })
+        .catch(() => {
+          /* fallback au calcul client si le catalogue généré est indisponible */
+        });
       return cfg;
     } catch {
       return null;
@@ -352,12 +362,20 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
         <div className="space-y-3">
         {series.map((s, index) => {
           const cfg = configs[s.entityKey];
-          const xOpts = cfg
-            ? abscissaFields(cfg).map((f) => ({ value: f.key, label: f.label }))
-            : [];
-          const yOpts = cfg
-            ? numericFields(cfg).map((f) => ({ value: f.key, label: f.label }))
-            : [];
+          const catalog = statsCatalogs[s.entityKey];
+          const xOpts = catalog
+            ? catalog.abscissaFields.map((f) => ({ value: f.key, label: f.label }))
+            : cfg
+              ? abscissaFields(cfg).map((f) => ({ value: f.key, label: f.label }))
+              : [];
+          const yOpts = catalog
+            ? catalog.valueFields.map((f) => ({ value: f.key, label: f.label }))
+            : cfg
+              ? numericFields(cfg).map((f) => ({ value: f.key, label: f.label }))
+              : [];
+          const aggOpts = catalog
+            ? catalog.aggregates.map((a) => ({ value: a.value, label: a.label }))
+            : STAT_AGGREGATE_OPTIONS;
           const color = SERIES_COLORS[index % SERIES_COLORS.length];
 
           return (
@@ -389,7 +407,7 @@ export function EntityStatsPanel({ defaultEntityKey }: EntityStatsPanelProps) {
                 onChange={(e) =>
                   updateSeries(s.id, { aggregate: e.target.value as StatAggregate })
                 }
-                options={STAT_AGGREGATE_OPTIONS}
+                options={aggOpts}
               />
               <Select
                 label="Champ numérique"

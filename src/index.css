@@ -566,6 +566,41 @@
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-secondary;
   }
 
+  .loggy-chat-header {
+    @apply mb-1.5 flex items-center justify-between gap-2;
+  }
+
+  .loggy-chat-header .loggy-chat-author {
+    @apply mb-0;
+  }
+
+  .loggy-speak-btn {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted transition-colors;
+  }
+
+  .loggy-speak-btn:hover {
+    @apply border-secondary text-secondary;
+  }
+
+  .loggy-speak-btn--active {
+    @apply border-secondary bg-secondary/15 text-secondary;
+  }
+
+  .loggy-rec-dot {
+    @apply inline-block h-2.5 w-2.5 rounded-full bg-primary;
+    animation: loggy-rec-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes loggy-rec-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
   .loggy-chat-text {
     @apply text-sm leading-relaxed text-foreground;
   }

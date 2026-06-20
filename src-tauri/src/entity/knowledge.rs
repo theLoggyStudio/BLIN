@@ -37,7 +37,8 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
          5) Filtres : trigger auto `trigger_filters` — opérateur par type d'attribut (number=equals, string=contains, enum=equals…) ; voir `{nom}_filters.txt` et MASTER_entities_filters.txt.\n\
          6) Alertes succès : trigger `trigger_success_alerts` — toast Loggy après create/update/delete/import/export (voir MASTER_entities_success_alerts.txt).\n\
          7) Jointures : si l'utilisateur cite une entité liée (entity ref), inclure la colonne libellé de l'entité cible (voir MASTER_entities_relations.txt).\n\
-         8) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\n",
+         8) Paramètres > Entités : ajouter/modifier le JSON du registre (tables synchronisées automatiquement).\n\
+         9) Statistiques : trigger auto `trigger_stats` — abscisses/ordonnées/agrégats par entité (voir `{nom}_stats.txt` et MASTER_entities_stats.txt) ; outil entity_stats { entity_key, group_by, metric, value_field? }.\n\n",
     );
 
     if stock::registry_has_stock(registry) {
@@ -60,6 +61,10 @@ pub fn finalize_entity_knowledge(data_dir: &Path, registry: &EntityRegistry) -> 
 
     let filters_master = format_filters_master_catalog(data_dir, registry);
     fs::write(dir.join("MASTER_entities_filters.txt"), &filters_master)
+        .map_err(|e| e.to_string())?;
+
+    let stats_master = format_stats_master_catalog(data_dir, registry);
+    fs::write(dir.join("MASTER_entities_stats.txt"), &stats_master)
         .map_err(|e| e.to_string())?;
 
     let success_master = crate::dda::success_alerts::format_master_success_alerts(data_dir)
@@ -253,6 +258,29 @@ fn format_filters_master_catalog(data_dir: &Path, registry: &EntityRegistry) -> 
     }
     if s.lines().count() <= 5 {
         s.push_str("(Aucun filtre configuré — ajoutez des attributs filtrables au registre.)\n");
+    }
+    s
+}
+
+fn format_stats_master_catalog(data_dir: &Path, registry: &EntityRegistry) -> String {
+    let mut s = String::from(
+        "=== BLIN — CATALOGUE STATISTIQUES ENTITÉS (auto, trigger_stats) ===\n\
+         Généré à chaque apply_registry — abscisses, ordonnées numériques et agrégats par entité.\n\
+         Panneau « Statistiques » présent sur chaque écran (abscisse + ordonnée + type de graphe).\n\
+         Outil : entity_stats { entity_key, group_by, metric: count|sum|avg|max|min, value_field? }.\n\
+         Fichiers par entité : dda/stats/{nom}_stats.txt + dda/stats/{nom}.json\n\n",
+    );
+    for ent in &registry.entities {
+        if let Ok(cfg) = super::load_screen_config(data_dir, &ent.nom) {
+            let catalog = crate::dda::stats_catalog::build_stats_catalog(&cfg);
+            s.push_str(&crate::dda::stats_catalog::format_stats_knowledge(
+                &cfg, &catalog,
+            ));
+            s.push('\n');
+        }
+    }
+    if s.lines().count() <= 6 {
+        s.push_str("(Aucune entité — déclarez le registre dans Paramètres > Entités.)\n");
     }
     s
 }

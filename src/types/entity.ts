@@ -156,6 +156,31 @@ export interface EntityStatRow {
   sort_key?: string;
 }
 
+export interface StatsCatalogField {
+  key: string;
+  column: string;
+  label: string;
+  fieldType: string;
+  temporal: boolean;
+}
+
+export interface StatsCatalogAggregate {
+  value: string;
+  label: string;
+  needsValueField: boolean;
+}
+
+/** Catalogue statistiques généré par `trigger_stats` (commande entity_stats_config). */
+export interface StatsCatalog {
+  screenKey: string;
+  entityLabel: string;
+  abscissaFields: StatsCatalogField[];
+  valueFields: StatsCatalogField[];
+  aggregates: StatsCatalogAggregate[];
+  defaultAbscissa: string | null;
+  defaultValueField: string | null;
+}
+
 export interface RelationPanelField {
   key: string;
   label: string;

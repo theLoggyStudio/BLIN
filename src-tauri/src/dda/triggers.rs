@@ -29,6 +29,7 @@ pub fn run_all_with_progress(
         ("privileges", "Privilèges"),
         ("validations", "Validations"),
         ("filters", "Filtres"),
+        ("stats", "Statistiques"),
         ("success_alerts", "Alertes succès"),
         ("knowledge", "Mémoire IA"),
         ("folders", "Dossiers"),
@@ -42,6 +43,7 @@ pub fn run_all_with_progress(
             "privileges" => trigger_privileges(db, cfg)?,
             "validations" => trigger_validations(db, data_dir, cfg)?,
             "filters" => trigger_filters(db, data_dir, cfg)?,
+            "stats" => trigger_stats(db, data_dir, cfg)?,
             "success_alerts" => super::success_alerts::write_success_alerts(data_dir, cfg)?,
             "knowledge" => knowledge::write_screen_knowledge(data_dir, cfg)?,
             "folders" => trigger_folders(data_dir, cfg)?,
@@ -133,6 +135,59 @@ fn trigger_filters(
         .map_err(|e| format!(
             "Table dda_filter_rules absente ou erreur : {e}. Appliquer la migration schéma."
         ))?;
+
+    Ok(())
+}
+
+/// Trigger statistiques : catalogue abscisses / ordonnées / agrégats + JSON pour
+/// le panneau « Statistiques » de chaque écran, persistance DB et mémoire RAG.
+fn trigger_stats(db: &Database, data_dir: &Path, cfg: &ScreenConfigFile) -> Result<(), String> {
+    use super::stats_catalog::{build_stats_catalog, format_stats_knowledge};
+
+    let dir = data_dir.join("dda").join("stats");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let catalog = build_stats_catalog(cfg);
+    let catalog_json = serde_json::to_string_pretty(&catalog).map_err(|e| e.to_string())?;
+    fs::write(dir.join(format!("{}.json", cfg.screen.key)), &catalog_json)
+        .map_err(|e| e.to_string())?;
+
+    let knowledge = format_stats_knowledge(cfg, &catalog);
+    fs::write(
+        dir.join(format!("{}_stats.txt", cfg.screen.key)),
+        &knowledge,
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Mémoire RAG : le dossier dda/knowledge est indexé par Loggy à chaque reindex.
+    let kdir = data_dir.join("dda").join("knowledge");
+    fs::create_dir_all(&kdir).map_err(|e| e.to_string())?;
+    fs::write(
+        kdir.join(format!("{}_stats.txt", cfg.screen.key)),
+        &knowledge,
+    )
+    .map_err(|e| e.to_string())?;
+
+    db.conn
+        .execute(
+            "CREATE TABLE IF NOT EXISTS dda_stats_config (
+                screen_key TEXT PRIMARY KEY NOT NULL,
+                config_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    db.conn
+        .execute(
+            "INSERT INTO dda_stats_config (screen_key, config_json, updated_at)
+             VALUES (?1, ?2, datetime('now'))
+             ON CONFLICT(screen_key) DO UPDATE SET
+               config_json = excluded.config_json,
+               updated_at = excluded.updated_at",
+            params![cfg.screen.key, catalog_json],
+        )
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }

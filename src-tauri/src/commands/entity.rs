@@ -602,6 +602,18 @@ pub fn entity_get_screen_config(
     entity::load_screen_config(&db.data_dir, &payload.entity_key)
 }
 
+/// Catalogue statistiques d'une entité (abscisses / ordonnées / agrégats),
+/// généré par `trigger_stats` — alimente le panneau « Statistiques » de l'écran.
+#[tauri::command]
+pub fn entity_stats_config(
+    state: State<'_, AppState>,
+    payload: EntityKeyPayload,
+) -> Result<crate::dda::stats_catalog::StatsCatalog, String> {
+    let db = state.db.lock();
+    let cfg = entity::load_screen_config(&db.data_dir, &payload.entity_key)?;
+    Ok(crate::dda::stats_catalog::build_stats_catalog(&cfg))
+}
+
 /// Prévisualise date (jjmmaaaa) et n° quotidien des attributs compteur / matricule à la création.
 #[tauri::command]
 pub fn entity_compteur_preview(

@@ -1,6 +1,7 @@
 /** Identifiants des panneaux Paramètres (état replié / déplié). */
 export const PARAMETRES_PANEL_IDS = [
   "assistant",
+  "personnalisation_ia",
   "compte",
   "theme",
   "impression",
@@ -17,6 +18,7 @@ export type ParametresPanelsState = Partial<Record<ParametresPanelId, boolean>>;
 
 const DEFAULT_OPEN: ParametresPanelsState = {
   assistant: true,
+  personnalisation_ia: false,
   compte: false,
   theme: false,
   impression: false,

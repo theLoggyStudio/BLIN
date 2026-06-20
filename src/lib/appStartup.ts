@@ -4,12 +4,15 @@ import {
   setLoginMessagesCache,
   type LoginMessagesCache,
 } from "@/lib/loginMessagesCache";
+import { warmUpLoggyVoices } from "@/lib/loggyVoice";
 
 let startupPromise: Promise<void> | null = null;
 
 /** Profilage IA + serveur llama et messages de connexion Loggy, en parallèle. */
 export function runAppStartupSequence(): Promise<void> {
   if (startupPromise) return startupPromise;
+
+  warmUpLoggyVoices();
 
   startupPromise = (async () => {
     const [, messagesResult] = await Promise.allSettled([

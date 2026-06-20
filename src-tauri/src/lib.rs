@@ -149,6 +149,7 @@ pub fn run() {
             commands::entity::entity_match_registry_create_draft,
             commands::entity::entity_registry_append_entity,
             commands::entity::entity_get_screen_config,
+            commands::entity::entity_stats_config,
             commands::entity::entity_compteur_preview,
             commands::entity::entity_inline_create_allowed,
             commands::entity::entity_embed_impact_meta,

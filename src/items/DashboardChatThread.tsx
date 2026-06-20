@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ChatLinkifiedText } from "@/items/ChatLinkifiedText";
 import { ChatLoggyAttachments } from "@/items/ChatLoggyAttachments";
+import { LoggySpeakButton } from "@/items/LoggySpeakButton";
+import { isLoggyVoiceAutoEnabled, speakLoggy } from "@/lib/loggyVoice";
 import type { ChatColsRequest, ChatDisplayBlock } from "@/types/ai";
 
 export interface DashboardChatEntry {
@@ -33,6 +35,27 @@ export function DashboardChatThread({
   onOpenEntityFromChat,
   onChatFollowUp,
 }: DashboardChatThreadProps) {
+  // Lecture vocale automatique : lit la dernière réponse Loggy "live" sans
+  // relire l'historique chargé au montage.
+  const spokenRef = useRef<Set<string>>(new Set());
+  const initializedRef = useRef(false);
+
+  useEffect(() => {
+    const ready = entries.filter(
+      (e) => e.role === "assistant" && !e.loading && !!e.content,
+    );
+    if (!initializedRef.current) {
+      for (const e of ready) spokenRef.current.add(e.id);
+      initializedRef.current = true;
+      return;
+    }
+    if (!isLoggyVoiceAutoEnabled()) return;
+    const unspoken = ready.filter((e) => !spokenRef.current.has(e.id));
+    for (const e of unspoken) spokenRef.current.add(e.id);
+    const latest = unspoken[unspoken.length - 1];
+    if (latest?.content) speakLoggy(latest.content);
+  }, [entries]);
+
   if (entries.length === 0) {
     return (
       <div className={cn("dashboard-chat-empty", className)} aria-hidden>
@@ -61,7 +84,10 @@ export function DashboardChatThread({
         return (
           <div key={entry.id} className="flex w-full flex-col items-start gap-3">
             <div className="loggy-chat-bubble" aria-label="Message de Loggy" aria-busy={entry.loading}>
-              <span className="loggy-chat-author">Loggy</span>
+              <div className="loggy-chat-header">
+                <span className="loggy-chat-author">Loggy</span>
+                {entry.content ? <LoggySpeakButton text={entry.content} /> : null}
+              </div>
               {entry.content ? (
                 <ChatLinkifiedText
                   text={entry.content}
