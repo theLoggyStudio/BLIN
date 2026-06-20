@@ -12,6 +12,7 @@ pub mod registry_create_draft;
 pub mod csv_io;
 pub mod embed;
 pub mod intent;
+pub mod io_log;
 pub mod logo;
 pub mod knowledge;
 pub mod registry;

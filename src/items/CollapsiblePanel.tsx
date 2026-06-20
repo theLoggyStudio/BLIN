@@ -1,4 +1,4 @@
-import { useCallback, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,12 @@ interface CollapsiblePanelProps {
   onOpenChange?: (open: boolean) => void;
   headerAction?: ReactNode;
   className?: string;
+  /**
+   * Libère l'`overflow` (visible) une fois le panneau ouvert et l'animation
+   * terminée, afin d'autoriser un enfant `position: sticky` à suivre le
+   * défilement de la page. L'overflow reste masqué pendant la transition.
+   */
+  overflowVisibleWhenOpen?: boolean;
 }
 
 /** Panneau rétractable — Paramètres et zones de configuration. */
@@ -25,12 +31,20 @@ export function CollapsiblePanel({
   onOpenChange,
   headerAction,
   className,
+  overflowVisibleWhenOpen = false,
 }: CollapsiblePanelProps) {
   const [openInternal, setOpenInternal] = useState(defaultOpen);
   const titleId = useId();
   const bodyId = useId();
   const controlled = openControlled !== undefined;
   const open = controlled ? openControlled : openInternal;
+
+  // Vrai uniquement quand le panneau est complètement déplié (overflow libéré).
+  const [settledOpen, setSettledOpen] = useState(open);
+  useEffect(() => {
+    if (!open) setSettledOpen(false);
+  }, [open]);
+  const releaseOverflow = overflowVisibleWhenOpen && open && settledOpen;
 
   const setOpen = useCallback(
     (next: boolean) => {
@@ -44,7 +58,11 @@ export function CollapsiblePanel({
 
   return (
     <section
-      className={cn("collapsible-panel overflow-hidden rounded-xl border border-border bg-card", className)}
+      className={cn(
+        "collapsible-panel rounded-xl border border-border bg-card",
+        releaseOverflow ? "overflow-visible" : "overflow-hidden",
+        className,
+      )}
       aria-labelledby={titleId}
     >
       <div
@@ -86,9 +104,16 @@ export function CollapsiblePanel({
         id={bodyId}
         role="region"
         aria-labelledby={titleId}
-        className={cn("collapsible-panel-body-wrap", open && "collapsible-panel-body-wrap--open")}
+        onTransitionEnd={(e) => {
+          if (e.propertyName === "max-height" && open) setSettledOpen(true);
+        }}
+        className={cn(
+          "collapsible-panel-body-wrap",
+          open && "collapsible-panel-body-wrap--open",
+          releaseOverflow && "!overflow-visible",
+        )}
       >
-        <div className="collapsible-panel-body-inner">
+        <div className={cn("collapsible-panel-body-inner", releaseOverflow && "!overflow-visible")}>
           <div className="collapsible-panel-body">{children}</div>
         </div>
       </div>

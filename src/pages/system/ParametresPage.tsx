@@ -17,6 +17,7 @@ import {
 } from "@/lib/parametresPrivileges";
 import { RolesPanel } from "@/items/RolesPanel";
 import { UsersPanel } from "@/items/UsersPanel";
+import { ImportExportPanel } from "@/items/ImportExportPanel";
 import { EntityPanel } from "@/items/EntityPanel";
 import { PrintModelsPanel } from "@/items/PrintModelsPanel";
 import { ThemePanel } from "@/items/ThemePanel";
@@ -77,6 +78,7 @@ export function ParametresPage() {
   const canParamRoles = usePrivilege("parametres:roles");
   const canParamUtilisateurs = usePrivilege("parametres:utilisateurs");
   const [panelsOpen, setPanelsOpen] = useState<ParametresPanelsState>(loadParametresPanelsState);
+  const [ioJournalOpen, setIoJournalOpen] = useState(false);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -291,6 +293,7 @@ export function ParametresPage() {
                   value={status.web_search_enabled ? "Activée (DuckDuckGo)" : "Désactivée"}
                   ok={status.web_search_enabled}
                 />
+                <StatusLine label="Bases de données" value={status.db_dir} />
                 {!modelReady && (
                   <p className="mt-4 text-xs text-muted break-all">
                     Chemin modèle : <span className="font-mono">{status.model_path}</span>
@@ -404,6 +407,7 @@ export function ParametresPage() {
           open={panelOpen("theme")}
           onOpenChange={(open) => setPanelOpen("theme", open)}
           headerAction={<Palette className="h-4 w-4 text-muted" aria-hidden />}
+          overflowVisibleWhenOpen
         >
           <ThemePanel />
         </CollapsiblePanel>
@@ -455,6 +459,17 @@ export function ParametresPage() {
             onOpenChange={(open) => setPanelOpen("utilisateurs", open)}
           >
             <UsersPanel />
+          </CollapsiblePanel>
+        </Guard>
+
+        <Guard anyOf={["parametres:entites", "parametres:entites:creer"]}>
+          <CollapsiblePanel
+            title="Imports / Exports"
+            subtitle="Journal des importations et exportations par utilisateur"
+            open={ioJournalOpen}
+            onOpenChange={setIoJournalOpen}
+          >
+            <ImportExportPanel />
           </CollapsiblePanel>
         </Guard>
           </>

@@ -41,6 +41,16 @@ impl Database {
         let db_path = app_data_dir.join(DB_FILENAME);
         Self::migrate_legacy_db_files(&app_data_dir, &db_path)?;
         let conn = Connection::open(&db_path)?;
+        // Réglages de performance : WAL (lectures non bloquées par les écritures),
+        // cache mémoire élargi et mmap pour réduire les I/O sur gros volumes.
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA cache_size=-16000;
+             PRAGMA mmap_size=268435456;
+             PRAGMA busy_timeout=5000;",
+        )?;
         let db = Self {
             conn,
             data_dir: app_data_dir,
@@ -66,6 +76,7 @@ impl Database {
         db.migrate_v19()?;
         db.migrate_v20()?;
         db.migrate_v21()?;
+        db.migrate_v22()?;
         db.seed()?;
         db.ensure_admin_account()?;
         db.ensure_demo_bureau()?;

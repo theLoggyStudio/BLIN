@@ -139,7 +139,9 @@ export function ThemePanel() {
         ce poste.
       </Text>
 
-      <ThemePreview theme={theme} />
+      <div className="sticky top-0 z-10 -mx-1 bg-card px-1 pb-3 pt-1">
+        <ThemePreview theme={theme} />
+      </div>
 
       <div>
         <Text variant="label" className="mb-2">

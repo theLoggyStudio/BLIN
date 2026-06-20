@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn list_datetime_formats_readable() {
         let out = format_iso_datetime("2026-06-08T10:35:52.007736600+00:00");
-        assert!(out.contains("08/juin/2026"));
+        assert!(out.contains("08 juin 2026"));
         assert!(out.contains("10:35") || out.contains("12:35"));
     }
 

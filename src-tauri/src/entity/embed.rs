@@ -209,11 +209,94 @@ pub fn child_object_from_row(child: &EntityDef, child_row: &Map<String, Value>) 
 }
 
 /// Copie pour liste embarquée : sans champs compteur/matricule (allège le JSON).
+/// Si la fille n'a aucun libellé naturel, on lui donne un nom générique
+/// « <entité> No. <matricule complète> » (ou l'identifiant à défaut de matricule).
 pub fn child_object_from_row_for_embed_list(
     child: &EntityDef,
     child_row: &Map<String, Value>,
 ) -> Map<String, Value> {
-    child_object_from_row_inner(child, child_row, true)
+    let mut out = child_object_from_row_inner(child, child_row, true);
+    ensure_generic_embed_label(child, &mut out, child_row);
+    out
+}
+
+/// Clés considérées comme libellé naturel d'une fille embarquée.
+const EMBED_LABEL_KEYS: &[&str] = &["libelle", "nom", "titre", "reference", "intitule"];
+
+fn value_non_empty(v: &Value) -> bool {
+    match v {
+        Value::Null => false,
+        Value::String(s) => !s.trim().is_empty(),
+        _ => true,
+    }
+}
+
+fn entity_display_label(child: &EntityDef) -> String {
+    child
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| child.nom.clone())
+}
+
+fn numero_to_string(v: &Value) -> Option<String> {
+    match v {
+        Value::Number(n) => Some(n.to_string()),
+        Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        _ => None,
+    }
+}
+
+/// « Matricule complète » de la fille : date (jjmmaaaa) + n° (zéro-paddé) du 1er compteur/matricule.
+fn full_matricule(child: &EntityDef, child_row: &Map<String, Value>) -> Option<String> {
+    for attr in child.attributs.iter().filter(|a| is_compteur_attr(a)) {
+        let date = child_row
+            .get(&compteur::column_jjmmaaaa(attr))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let numero = child_row
+            .get(&compteur::column_numero(attr))
+            .and_then(numero_to_string)
+            .map(|n| n.parse::<i64>().map(|x| format!("{x:04}")).unwrap_or(n));
+        match (date, numero) {
+            (Some(d), Some(n)) => return Some(format!("{d}-{n}")),
+            (Some(d), None) => return Some(d),
+            (None, Some(n)) => return Some(n),
+            (None, None) => {}
+        }
+    }
+    None
+}
+
+fn ensure_generic_embed_label(
+    child: &EntityDef,
+    out: &mut Map<String, Value>,
+    child_row: &Map<String, Value>,
+) {
+    let has_label = EMBED_LABEL_KEYS
+        .iter()
+        .any(|k| out.get(*k).map(value_non_empty).unwrap_or(false));
+    if has_label {
+        return;
+    }
+    let entity_label = entity_display_label(child);
+    let matricule = full_matricule(child, child_row).or_else(|| {
+        child_row
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    });
+    let generic = match matricule {
+        Some(m) => format!("{entity_label} No. {m}"),
+        None => entity_label,
+    };
+    out.insert("libelle".into(), Value::String(generic));
 }
 
 fn child_object_from_row_inner(

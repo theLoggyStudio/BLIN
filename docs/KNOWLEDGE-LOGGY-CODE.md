@@ -79,7 +79,7 @@ Typiquement le répertoire Tauri `app_data_dir` (voir `Database::data_dir`).
 | Entités | `src-tauri/src/entity/knowledge.rs` | TXT entités depuis registre |
 | DDA | `src-tauri/src/dda/knowledge.rs` | TXT écrans DDA + MASTER |
 | Expérience | `src-tauri/src/ai/experience.rs` | Mémoire outils réussis |
-| Tableau de bord chat | `src-tauri/src/ai/dashboard_chat.rs` | **Sans RAG** — rapide / web / LLM léger |
+| Tableau de bord chat | `src-tauri/src/ai/dashbo![1781917910997](image/KNOWLEDGE-LOGGY-CODE/1781917910997.png)ard_chat.rs` | **Sans RAG** — rapide / web / LLM léger |
 | Intent | `src-tauri/src/ai/intent_filters.rs` | Détection liste, web, salutations, etc. |
 
 ### 2.3 Fichiers embarqués (compile time)

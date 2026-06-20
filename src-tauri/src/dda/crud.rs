@@ -144,7 +144,7 @@ pub fn count_rows_with_options(
     filters: &HashMap<String, String>,
     options: ListRowsOptions<'_>,
 ) -> Result<u64, String> {
-    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    let registry = crate::entity::registry::load_data(&db.data_dir).map_err(|e| e.to_string())?;
     let mut filters = filters.clone();
     crate::entity::session_scope::merge_active_session_filter(
         &db.data_dir,
@@ -179,7 +179,7 @@ pub fn list_rows_with_options(
     options: ListRowsOptions<'_>,
     pagination: Option<ListRowsPagination>,
 ) -> Result<Vec<Map<String, Value>>, String> {
-    let registry = crate::entity::registry::load(&db.data_dir).map_err(|e| e.to_string())?;
+    let registry = crate::entity::registry::load_data(&db.data_dir).map_err(|e| e.to_string())?;
     let mut filters = filters.clone();
     crate::entity::session_scope::merge_active_session_filter(
         &db.data_dir,

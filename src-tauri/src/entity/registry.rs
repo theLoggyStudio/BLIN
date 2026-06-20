@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -227,19 +230,62 @@ pub fn sync_logo_from_url(data_dir: &Path, logo_url: Option<&str>) -> Result<Opt
     Ok(Some(data_uri))
 }
 
+/// Cache du registre normalisé (sans logo), invalidé par la date de modif de registry.json.
+/// Évite de relire + parser + normaliser le fichier à chaque requête de liste.
+static REGISTRY_CACHE: Mutex<Option<HashMap<PathBuf, (SystemTime, EntityRegistry)>>> =
+    Mutex::new(None);
+
+/// Vide le cache pour un dossier de données (à appeler après écriture du registre).
+pub fn invalidate_cache(data_dir: &Path) {
+    let path = registry_path(data_dir);
+    let mut guard = REGISTRY_CACHE.lock();
+    if let Some(map) = guard.as_mut() {
+        map.remove(&path);
+    }
+}
+
+/// Registre normalisé SANS logo, servi depuis le cache mémoire (chemin chaud des listes).
+pub fn load_data(data_dir: &Path) -> Result<EntityRegistry, String> {
+    let path = registry_path(data_dir);
+    if !path.is_file() {
+        return Ok(empty_registry());
+    }
+    let mtime = fs::metadata(&path).and_then(|m| m.modified()).ok();
+
+    if let Some(mt) = mtime {
+        let guard = REGISTRY_CACHE.lock();
+        if let Some((cached_mt, reg)) = guard.as_ref().and_then(|m| m.get(&path)) {
+            if *cached_mt == mt {
+                return Ok(reg.clone());
+            }
+        }
+    }
+
+    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    if raw.trim().is_empty() {
+        return Ok(empty_registry());
+    }
+    let registry: EntityRegistry =
+        serde_json::from_str(&raw).map_err(|e| format!("registry.json invalide : {e}"))?;
+    let normalized = normalize_registry(registry);
+
+    if let Some(mt) = mtime {
+        let mut guard = REGISTRY_CACHE.lock();
+        guard
+            .get_or_insert_with(HashMap::new)
+            .insert(path, (mt, normalized.clone()));
+    }
+    Ok(normalized)
+}
+
 pub fn load(data_dir: &Path) -> Result<EntityRegistry, String> {
     let path = registry_path(data_dir);
     if !path.is_file() {
         return Ok(empty_registry());
     }
-    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    if raw.trim().is_empty() {
-        return Ok(empty_registry());
-    }
-    let mut registry: EntityRegistry =
-        serde_json::from_str(&raw).map_err(|e| format!("registry.json invalide : {e}"))?;
+    let mut registry = load_data(data_dir)?;
     registry.logo = load_logo_from_disk(data_dir);
-    Ok(normalize_registry(registry))
+    Ok(registry)
 }
 
 pub fn save(data_dir: &Path, registry: &EntityRegistry) -> Result<(), String> {
@@ -264,7 +310,9 @@ pub fn save(data_dir: &Path, registry: &EntityRegistry) -> Result<(), String> {
     let mut to_write = registry.clone();
     to_write.logo = None;
     let json = serde_json::to_string_pretty(&to_write).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| e.to_string())
+    fs::write(&path, json).map_err(|e| e.to_string())?;
+    invalidate_cache(data_dir);
+    Ok(())
 }
 
 pub fn list_keys_in_generated_dir(data_dir: &Path) -> Result<Vec<String>, String> {

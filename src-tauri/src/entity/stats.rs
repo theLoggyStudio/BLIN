@@ -214,7 +214,7 @@ mod tests {
     fn format_date_group_label() {
         assert_eq!(
             format_group_label("2026-06-14", "date"),
-            "14/juin/2026"
+            "14 juin 2026"
         );
     }
 }

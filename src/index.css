@@ -133,12 +133,21 @@
 
   .nav-app-btn {
     @apply flex items-center gap-3 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-200;
-    @apply text-teal-300 hover:bg-teal-500/15 hover:text-teal-200;
     @apply border border-transparent;
+    color: var(--color-teal);
   }
 
-  .nav-app-btn-active {
-    @apply bg-teal-500/25 text-white border-teal-400/40 shadow-sm shadow-teal-500/20;
+  .nav-app-btn:hover {
+    background-color: color-mix(in srgb, var(--color-teal) 15%, transparent);
+    color: color-mix(in srgb, var(--color-teal) 75%, #ffffff);
+  }
+
+  .nav-app-btn-active,
+  .nav-app-btn-active:hover {
+    background-color: color-mix(in srgb, var(--color-teal) 25%, transparent);
+    border-color: color-mix(in srgb, var(--color-teal) 40%, transparent);
+    color: #ffffff;
+    box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--color-teal) 20%, transparent);
   }
 
   .btn-teal-pill {
@@ -533,7 +542,7 @@
   }
 
   .mobile-nav-btn--active {
-    @apply text-teal-300;
+    color: var(--color-teal);
   }
 
   .user-chat-bubble {

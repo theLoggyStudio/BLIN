@@ -1120,6 +1120,26 @@ impl Database {
         Ok(())
     }
 
+    /// Journal des imports / exports CSV (par utilisateur et par écran).
+    pub fn migrate_v22(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS import_export_log (
+                id TEXT PRIMARY KEY NOT NULL,
+                kind TEXT NOT NULL,
+                entity_key TEXT NOT NULL,
+                entity_label TEXT NOT NULL DEFAULT '',
+                user_name TEXT NOT NULL DEFAULT '',
+                object_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_import_export_user ON import_export_log(user_name);
+            CREATE INDEX IF NOT EXISTS idx_import_export_kind ON import_export_log(kind);
+            "#,
+        )?;
+        Ok(())
+    }
+
     /// Renommage LoggMagic → Blin : e-mails locaux des comptes seed.
     pub fn migrate_v18(&self) -> Result<(), DbError> {
         for (from_suffix, to_email) in [

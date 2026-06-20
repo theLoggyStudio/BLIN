@@ -109,7 +109,7 @@ export function LoginPage() {
           <QrCode className="h-5 w-5" />
         </button>
         <div className="mb-8 flex flex-col items-center gap-4 text-center">
-          <img src={logoSrc} alt={title} className="h-16 w-16 object-contain" />
+          <img src={logoSrc} alt={title} className="h-32 w-32 object-contain" />
           <div>
             <h1 className="font-brand-serif text-3xl font-normal tracking-tight screen-title-gradient">
               {title}

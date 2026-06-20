@@ -28,6 +28,7 @@ pub struct AiStatus {
     pub offline_only: bool,
     pub web_search_enabled: bool,
     pub experience_entries: i64,
+    pub db_dir: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -94,6 +95,7 @@ pub fn ai_status(state: State<'_, AppState>) -> Result<AiStatus, String> {
         offline_only: !web_cfg.enabled,
         web_search_enabled: web_cfg.enabled,
         experience_entries: db.ai_experience_count().unwrap_or(0),
+        db_dir: db.data_dir.to_string_lossy().to_string(),
     })
 }
 
@@ -295,18 +297,39 @@ fn default_alert_variant() -> String {
 }
 
 /// Réécrit une notification à la première personne (Loggy).
+///
+/// Ne bloque plus sur le LLM : on sert une réponse pré-générée depuis la réserve
+/// (`alert_pool`) si disponible, sinon on renvoie le message brut (l'UI applique un
+/// repli local instantané) et Loggy regénère la réserve en arrière-plan.
 #[tauri::command]
 pub fn ai_alert_personify(
     state: State<'_, AppState>,
     payload: AiAlertPersonifyPayload,
 ) -> Result<String, String> {
     state.desktop_sessions.require_session()?;
-    let db = state.db.lock();
-    Ok(crate::ai::alert_personify::personify_alert(
-        &db,
-        &payload.message,
-        &payload.variant,
-    ))
+    let raw = payload.message.trim().to_string();
+    let variant = payload.variant.clone();
+    if raw.is_empty() || raw.chars().count() > 800 {
+        return Ok(raw);
+    }
+
+    if let Some(body) = state.alert_pool.take_personified(&raw, &variant) {
+        crate::ai::alert_pool::spawn_refill(
+            state.alert_pool.clone(),
+            state.db.clone(),
+            raw,
+            variant,
+        );
+        return Ok(body);
+    }
+
+    crate::ai::alert_pool::spawn_refill(
+        state.alert_pool.clone(),
+        state.db.clone(),
+        raw.clone(),
+        variant,
+    );
+    Ok(raw)
 }
 
 #[derive(serde::Deserialize)]
@@ -395,16 +418,6 @@ pub async fn ai_stats_chat(
         return Err("Message vide.".into());
     }
 
-    let fallback = crate::ai::stats_interpret::fallback_stats_chat_answer(
-        &payload.chart,
-        &message,
-        &payload.initial_analysis,
-    );
-
-    if !crate::ai::llama_server::LlamaServer::model_ready() {
-        return Ok(fallback);
-    }
-
     let db_arc = state.db.clone();
     let chart = payload.chart;
     let initial_analysis = payload.initial_analysis;
@@ -416,18 +429,20 @@ pub async fn ai_stats_chat(
             crate::entity::branding::ecosystem_name(&db.data_dir)
         };
 
-        let needs_prepare = {
-            let db = db_arc.lock();
-            crate::ai::hardware_profile::profile_summary(&db)
-                .map(|(profiled, _)| !profiled)
-                .unwrap_or(false)
-        };
-        if needs_prepare {
-            let db = db_arc.lock();
-            let _ = crate::ai::llama_server::LlamaServer::prepare(&db, false);
+        if crate::ai::llama_server::LlamaServer::model_ready() {
+            let needs_prepare = {
+                let db = db_arc.lock();
+                crate::ai::hardware_profile::profile_summary(&db)
+                    .map(|(profiled, _)| !profiled)
+                    .unwrap_or(false)
+            };
+            if needs_prepare {
+                let db = db_arc.lock();
+                let _ = crate::ai::llama_server::LlamaServer::prepare(&db, false);
+            }
         }
 
-        Ok(crate::ai::stats_interpret::stats_chat_with_llm(
+        Ok(crate::ai::stats_interpret::stats_chat_answer(
             &chart,
             &initial_analysis,
             &message,

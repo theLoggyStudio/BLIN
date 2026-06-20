@@ -212,6 +212,7 @@ pub fn sync_entity_table(
     super::child_table::sync_fille_tables_for_registry(db, registry)?;
     drop_legacy_embed_columns(db, &table, ent, registry)?;
     drop_parasite_columns(db, &table)?;
+    ensure_entity_indexes(db, &table, ent)?;
 
     db.conn
         .execute(
@@ -226,6 +227,47 @@ pub fn sync_entity_table(
         )
         .map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+/// Colonnes susceptibles de servir de libellé / clé de recherche (WHERE = ?, tri).
+const LABEL_LIKE_COLUMNS: &[&str] = &["libelle", "nom", "reference", "titre", "intitule"];
+
+/// Index automatiques pour accélérer tri et filtres sur les tables entités volumineuses.
+/// - `datetime(created_at)` : utilisé par le tri par défaut de toutes les listes.
+/// - colonnes libellé / compteur : utilisées par les recherches exactes (relation_impact, dédup).
+fn ensure_entity_indexes(db: &Database, table: &str, ent: &EntityDef) -> Result<(), String> {
+    let create_index = |suffix: &str, expr: &str| -> Result<(), String> {
+        let idx = format!("idx_{table}_{suffix}");
+        let sql = format!("CREATE INDEX IF NOT EXISTS {idx} ON {table}({expr})");
+        if let Err(e) = db.conn.execute(&sql, []) {
+            // Index best-effort : ne jamais bloquer la synchro du schéma.
+            eprintln!("CREATE INDEX {idx} : {e}");
+        }
+        Ok(())
+    };
+
+    create_index("created", "datetime(created_at)")?;
+
+    for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
+        if is_compteur_attr(attr) {
+            let lib = compteur::column_libelle(attr);
+            if table_has_column(db, table, &lib)? {
+                create_index(&format!("{lib}"), &lib)?;
+            }
+            continue;
+        }
+        if attr.attr_type == "entity" {
+            continue;
+        }
+        let col = attr_column(attr);
+        let is_label = LABEL_LIKE_COLUMNS
+            .iter()
+            .any(|l| col.eq_ignore_ascii_case(l));
+        if is_label && table_has_column(db, table, &col)? {
+            create_index(&col, &col)?;
+        }
+    }
     Ok(())
 }
 

@@ -1,4 +1,4 @@
-//! Affichage des dates : JJ/mois/AAAA (ex. 14/juin/2026).
+//! Affichage des dates : JJ mois AAAA (ex. 14 juin 2026).
 
 use chrono::{Datelike, Timelike};
 
@@ -25,7 +25,7 @@ pub fn month_label_fr(month: u32) -> &'static str {
 }
 
 pub fn format_date_parts(day: u32, month: u32, year: i32) -> String {
-    format!("{:02}/{}/{}", day, month_label_fr(month), year)
+    format!("{:02} {} {}", day, month_label_fr(month), year)
 }
 
 pub fn format_naive_date(d: chrono::NaiveDate) -> String {
@@ -105,11 +105,11 @@ mod tests {
 
     #[test]
     fn jjmmaaaa_to_french_date() {
-        assert_eq!(format_jjmmaaaa("14062026"), Some("14/juin/2026".into()));
+        assert_eq!(format_jjmmaaaa("14062026"), Some("14 juin 2026".into()));
     }
 
     #[test]
     fn iso_date_to_french() {
-        assert_eq!(format_iso_date_str("2026-06-14"), "14/juin/2026");
+        assert_eq!(format_iso_date_str("2026-06-14"), "14 juin 2026");
     }
 }

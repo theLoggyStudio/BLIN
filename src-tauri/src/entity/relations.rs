@@ -642,6 +642,63 @@ pub fn embed_values_from_record(
 }
 
 /// Objet fille (clés sans préfixe) pour liste embarquée.
+/// Métadonnées d'impact stock pour une liaison multiple (ligne embarquée) :
+/// champ quantité côté ligne + sens (incrément / décrément) pour afficher l'input.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedImpactMeta {
+    /// Nom du champ (côté fille) qui porte la quantité à appliquer au stock.
+    pub qty_field: String,
+    /// "increment" | "decrement".
+    pub action: String,
+    /// Libellé du champ stock de la fille (pour l'input).
+    pub label: String,
+}
+
+/// Renvoie l'impact stock configuré sur la liaison multiple, le cas échéant.
+pub fn embed_impact_meta(
+    registry: &EntityRegistry,
+    screen_key: &str,
+    field_key: &str,
+) -> Option<EmbedImpactMeta> {
+    let parent = registry.find(screen_key)?;
+    let attr = parent.attributs.iter().find(|a| a.nom == field_key)?;
+    if attr.attr_type != "entity" || !attr.relation_multiple {
+        return None;
+    }
+    let source = attr
+        .relation_impact_source
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?;
+    let action = match attr
+        .relation_impact_action
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
+        "increment" | "incrementer" | "incrémenter" => "increment",
+        "decrement" | "decrementer" | "décrémenter" => "decrement",
+        _ => return None,
+    };
+    let child = super::embed::resolve_child(registry, attr)?;
+    let child_attr = child.attributs.iter().find(|a| a.nom == source)?;
+    if !super::relation_impact::is_numeric_impactable(&child_attr.attr_type) {
+        return None;
+    }
+    let label = child_attr
+        .label
+        .clone()
+        .unwrap_or_else(|| child_attr.nom.clone());
+    Some(EmbedImpactMeta {
+        qty_field: source.to_string(),
+        action: action.to_string(),
+        label,
+    })
+}
+
 pub fn embed_child_object_from_record(
     db: &Database,
     data_dir: &std::path::Path,

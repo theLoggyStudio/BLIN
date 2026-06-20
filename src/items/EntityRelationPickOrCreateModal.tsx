@@ -40,6 +40,7 @@ export function EntityRelationPickOrCreateModal({
   fieldKey,
   excludeRecordId,
   excludeIds,
+  embedMode,
   onSelected,
 }: EntityRelationPickOrCreateModalProps) {
   const [query, setQuery] = useState("");
@@ -48,8 +49,12 @@ export function EntityRelationPickOrCreateModal({
   const [hasSearched, setHasSearched] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const canCreate = usePrivilege(`${entityKey}:creer`);
+  // Fille à signer par quelqu'un d'autre : on n'autorise pas la création inline.
+  const [inlineCreateAllowed, setInlineCreateAllowed] = useState(true);
   const [entityLabel, setEntityLabel] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const showCreate = canCreate && (!embedMode || inlineCreateAllowed);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -74,6 +79,28 @@ export function EntityRelationPickOrCreateModal({
   useEffect(() => {
     if (open) void loadLabel();
   }, [open, loadLabel]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!embedMode) {
+      setInlineCreateAllowed(true);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const allowed = await invoke<boolean>("entity_inline_create_allowed", {
+          payload: { entity_key: entityKey },
+        });
+        if (!cancelled) setInlineCreateAllowed(allowed);
+      } catch {
+        if (!cancelled) setInlineCreateAllowed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, embedMode, entityKey]);
 
   const runSearch = useCallback(async () => {
     setHasSearched(true);
@@ -164,7 +191,7 @@ export function EntityRelationPickOrCreateModal({
               {RELATION_SUGGESTIONS_LIMIT} premiers résultats affichés — affinez votre recherche.
             </p>
           )}
-          {canCreate && (
+          {showCreate && (
             <Button
               type="button"
               variant="secondary"
@@ -178,7 +205,7 @@ export function EntityRelationPickOrCreateModal({
         </div>
       </Modal>
 
-      {canCreate && (
+      {showCreate && (
         <EntityRelationCreateModal
           entityKey={entityKey}
           open={createOpen}

@@ -64,6 +64,7 @@ export interface AiStatus {
   offline_only: boolean;
   web_search_enabled: boolean;
   experience_entries: number;
+  db_dir: string;
 }
 
 export interface AiWebSearchConfig {

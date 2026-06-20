@@ -32,6 +32,8 @@ pub struct AppState {
     pub remote_sessions: SharedRemoteSessions,
     pub pairing_token: Arc<Mutex<String>>,
     pub login_messages: Arc<Mutex<PreparedLoginMessages>>,
+    /// Réserve de réponses Loggy pré-générées (alertes instantanées).
+    pub alert_pool: Arc<ai::alert_pool::AlertPool>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -63,6 +65,14 @@ pub fn run() {
                     eprintln!("Avertissement réindexation Loggy : {e}");
                 }
             }
+            let pool_dir = database.data_dir.clone();
+            let alert_pool = Arc::new(
+                ai::alert_pool::AlertPool::open(&pool_dir).unwrap_or_else(|e| {
+                    eprintln!("Avertissement pool d'alertes (réserve volatile) : {e}");
+                    ai::alert_pool::AlertPool::open_memory()
+                }),
+            );
+
             let db = Arc::new(Mutex::new(database));
             let desktop_sessions: SharedSession = Arc::new(SessionManager::new());
             let remote_sessions: SharedRemoteSessions = Arc::new(RemoteSessionStore::new());
@@ -75,6 +85,7 @@ pub fn run() {
                 remote_sessions,
                 pairing_token: pairing_arc,
                 login_messages: Arc::new(Mutex::new(PreparedLoginMessages::default())),
+                alert_pool,
             });
 
             let data_dir = app.state::<AppState>().db.lock().data_dir.clone();
@@ -139,6 +150,8 @@ pub fn run() {
             commands::entity::entity_registry_append_entity,
             commands::entity::entity_get_screen_config,
             commands::entity::entity_compteur_preview,
+            commands::entity::entity_inline_create_allowed,
+            commands::entity::entity_embed_impact_meta,
             commands::entity::entity_relation_options,
             commands::entity::entity_embed_values_from_record,
             commands::entity::entity_embed_child_from_record,
@@ -153,6 +166,8 @@ pub fn run() {
             commands::entity::entity_active_session_clear,
             commands::entity::entity_export_csv,
             commands::entity::entity_import_csv,
+            commands::entity::io_log_summary,
+            commands::entity::io_log_detail,
             commands::entity::entity_success_message,
             commands::entity::entity_stock_status,
             commands::entity::entity_stock_scan_destock,

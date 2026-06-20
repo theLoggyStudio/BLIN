@@ -398,6 +398,43 @@ export function EntityEmbedListEditor({
   const refEntity = field.form?.refEntity?.trim() ?? "";
   const rows = parseEmbedListValue(value);
   const [pickOpen, setPickOpen] = useState(false);
+  // Impact stock de la liaison (champ quantité + sens incrément/décrément).
+  const [impactMeta, setImpactMeta] = useState<{
+    qtyField: string;
+    action: "increment" | "decrement";
+    label: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!refEntity || !screenKey || !field.key) {
+      setImpactMeta(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const meta = await invoke<{
+          qtyField: string;
+          action: "increment" | "decrement";
+          label: string;
+        } | null>("entity_embed_impact_meta", {
+          payload: { screen_key: screenKey, field_key: field.key },
+        });
+        if (!cancelled) setImpactMeta(meta);
+      } catch {
+        if (!cancelled) setImpactMeta(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refEntity, screenKey, field.key]);
+
+  const qtyLabel = impactMeta
+    ? impactMeta.action === "decrement"
+      ? `${impactMeta.label} (à retirer)`
+      : `${impactMeta.label} (à ajouter)`
+    : "";
 
   const persist = (next: Record<string, unknown>[]) => {
     onChange(field.key, JSON.stringify(next));
@@ -412,6 +449,8 @@ export function EntityEmbedListEditor({
         record_id: recordId,
       },
     });
+    // La quantité d'impact est saisie par l'utilisateur (pas le stock copié de la fille).
+    if (impactMeta) child[impactMeta.qtyField] = "";
     persist([...rows, child]);
   };
 
@@ -501,15 +540,28 @@ export function EntityEmbedListEditor({
                   <span className="text-sm text-foreground">{rowLabel(row)}</span>
                 )}
               </div>
-              {!locked && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => persist(rows.filter((_, i) => i !== idx))}
-                >
-                  Retirer
-                </Button>
-              )}
+              <div className="flex shrink-0 items-end gap-2 sm:justify-end">
+                {!locked && impactMeta && (
+                  <div className="w-32">
+                    <Input
+                      type="number"
+                      label={qtyLabel}
+                      value={String(row[impactMeta.qtyField] ?? "")}
+                      onChange={(e) => updateRow(idx, impactMeta.qtyField, e.target.value)}
+                      onBlur={() => onBlur?.(field.key)}
+                    />
+                  </div>
+                )}
+                {!locked && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => persist(rows.filter((_, i) => i !== idx))}
+                  >
+                    Retirer
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>

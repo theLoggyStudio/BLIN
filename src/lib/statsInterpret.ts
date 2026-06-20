@@ -136,6 +136,43 @@ export function segmentCurveToBullets(points: StatsInterpretPoint[]): string[] {
   return bullets;
 }
 
+function peakPoint(points: StatsInterpretPoint[]): StatsInterpretPoint | undefined {
+  if (points.length === 0) return undefined;
+  return points.reduce((best, p) => (p.value > best.value ? p : best), points[0]);
+}
+
+function adviceExploration(xLabel: string, yLabel: string): string {
+  return `• Conseil — exploration : change l'abscisse (autre champ que « ${xLabel} ») ou l'ordonnée (« ${yLabel} » vs nombre d'enregistrements) pour confirmer si le signal se reproduit sous un autre angle.`;
+}
+
+function adviceVigilanceLastRepères(points: StatsInterpretPoint[]): string {
+  const n = points.length;
+  if (n < 3) {
+    return "• Conseil — vigilance : avec peu de repères, évite une conclusion trop forte — enrichis la série avant de décider.";
+  }
+  const last = points[n - 1].value;
+  const prev = points[n - 2].value;
+  if (last < prev) {
+    return `• Conseil — vigilance : les derniers repères (« ${points[n - 2].label} » puis « ${points[n - 1].label} ») montrent un repli — vérifie si c'est un retournement ou un palier temporaire.`;
+  }
+  if (last > prev) {
+    return `• Conseil — vigilance : la fin de courbe (« ${points[n - 1].label} ») accélère encore — assure-toi que cette poussée est soutenable sur la durée.`;
+  }
+  return "• Conseil — vigilance : la courbe se stabilise sur les derniers repères — observe si un nouveau palier se forme avant d'agir.";
+}
+
+function adviceActionTopSegments(points: StatsInterpretPoint[], rising: boolean): string {
+  if (rising) {
+    const peak = peakPoint(points);
+    const lastLabel = points[points.length - 1]?.label;
+    if (peak && peak.label !== lastLabel) {
+      return `• Conseil — action : le pic est sur « ${peak.label} » (${formatStatValue(peak.value)}) — cible ce segment en priorité et compare-le aux repères qui suivent pour capitaliser ou corriger.`;
+    }
+    return "• Conseil — action : identifie les repères où la croissance est la plus marquée et croise avec la liste filtrée sur ces valeurs pour agir concrètement.";
+  }
+  return "• Conseil — action : repère le repère où la baisse s'amorce le plus nettement et isole ces enregistrements pour comprendre la cause (qualité, délai, saisonnalité…).";
+}
+
 function finalOpinion(payload: StatsInterpretPayload): string {
   const multi = payload.series.length > 1;
   if (multi) {
@@ -147,26 +184,80 @@ function finalOpinion(payload: StatsInterpretPayload): string {
       .sort((a, b) => b.total - a.total);
     const first = leaders[0];
     const second = leaders[1];
+    const blocks: string[] = [];
     if (second && first.total > second.total * 1.15) {
-      return `• Mon avis final : « ${first.name} » domine le comparatif — creuse surtout les repères où les courbes divergent le plus.`;
+      blocks.push(
+        `• Mon avis final : « ${first.name} » prend l'avantage sur « ${second.name} » dans ce comparatif. L'écart est suffisant pour orienter l'analyse, mais les courbes peuvent encore converger ou diverger sur certains repères — ne généralise pas sans regarder les zones de croisement.`,
+      );
+      blocks.push(
+        `• Conseil — comparaison : zoome sur les repères où « ${first.name} » et « ${second.name} » s'écartent le plus pour comprendre ce qui différencie les deux séries.`,
+      );
+      blocks.push(
+        "• Conseil — exploration : ajoute une troisième entité ou change l'agrégat (somme vs nombre) pour voir si l'écart tient avec une autre mesure.",
+      );
+      blocks.push(
+        `• Conseil — action : exporte la liste des repères dominants de « ${first.name} » et vérifie en fiche si un facteur commun explique la performance.`,
+      );
+    } else {
+      blocks.push(
+        "• Mon avis final : les séries restent proches ou se croisent — aucune ne s'impose clairement sur l'ensemble des repères. C'est souvent le signe que le regroupement actuel ne suffit pas à révéler un levier décisif, ou que les entités suivent la même dynamique.",
+      );
+      blocks.push(adviceExploration(payload.x_label, payload.y_label));
+      blocks.push(
+        "• Conseil — vigilance : un écart peut être masqué par l'agrégat global — teste un filtre date ou un champ catégoriel pour isoler un sous-groupe.",
+      );
+      blocks.push(
+        "• Conseil — action : compare côte à côte les fiches des entités sur le repère le plus contrasté avant de choisir une priorité métier.",
+      );
     }
-    return "• Mon avis final : les séries restent proches — affine le regroupement (abscisse) ou compare un champ numérique précis pour faire ressortir un écart net.";
+    return blocks.join("\n\n");
   }
 
   const points = payload.series[0]?.points ?? [];
   if (points.length < 2) {
-    return "• Mon avis final : un seul repère visible — ajoute de la profondeur temporelle ou catégorielle pour lire une tendance.";
+    return [
+      "• Mon avis final : un seul repère est visible sur cette courbe — je peux lire une valeur ponctuelle, pas encore une tendance ni une comparaison fiable entre segments.",
+      "• Conseil — exploration : ajoute des repères (autre champ en abscisse, période plus longue ou granularité plus fine).",
+      "• Conseil — vigilance : ne base pas une décision métier sur ce seul point — complète la série ou change le type de graphique (barres par catégorie).",
+      "• Conseil — action : une fois plus de données disponibles, réouvre l'analyse Loggy pour obtenir des paliers et variations exploitables.",
+    ].join("\n\n");
   }
+
   const first = points[0].value;
   const last = points[points.length - 1].value;
   const delta = last - first;
+  const blocks: string[] = [];
+
   if (valuesEqual(delta, 0)) {
-    return "• Mon avis final : la courbe est globalement plate — cherche un autre découpage ou une autre ordonnée pour révéler un signal.";
+    blocks.push(
+      "• Mon avis final : la courbe est globalement plate entre le premier et le dernier repère — le volume ou la métrique reste stable sur cet axe. Cela peut être sain (régularité) ou masquer des contrastes locaux entre repères intermédiaires.",
+    );
+    blocks.push(adviceExploration(payload.x_label, payload.y_label));
+    blocks.push(
+      "• Conseil — vigilance : même sur une courbe plate, certains repères peuvent être atypiques — demande la liste des pics ou creux pour ne pas passer à côté d'un signal local.",
+    );
+    blocks.push(
+      "• Conseil — action : si la stabilité est attendue, documente ce palier ; sinon, teste un regroupement temporel (mois, trimestre) pour révéler une saisonnalité.",
+    );
+  } else if (delta > 0) {
+    blocks.push(
+      "• Mon avis final : la tendance globale est à la hausse — la métrique progresse entre le début et la fin de la série. Les paliers stables et les phases de croissance se combinent : l'essentiel est de savoir si la dynamique récente confirme ou infirme cette progression.",
+    );
+    blocks.push(adviceVigilanceLastRepères(points));
+    blocks.push(adviceActionTopSegments(points, true));
+    blocks.push(adviceExploration(payload.x_label, payload.y_label));
+  } else {
+    blocks.push(
+      "• Mon avis final : la tendance globale est à la baisse — la métrique recule entre le premier et le dernier repère. Identifie si ce recul est progressif ou concentré sur une zone précise : la réponse conditionne l'urgence de la réaction.",
+    );
+    blocks.push(adviceVigilanceLastRepères(points));
+    blocks.push(adviceActionTopSegments(points, false));
+    blocks.push(
+      "• Conseil — exploration : croise avec une autre ordonnée (somme, moyenne) ou une entité liée pour voir si la baisse est générale ou isolée à ce regroupement.",
+    );
   }
-  if (delta > 0) {
-    return "• Mon avis final : la tendance globale est à la hausse — vérifie si cette progression se maintient sur les derniers repères ou si un ralentissement apparaît.";
-  }
-  return "• Mon avis final : la tendance globale est à la baisse — identifie à quel repère le recul s'accélère pour prioriser une action.";
+
+  return blocks.join("\n\n");
 }
 
 /** Résumé instantané : paliers + variations uniquement, chaque étape en puce •. */
@@ -197,6 +288,27 @@ export function fallbackStatsInterpretation(payload: StatsInterpretPayload): str
   return lines.join("\n\n");
 }
 
+/** Analyse IA acceptée seulement si complète (sinon on garde le résumé déterministe). */
+function isCompleteStatsAnalysis(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 80 || !t.includes("Mon avis final")) return false;
+  const lower = t.toLowerCase();
+  const badTrailers = [
+    " ce",
+    " ce qui",
+    " ce qui indique",
+    " de ",
+    " à ",
+    " →",
+    " indique",
+    " autour de",
+    " qui indique",
+  ];
+  if (badTrailers.some((s) => lower.endsWith(s))) return false;
+  const last = t.slice(-1);
+  return last === "." || last === "…" || last === "!" || last === "?";
+}
+
 /** Enrichissement IA en arrière-plan — thread Rust dédié, n'attend pas le graphique. */
 export async function enrichStatsInterpretationWithAi(
   payload: StatsInterpretPayload,
@@ -207,7 +319,7 @@ export async function enrichStatsInterpretationWithAi(
   try {
     const text = await invoke<string>("ai_stats_interpret", { payload });
     const enriched = text.trim();
-    return enriched.length >= 80 ? enriched : null;
+    return isCompleteStatsAnalysis(enriched) ? enriched : null;
   } catch {
     return null;
   }

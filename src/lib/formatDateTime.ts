@@ -17,11 +17,11 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** Format affichage date : JJ/mois/AAAA (ex. 14/juin/2026). */
+/** Format affichage date : JJ mois AAAA (ex. 14 juin 2026). */
 export function formatDatePartsFr(day: number, month: number, year: number): string {
   const mmmm = MONTHS_FR[month - 1];
-  if (!mmmm) return `${pad2(day)}/?/${year}`;
-  return `${pad2(day)}/${mmmm}/${year}`;
+  if (!mmmm) return `${pad2(day)} ? ${year}`;
+  return `${pad2(day)} ${mmmm} ${year}`;
 }
 
 /** Parse ISO, date seule, datetime-local, heure, timestamp numérique. */
@@ -50,7 +50,7 @@ export function parseToDate(value: unknown): Date | null {
 export function formatJjmmaaaaFr(value: unknown): string {
   if (value == null || value === "") return "—";
   const raw = String(value).trim();
-  if (MONTHS_FR.some((m) => raw.includes(`/${m}/`))) return raw;
+  if (MONTHS_FR.some((m) => raw.includes(`/${m}/`) || raw.includes(` ${m} `))) return raw;
   if (!/^\d{8}$/.test(raw)) return raw;
   const day = Number(raw.slice(0, 2));
   const month = Number(raw.slice(2, 4));
@@ -59,7 +59,7 @@ export function formatJjmmaaaaFr(value: unknown): string {
   return formatDatePartsFr(day, month, year);
 }
 
-/** Format affichage : JJ/mois/AAAA HH:MM:SS (ex. 14/juin/2026 14:30:45). */
+/** Format affichage : JJ mois AAAA HH:MM:SS (ex. 14 juin 2026 14:30:45). */
 export function formatDateTimeFr(value: unknown): string {
   const d = parseToDate(value);
   if (!d) return value == null || value === "" ? "—" : String(value);
@@ -67,7 +67,7 @@ export function formatDateTimeFr(value: unknown): string {
   return `${datePart} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
-/** Date seule : JJ/mois/AAAA (ex. 14/juin/2026). */
+/** Date seule : JJ mois AAAA (ex. 14 juin 2026). */
 export function formatDateFr(value: unknown): string {
   const d = parseToDate(value);
   if (!d) {

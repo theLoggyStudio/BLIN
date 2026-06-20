@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "@/items/Alert";
 import { Modal } from "@/items/Modal";
 import { Button } from "@/items/Button";
 import { Input } from "@/items/Input";
 import { Select } from "@/items/Select";
 import { Text } from "@/items/Text";
+import { PdfExportProgressPanel } from "@/items/PdfExportProgressPanel";
 import {
   defaultListPdfSubtitle,
   defaultListPdfTitle,
   printEntityListPdf,
 } from "@/lib/print/listPrint";
+import { PdfExportCancelled } from "@/lib/print/pdfExport";
 import { fetchDdaListCount, fetchDdaListPage } from "@/lib/ddaList";
 import { formatTableBlockToken } from "@/lib/print/templateAttributes";
 import type { ScreenConfigFile } from "@/types/screen";
+import type { PdfExportProgress } from "@/types/pdfExportProgress";
 import { useAlert } from "@/contexts/AlertContext";
 import { notifyEntitySuccess } from "@/lib/entitySuccessAlert";
 
@@ -48,6 +51,9 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
   const [entitySources, setEntitySources] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<PdfExportProgress | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set());
@@ -119,6 +125,11 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
     setDateFrom("");
     setDateTo("");
     setEntitySourceFilter("");
+    setExporting(false);
+    setCancelling(false);
+    setPdfProgress(null);
+    abortRef.current = null;
+    setError(null);
     void loadMeta();
   }, [open, config.screen.label, listFields, dateFields, loadMeta]);
 
@@ -155,8 +166,18 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
       ? serverFilteredTotal
       : listTotal;
 
+  const handleCancelExport = () => {
+    if (!exporting || cancelling) return;
+    setCancelling(true);
+    abortRef.current?.abort();
+  };
+
   const handleExport = async () => {
+    const controller = new AbortController();
+    abortRef.current = controller;
     setExporting(true);
+    setCancelling(false);
+    setPdfProgress(null);
     setError(null);
     try {
       const cols = listFields.map((f) => f.key).filter((k) => visibleColumns.has(k));
@@ -175,16 +196,33 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
         sousTitre:
           sousTitre.trim() ||
           defaultListPdfSubtitle(screenKey, previewCount),
+        onProgress: setPdfProgress,
+        signal: controller.signal,
       });
+      setPdfProgress((prev) =>
+        prev ? { ...prev, current: prev.total, done: true, label: "Export terminé" } : prev,
+      );
       notifyEntitySuccess(showSuccess, screenKey, "export_pdf_list");
       onClose();
     } catch (e) {
+      if (e instanceof PdfExportCancelled) {
+        setError("Export annulé.");
+        showError("Export PDF annulé.");
+        return;
+      }
       const msg = String(e);
       setError(msg);
       showError(`Échec PDF liste : ${msg}`);
     } finally {
       setExporting(false);
+      setCancelling(false);
+      abortRef.current = null;
     }
+  };
+
+  const handleModalClose = () => {
+    if (exporting) return;
+    onClose();
   };
 
   const tableToken = formatTableBlockToken(screenKey);
@@ -192,20 +230,30 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
   return (
     <Modal
       open={open}
-      onClose={onClose}
-      title="Exporter la liste en PDF"
+      onClose={handleModalClose}
+      closeDisabled={exporting}
+      title={exporting ? "Génération du PDF" : "Exporter la liste en PDF"}
       size="lg"
       footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={exporting}>
-            Annuler
-          </Button>
-          <Button onClick={() => void handleExport()} disabled={exporting || loading}>
-            {exporting ? "Génération…" : "Générer le PDF"}
-          </Button>
-        </div>
+        exporting ? undefined : (
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={handleModalClose}>
+              Annuler
+            </Button>
+            <Button onClick={() => void handleExport()} disabled={loading}>
+              Générer le PDF
+            </Button>
+          </div>
+        )
       }
     >
+      {exporting ? (
+        <PdfExportProgressPanel
+          progress={pdfProgress}
+          onCancel={handleCancelExport}
+          cancelling={cancelling}
+        />
+      ) : (
       <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
         <Text variant="muted" className="text-sm">
           Le modèle « Liste » insère un tableau HTML pleine largeur via l&apos;attribut{" "}
@@ -329,6 +377,7 @@ export function PrintListPdfModal({ open, onClose, config }: PrintListPdfModalPr
         )}
         {error && <Alert variant="danger" size="box" message={error} />}
       </div>
+      )}
     </Modal>
   );
 }

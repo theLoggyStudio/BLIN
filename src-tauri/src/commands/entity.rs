@@ -614,6 +614,45 @@ pub fn entity_compteur_preview(
     entity::compteur::preview_compteurs_on_create(&db, &registry, &payload.entity_key)
 }
 
+/// Impact stock d'une liaison multiple (ligne embarquée) : champ quantité + sens.
+/// Permet au formulaire d'afficher l'input quantité dans chaque ligne.
+#[tauri::command]
+pub fn entity_embed_impact_meta(
+    state: State<'_, AppState>,
+    payload: EntityRelationFieldPayload,
+) -> Result<Option<entity::relations::EmbedImpactMeta>, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    let registry = entity::registry::load(&db.data_dir)?;
+    Ok(entity::relations::embed_impact_meta(
+        &registry,
+        &payload.screen_key,
+        &payload.field_key,
+    ))
+}
+
+/// Autorise (ou non) la création « + Créer un nouveau » d'une fille embarquée.
+/// Bloque uniquement lorsque la fille exige une signature ET que l'utilisateur courant
+/// n'est pas un signataire (rôle absent de `signatory_role_ids`).
+#[tauri::command]
+pub fn entity_inline_create_allowed(
+    state: State<'_, AppState>,
+    payload: EntityKeyPayload,
+) -> Result<bool, String> {
+    let session = state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    let registry = entity::registry::load(&db.data_dir)?;
+    if !entity::record_signature::entity_requires_signature(&registry, &payload.entity_key) {
+        return Ok(true);
+    }
+    let role_id = entity::record_signature::user_role_id(&db, &session.user.id)?;
+    Ok(entity::record_signature::can_sign_entity(
+        &registry,
+        &payload.entity_key,
+        &role_id,
+    ))
+}
+
 #[tauri::command]
 pub fn entity_stock_status(state: State<'_, AppState>) -> Result<EntityStockStatus, String> {
     state.desktop_sessions.require_session()?;
@@ -832,10 +871,23 @@ pub fn entity_export_csv(
         .export
         .clone()
         .unwrap_or_else(|| format!("{}:exporter", payload.entity_key));
-    state.desktop_sessions.require_privilege(&export_priv)?;
+    let session = state.desktop_sessions.require_privilege(&export_priv)?;
     let db = state.db.lock();
     let (csv, file_name) =
         entity::csv_io::export_entity_csv(&db, &db.data_dir, &payload.entity_key)?;
+    let count = csv
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count()
+        .saturating_sub(1) as i64;
+    entity::io_log::record(
+        &db,
+        "export",
+        &payload.entity_key,
+        &cfg.screen.label,
+        &session.user.nom,
+        count,
+    );
     Ok(EntityCsvExportResponse { csv, file_name })
 }
 
@@ -854,18 +906,58 @@ pub async fn entity_import_csv(
         .import
         .clone()
         .unwrap_or_else(|| format!("{}:importer", payload.entity_key));
-    state.desktop_sessions.require_privilege(&import_priv)?;
+    let session = state.desktop_sessions.require_privilege(&import_priv)?;
 
     let entity_key = payload.entity_key;
+    let entity_label = cfg.screen.label.clone();
+    let entity_key_for_log = entity_key.clone();
     let csv = payload.csv;
     let db = state.db.clone();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let db = db.lock();
         entity::csv_io::import_entity_csv(&db, &db.data_dir, &entity_key, &csv)
     })
     .await
-    .map_err(|e| format!("Import interrompu : {e}"))?
+    .map_err(|e| format!("Import interrompu : {e}"))?;
+
+    if let Ok(res) = &result {
+        let count = i64::from(res.inserted) + i64::from(res.updated);
+        let db = state.db.lock();
+        entity::io_log::record(
+            &db,
+            "import",
+            &entity_key_for_log,
+            &entity_label,
+            &session.user.nom,
+            count,
+        );
+    }
+    result
+}
+
+#[tauri::command]
+pub fn io_log_summary(
+    state: State<'_, AppState>,
+) -> Result<Vec<entity::io_log::IoLogSummary>, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    entity::io_log::summary(&db)
+}
+
+#[derive(Deserialize)]
+pub struct IoLogDetailPayload {
+    pub user_name: String,
+}
+
+#[tauri::command]
+pub fn io_log_detail(
+    state: State<'_, AppState>,
+    payload: IoLogDetailPayload,
+) -> Result<Vec<entity::io_log::IoLogEntry>, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    entity::io_log::detail(&db, &payload.user_name)
 }
 
 #[derive(Deserialize)]

@@ -20,6 +20,8 @@ interface ModalProps {
   /** Bloque la fermeture et affiche un overlay de chargement. */
   busy?: boolean;
   busyLabel?: string;
+  /** Bloque fermeture (Échap, backdrop, croix) sans overlay de chargement. */
+  closeDisabled?: boolean;
 }
 
 const sizeClasses = {
@@ -44,6 +46,7 @@ export function Modal({
   footer,
   busy = false,
   busyLabel = "Chargement…",
+  closeDisabled = false,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -61,11 +64,13 @@ export function Modal({
     };
   }, [open]);
 
+  const closeBlocked = busy || closeDisabled;
+
   useEffect(() => {
     if (!open || stackLevel === 0) return;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && stackLevel === currentModalStackDepth() && !busy) {
+      if (e.key === "Escape" && stackLevel === currentModalStackDepth() && !closeBlocked) {
         onClose();
       }
     };
@@ -77,10 +82,10 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose, busy, stackLevel]);
+  }, [open, onClose, closeBlocked, stackLevel]);
 
   const requestClose = () => {
-    if (!busy) onClose();
+    if (!closeBlocked) onClose();
   };
 
   if (!open) {
@@ -136,7 +141,7 @@ export function Modal({
           >
             {title}
           </h2>
-          <Button variant="ghost" size="sm" onClick={requestClose} disabled={busy} aria-label="Fermer">
+          <Button variant="ghost" size="sm" onClick={requestClose} disabled={closeBlocked} aria-label="Fermer">
             <X className="h-4 w-4" />
           </Button>
         </div>

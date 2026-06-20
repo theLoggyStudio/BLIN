@@ -1,6 +1,6 @@
 /** Dimensions et styles dédiés à l'export PDF (listes paginées). */
 
-export const PDF_MARGIN_MM = 4;
+export const PDF_MARGIN_MM = 0;
 export const LANDSCAPE_COLUMN_THRESHOLD = 6;
 export const MM_TO_PX = 96 / 25.4;
 
@@ -31,13 +31,15 @@ export const PDF_LIST_LAYOUT_CSS = `
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 6px 4px 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   background: #fff;
 }
-.print-pdf-sheet .doc-body { flex: 1 1 auto; margin-bottom: 8px; }
+.print-pdf-sheet .doc-body,
+.print-pdf-sheet .fiche-body { flex: 1 1 auto; margin-bottom: 8px; }
+.print-pdf-sheet .lh-header { flex-shrink: 0; }
 .print-pdf-continued {
   margin: 0 0 10px;
   font-size: 11px;

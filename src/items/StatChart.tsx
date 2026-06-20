@@ -154,12 +154,51 @@ export const StatChart = memo(function StatChart({
     />
   );
 
+  // Axes partagés : graduations claires (visibles sur fond sombre) + titres d'axe.
+  const axisTick = { fontSize: 11, fill: "#cbd5e1" };
+  const chartMargin = { top: 8, right: 24, bottom: 28, left: 12 };
+  const xAxisEl = (
+    <XAxis
+      dataKey="name"
+      stroke="#a3a3a3"
+      tick={axisTick}
+      tickMargin={8}
+      interval="preserveStartEnd"
+      minTickGap={12}
+      label={{
+        value: xLabel,
+        position: "insideBottom",
+        offset: -6,
+        fill: "#a3a3a3",
+        fontSize: 11,
+      }}
+    />
+  );
+  const yAxisEl = (
+    <YAxis
+      stroke="#a3a3a3"
+      tick={axisTick}
+      tickMargin={6}
+      width={64}
+      allowDecimals={false}
+      tickFormatter={(v) => formatStatValue(Number(v))}
+      label={{
+        value: yLabel,
+        angle: -90,
+        position: "insideLeft",
+        fill: "#a3a3a3",
+        fontSize: 11,
+        style: { textAnchor: "middle" },
+      }}
+    />
+  );
+
   const chart = (() => {
     if (isMulti && type === "pie") {
       const first = series[0];
       const pieRows = multiRows.map((r) => ({
         name: String(r.name),
-        value: Number(r[first.key] ?? 0),
+        value: Number((r as Record<string, unknown>)[first.key] ?? 0),
       }));
       return (
         <PieChart>
@@ -176,19 +215,14 @@ export const StatChart = memo(function StatChart({
 
     if (isMulti) {
       const grid = <CartesianGrid strokeDasharray="3 3" stroke="#333" />;
-      const axes = (
-        <>
-          <XAxis dataKey="name" stroke="#a3a3a3" tick={{ fontSize: 11 }} />
-          <YAxis stroke="#a3a3a3" tick={{ fontSize: 11 }} />
-          {chartTooltip}
-          <Legend />
-        </>
-      );
       if (type === "line") {
         return (
-          <LineChart data={multiRows}>
+          <LineChart data={multiRows} margin={chartMargin}>
             {grid}
-            {axes}
+            {xAxisEl}
+            {yAxisEl}
+            {chartTooltip}
+            <Legend />
             {series.map((s) => (
               <Line
                 key={s.key}
@@ -206,9 +240,12 @@ export const StatChart = memo(function StatChart({
       }
       if (type === "area") {
         return (
-          <AreaChart data={multiRows}>
+          <AreaChart data={multiRows} margin={chartMargin}>
             {grid}
-            {axes}
+            {xAxisEl}
+            {yAxisEl}
+            {chartTooltip}
+            <Legend />
             {series.map((s) => (
               <Area
                 key={s.key}
@@ -223,9 +260,12 @@ export const StatChart = memo(function StatChart({
         );
       }
       return (
-        <BarChart data={multiRows} barSize="28%">
+        <BarChart data={multiRows} barSize="28%" margin={chartMargin}>
           {grid}
-          {axes}
+          {xAxisEl}
+          {yAxisEl}
+          {chartTooltip}
+          <Legend />
           {series.map((s) => (
             <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[4, 4, 0, 0]} />
           ))}
@@ -236,23 +276,24 @@ export const StatChart = memo(function StatChart({
     switch (type) {
       case "line":
         return (
-          <LineChart data={simpleRows}>
+          <LineChart data={simpleRows} margin={chartMargin}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="name" stroke="#a3a3a3" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#a3a3a3" tick={{ fontSize: 11 }} />
+            {xAxisEl}
+            {yAxisEl}
             {chartTooltip}
             <Legend />
-            <Line type="monotone" dataKey="value" stroke="#4DB6AC" strokeWidth={2} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="value" name={yLabel} stroke="#4DB6AC" strokeWidth={2} dot={{ r: 3 }} />
           </LineChart>
         );
       case "area":
         return (
-          <AreaChart data={simpleRows}>
+          <AreaChart data={simpleRows} margin={chartMargin}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="name" stroke="#a3a3a3" />
-            <YAxis stroke="#a3a3a3" />
+            {xAxisEl}
+            {yAxisEl}
             {chartTooltip}
-            <Area type="monotone" dataKey="value" stroke="#4DB6AC" fill="#4DB6AC33" />
+            <Legend />
+            <Area type="monotone" dataKey="value" name={yLabel} stroke="#4DB6AC" fill="#4DB6AC33" />
           </AreaChart>
         );
       case "pie":
@@ -269,13 +310,13 @@ export const StatChart = memo(function StatChart({
         );
       default:
         return (
-          <BarChart data={simpleRows} barSize="40%">
+          <BarChart data={simpleRows} barSize="40%" margin={chartMargin}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="name" stroke="#a3a3a3" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#a3a3a3" tick={{ fontSize: 11 }} />
+            {xAxisEl}
+            {yAxisEl}
             {chartTooltip}
             <Legend />
-            <Bar dataKey="value" fill="#4DB6AC" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" name={yLabel} fill="#4DB6AC" radius={[4, 4, 0, 0]} />
           </BarChart>
         );
     }
