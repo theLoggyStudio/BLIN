@@ -8,13 +8,17 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build:ai": "npm run llm:install && tauri build",
+    "tauri:build:ai": "tauri build",
     "tauri:icons": "powershell -ExecutionPolicy Bypass -File scripts/generate-tauri-icons.ps1",
+    "llm:setup": "npm run llm:setup-cpu && npm run llm:install",
+    "llm:setup-cpu": "powershell -ExecutionPolicy Bypass -File scripts/setup-llama-cpu.ps1",
+    "llm:setup-gpu": "powershell -ExecutionPolicy Bypass -File scripts/setup-llama-gpu.ps1",
     "llm:install": "powershell -ExecutionPolicy Bypass -File scripts/install-llm-model.ps1"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
     "clsx": "^2.1.1",
     "html2canvas": "^1.4.1",

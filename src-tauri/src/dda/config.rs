@@ -198,7 +198,7 @@ pub struct FieldFilterMeta {
     pub operator: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldFormMeta {
     #[serde(default)]
@@ -230,6 +230,9 @@ pub struct FieldFormMeta {
     /// Groupe d'embarquement parent (champs dupliqués depuis entité fille).
     #[serde(default)]
     pub embed_parent: Option<String>,
+    /// Base matricule (ex. CMD) — injectée dans le DDA pour l'aperçu formulaire.
+    #[serde(default)]
+    pub matricule_base: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -245,6 +248,7 @@ pub fn is_persisted_field(field: &FieldDef) -> bool {
         && field.field_type != "detail_link"
         && field.field_type != "entity_embed"
         && field.field_type != "entity_embed_list"
+        && field.field_type != "matricule"
 }
 
 impl ScreenConfigFile {

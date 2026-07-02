@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Textarea } from "@/items/Textarea";
 import {
   applyAttributSuggestion,
@@ -6,6 +6,9 @@ import {
   type AttributSuggestion,
   type EntityAttributCatalog,
 } from "@/lib/print/templateAttributes";
+import { cn } from "@/lib/utils";
+
+const SUGGESTION_MENU_MAX_HEIGHT = 192;
 
 interface TemplateAttributeTextareaProps {
   label: string;
@@ -30,6 +33,19 @@ export function TemplateAttributeTextarea({
   const [replaceStart, setReplaceStart] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [open, setOpen] = useState(false);
+  const [menuAbove, setMenuAbove] = useState(false);
+
+  const updateMenuPlacement = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    setMenuAbove(
+      spaceBelow < SUGGESTION_MENU_MAX_HEIGHT
+      && spaceAbove > spaceBelow,
+    );
+  }, []);
 
   const refreshSuggestions = useCallback(() => {
     const el = textareaRef.current;
@@ -51,6 +67,18 @@ export function TemplateAttributeTextarea({
   useEffect(() => {
     refreshSuggestions();
   }, [refreshSuggestions]);
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) return;
+    updateMenuPlacement();
+    const onScrollOrResize = () => updateMenuPlacement();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [open, suggestions.length, updateMenuPlacement]);
 
   const pick = (item: AttributSuggestion) => {
     const el = textareaRef.current;
@@ -101,7 +129,11 @@ export function TemplateAttributeTextarea({
       />
       {open && suggestions.length > 0 && (
         <ul
-          className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-lg"
+          className={cn(
+            "absolute z-20 w-full overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-lg",
+            menuAbove ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+          style={{ maxHeight: SUGGESTION_MENU_MAX_HEIGHT }}
           role="listbox"
         >
           {suggestions.map((s, i) => (

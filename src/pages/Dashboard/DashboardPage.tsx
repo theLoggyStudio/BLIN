@@ -16,10 +16,12 @@ import { useEntityDefLoggyModal } from "@/contexts/EntityDefLoggyModalContext";
 import { invoke } from "@tauri-apps/api/core";
 import { EntityWorkspace } from "@/engine/EntityWorkspace";
 import { CommandBar } from "@/items/CommandBar";
+import { VisionAnalyzeOptionsModal } from "@/items/VisionAnalyzeOptionsModal";
 import {
   DashboardChatQueue,
   type PendingQuestion,
 } from "@/items/DashboardChatQueue";
+import { DashboardChatHistory } from "@/items/DashboardChatHistory";
 import {
   DashboardChatThread,
   type DashboardChatEntry,
@@ -33,7 +35,8 @@ import {
 } from "@/lib/entityAccess";
 import { parseAssistantChatContent } from "@/lib/chatDisplayParse";
 import { pushLoggyAlert } from "@/contexts/AlertContext";
-import type { AiChatReply, AiStoredMessage } from "@/types/ai";
+import type { CommandBarImageAttachment } from "@/lib/readImageAttachment";
+import type { AiChatReply, AiConversationSummary, AiStoredMessage, AiVisionAnalyzeReply, VisionAnalyzeEntityOptions } from "@/types/ai";
 import type {
   EntityCreateDraft,
   EntityDef,
@@ -49,7 +52,8 @@ function newEntryId(): string {
   return `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function bumpConversationsList() {
+function bumpHistoryList(setHistoryRefresh: (value: number | ((n: number) => number)) => void) {
+  setHistoryRefresh((n) => n + 1);
   window.dispatchEvent(new CustomEvent(AI_CONVERSATIONS_REFRESH_EVENT));
 }
 
@@ -83,6 +87,7 @@ function wantsListInChat(text: string): boolean {
 export function DashboardPage() {
   const { title, slogan } = useEntityBranding();
   const [command, setCommand] = useState("");
+  const [attachedImage, setAttachedImage] = useState<CommandBarImageAttachment | null>(null);
   const [activeEntity, setActiveEntity] = useState<string | null>(null);
   const [entityCreateDraft, setEntityCreateDraft] = useState<ScreenRow | null>(null);
   const [chatStarted, setChatStarted] = useState(false);
@@ -94,9 +99,17 @@ export function DashboardPage() {
   const [pendingQueue, setPendingQueue] = useState<PendingQuestion[]>([]);
   const [suggestionsRefresh, setSuggestionsRefresh] = useState(0);
   const [knownSuggestions, setKnownSuggestions] = useState<EntitySuggestion[]>([]);
+  const [conversationLoading, setConversationLoading] = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const conversationIdRef = useRef<string | null>(null);
+  const threadLengthRef = useRef(0);
   const pendingQueueRef = useRef<PendingQuestion[]>([]);
   const activeEntityRef = useRef<string | null>(null);
+  const [visionModalOpen, setVisionModalOpen] = useState(false);
+  const [pendingVision, setPendingVision] = useState<{
+    text: string;
+    imageDataUrl: string;
+  } | null>(null);
 
   const chatBusy = thread.some((e) => e.role === "assistant" && e.loading);
 
@@ -149,6 +162,10 @@ export function DashboardPage() {
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
+
+  useEffect(() => {
+    threadLengthRef.current = thread.length;
+  }, [thread.length]);
 
   const commandInputHistory = useMemo(
     () =>
@@ -212,6 +229,7 @@ export function DashboardPage() {
 
   const loadConversation = useCallback(
     async (id: string) => {
+      setConversationLoading(true);
       try {
         const messages = await invoke<AiStoredMessage[]>("ai_conversation_messages", {
           payload: { conversation_id: id },
@@ -219,17 +237,46 @@ export function DashboardPage() {
         setConversationId(id);
         conversationIdRef.current = id;
         setThread(messagesToThread(messages));
-        setChatStarted(messages.length > 0);
+        setChatStarted(true);
         setPendingQueue([]);
         pendingQueueRef.current = [];
         setCommand("");
         setActiveEntity(null);
+        bumpHistoryList(setHistoryRefresh);
       } catch (e) {
         pushLoggyAlert(String(e), "danger");
+        setThread([]);
+      } finally {
+        setConversationLoading(false);
       }
     },
     [setConversationId],
   );
+
+  const loadLatestConversation = useCallback(async () => {
+    setConversationLoading(true);
+    try {
+      const list = await invoke<AiConversationSummary[]>("ai_list_conversations");
+      if (list[0]?.id) {
+        const messages = await invoke<AiStoredMessage[]>("ai_conversation_messages", {
+          payload: { conversation_id: list[0].id },
+        });
+        setConversationId(list[0].id);
+        conversationIdRef.current = list[0].id;
+        setThread(messagesToThread(messages));
+        setChatStarted(true);
+        setPendingQueue([]);
+        pendingQueueRef.current = [];
+        setCommand("");
+        setActiveEntity(null);
+        bumpHistoryList(setHistoryRefresh);
+      }
+    } catch (e) {
+      pushLoggyAlert(String(e), "danger");
+    } finally {
+      setConversationLoading(false);
+    }
+  }, [setConversationId]);
 
   useEffect(() => {
     const onSelect = (e: Event) => {
@@ -258,8 +305,17 @@ export function DashboardPage() {
         setPendingQueue([]);
         pendingQueueRef.current = [];
         setCommand("");
+        setChatStarted(true);
+        return;
       }
       setChatStarted(true);
+      if (threadLengthRef.current > 0) return;
+      const id = conversationIdRef.current;
+      if (id) {
+        void loadConversation(id);
+      } else {
+        void loadLatestConversation();
+      }
     };
     const onCloseAi = () => {
       resetChat();
@@ -270,7 +326,7 @@ export function DashboardPage() {
       window.removeEventListener(FOCUS_AI_WINDOW_EVENT, onFocusAi);
       window.removeEventListener(CLOSE_AI_WINDOW_EVENT, onCloseAi);
     };
-  }, [resetChat, setConversationId, setActiveWindowId]);
+  }, [resetChat, setConversationId, setActiveWindowId, loadConversation, loadLatestConversation]);
 
   useEffect(() => {
     if (!chatStarted || activeEntity) return;
@@ -485,16 +541,59 @@ export function DashboardPage() {
     }
   }, [activeEntity, entityCreateDraft, openTaches]);
 
-  const askLoggyPractical = useCallback(async (text: string) => {
+  const askLoggyPractical = useCallback(async (
+    text: string,
+    imageDataUrl?: string,
+    visionEntityOptions?: VisionAnalyzeEntityOptions,
+  ) => {
     setChatStarted(true);
     const assistantId = newEntryId();
+    const userLabel = text.trim() || (imageDataUrl ? "Analyse de l'image jointe" : text);
     setThread((prev) => [
       ...prev,
-      { id: newEntryId(), role: "user", content: text },
+      {
+        id: newEntryId(),
+        role: "user",
+        content: userLabel,
+        userContent: imageDataUrl ? (
+          <div className="space-y-2">
+            <img
+              src={imageDataUrl}
+              alt=""
+              className="max-h-40 rounded-lg border border-border object-contain"
+            />
+            {text.trim() ? <p className="user-chat-text">{text.trim()}</p> : null}
+          </div>
+        ) : undefined,
+      },
       { id: assistantId, role: "assistant", content: null, loading: true },
     ]);
 
     try {
+      if (imageDataUrl) {
+        const reply = await invoke<AiVisionAnalyzeReply>("ai_vision_analyze", {
+          payload: {
+            message: text.trim(),
+            image_base64: imageDataUrl,
+            conversation_id: conversationIdRef.current,
+            entity_options: visionEntityOptions ?? {
+              requires_signature: false,
+              ai_suggestions: true,
+              signatory_role_ids: [],
+              attribute_hints: [],
+            },
+          },
+        });
+        conversationIdRef.current = reply.conversation_id;
+        setConversationId(reply.conversation_id);
+        patchAssistant(assistantId, {
+          content: reply.message.trim() || null,
+          loading: false,
+        });
+        bumpHistoryList(setHistoryRefresh);
+        return;
+      }
+
       const reply = await invoke<AiChatReply>("ai_dashboard_answer", {
         payload: {
           message: text,
@@ -516,7 +615,7 @@ export function DashboardPage() {
         loading: false,
       });
       applyCreateActionFromReply(reply);
-      bumpConversationsList();
+      bumpHistoryList(setHistoryRefresh);
     } catch (e) {
       patchAssistant(assistantId, {
         content: String(e),
@@ -525,10 +624,14 @@ export function DashboardPage() {
     }
   }, [applyCreateActionFromReply, patchAssistant, setConversationId]);
 
-  const enqueueQuestion = useCallback((text: string) => {
+  const enqueueQuestion = useCallback((
+    text: string,
+    imageDataUrl?: string,
+    visionEntityOptions?: VisionAnalyzeEntityOptions,
+  ) => {
     setPendingQueue((prev) => {
       if (prev.length >= MAX_PENDING_QUESTIONS) return prev;
-      const next = [...prev, { id: newEntryId(), text }];
+      const next = [...prev, { id: newEntryId(), text, imageDataUrl, visionEntityOptions }];
       pendingQueueRef.current = next;
       return next;
     });
@@ -545,7 +648,7 @@ export function DashboardPage() {
     const [head, ...rest] = pendingQueueRef.current;
     pendingQueueRef.current = rest;
     setPendingQueue(rest);
-    void askLoggyPractical(head.text);
+    void askLoggyPractical(head.text, head.imageDataUrl, head.visionEntityOptions);
   }, [chatBusy, askLoggyPractical]);
 
   const resolveEntityKey = useCallback(
@@ -567,9 +670,38 @@ export function DashboardPage() {
     [knownSuggestions],
   );
 
+  const submitVisionWithOptions = useCallback(async (
+    text: string,
+    imageDataUrl: string,
+    options: VisionAnalyzeEntityOptions,
+  ) => {
+    const mustQueue = chatBusy || pendingQueue.length > 0;
+    if (mustQueue) {
+      if (pendingQueue.length >= MAX_PENDING_QUESTIONS) return;
+      enqueueQuestion(text, imageDataUrl, options);
+      return;
+    }
+    await askLoggyPractical(text, imageDataUrl, options);
+  }, [askLoggyPractical, chatBusy, enqueueQuestion, pendingQueue.length]);
+
   const submitCommand = async () => {
     const text = command.trim();
-    if (!text || sendDisabled) return;
+    const image = attachedImage;
+    if ((!text && !image) || sendDisabled) return;
+
+    const imageDataUrl = image?.dataUrl;
+    setAttachedImage(null);
+    setCommand("");
+
+    if (imageDataUrl) {
+      setPendingVision({ text, imageDataUrl });
+      setVisionModalOpen(true);
+      setAttachedImage(null);
+      setCommand("");
+      return;
+    }
+
+    if (!text) return;
 
     const mustQueue = chatBusy || pendingQueue.length > 0;
 
@@ -581,6 +713,7 @@ export function DashboardPage() {
         );
         if (registryMatch.matched) {
           setCommand("");
+          setAttachedImage(null);
           if (!registryMatch.allowed || !registryMatch.draft) {
             denyRegistryCreateInChat(text);
             return;
@@ -632,6 +765,8 @@ export function DashboardPage() {
       value={command}
       onChange={setCommand}
       onSubmit={() => void submitCommand()}
+      attachedImage={attachedImage}
+      onAttachedImageChange={setAttachedImage}
       inputHistory={chatStarted ? commandInputHistory : []}
       responseHistory={chatStarted ? commandResponseHistory : []}
       suggestionsRefreshToken={suggestionsRefresh}
@@ -671,6 +806,7 @@ export function DashboardPage() {
             <div className="dashboard-chat-messages-inner">
               <DashboardChatThread
                 entries={thread}
+                loadingHistory={conversationLoading}
                 onOpenEntityFromChat={(entityKey) => {
                   void requestOpenEntity(entityKey, {
                     appendDenial: true,
@@ -685,6 +821,10 @@ export function DashboardPage() {
           </div>
           <footer className="dashboard-chat-footer">
             <div className="dashboard-chat-footer-inner">
+              <DashboardChatHistory
+                refreshToken={historyRefresh}
+                onSelect={(id) => void loadConversation(id)}
+              />
               <DashboardChatQueue items={pendingQueue} maxItems={MAX_PENDING_QUESTIONS} />
               {commandBar}
             </div>
@@ -708,6 +848,21 @@ export function DashboardPage() {
           />
         </div>
       )}
+
+      <VisionAnalyzeOptionsModal
+        open={visionModalOpen}
+        onClose={() => {
+          setVisionModalOpen(false);
+          setPendingVision(null);
+        }}
+        onConfirm={(options) => {
+          if (!pendingVision) return;
+          const { text, imageDataUrl } = pendingVision;
+          setVisionModalOpen(false);
+          setPendingVision(null);
+          void submitVisionWithOptions(text, imageDataUrl, options);
+        }}
+      />
     </div>
   );
 }

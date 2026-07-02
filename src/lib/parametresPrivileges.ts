@@ -6,11 +6,13 @@ export const PARAMETRES_PAGE_PRIVILEGE = "parametres:voir";
 /** Privilège de visibilité par panneau repliable. */
 export const PARAMETRES_PANEL_PRIVILEGES: Record<ParametresPanelId, string> = {
   assistant: "parametres:assistant",
-  personnalisation_ia: "parametres:assistant",
+  personnalisation_ia: "parametres:personnalisation_ia",
   compte: "parametres:compte",
   theme: "parametres:theme",
   impression: "parametres:impression",
   entites: "parametres:entites",
+  archives: "parametres:archives",
+  imports_exports: "parametres:imports_exports",
   roles: "parametres:roles",
   utilisateurs: "parametres:utilisateurs",
 };
@@ -30,11 +32,14 @@ export function formatParametresPrivilegeLabel(privilege: string): string {
   const labels: Record<string, string> = {
     "parametres:voir": "Paramètres — accès page",
     "parametres:assistant": "Paramètres — Assistant IA",
+    "parametres:personnalisation_ia": "Paramètres — Personnalisation IA (voix)",
     "parametres:compte": "Paramètres — Compte",
     "parametres:theme": "Paramètres — Thème",
     "parametres:impression": "Paramètres — Modèles d'impression",
     "parametres:entites": "Paramètres — Entités métier",
     "parametres:entites:creer": "Paramètres — Créer une entité (Loggy)",
+    "parametres:archives": "Paramètres — Archives du registre",
+    "parametres:imports_exports": "Paramètres — Imports / Exports",
     "parametres:roles": "Paramètres — Rôles",
     "parametres:utilisateurs": "Paramètres — Utilisateurs",
   };

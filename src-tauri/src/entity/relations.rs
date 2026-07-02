@@ -254,69 +254,59 @@ fn parse_embed_list_objects(raw: Option<&Value>) -> Vec<Map<String, Value>> {
     Vec::new()
 }
 
-pub fn relation_detail(
-    db: &Database,
+fn embed_list_item_fields(
+    ref_cfg: &crate::dda::config::ScreenConfigFile,
+    obj: &Map<String, Value>,
+) -> Vec<RelationPanelField> {
+    let labeled: Vec<RelationPanelField> = ref_cfg
+        .fields
+        .iter()
+        .filter(|f| {
+            f.field_type != "hidden"
+                && f.field_type != "detail_link"
+                && f.form.as_ref().and_then(|m| m.embed_parent.as_ref()).is_none()
+        })
+        .filter_map(|f| {
+            let raw = obj.get(&f.key).or_else(|| obj.get(&f.column));
+            raw.map(|v| RelationPanelField {
+                key: f.key.clone(),
+                label: f.label.clone(),
+                value: display_value(v),
+            })
+        })
+        .collect();
+    if !labeled.is_empty() {
+        return labeled;
+    }
+    obj.iter()
+        .map(|(k, v)| RelationPanelField {
+            key: k.clone(),
+            label: k.clone(),
+            value: display_value(v),
+        })
+        .collect()
+}
+
+fn append_embed_panels_from_row(
     data_dir: &std::path::Path,
-    screen_key: &str,
-    record_id: &str,
-) -> Result<RelationDetailResponse, String> {
-    let cfg = load_screen_config(data_dir, screen_key)?;
-    let parent = crate::dda::crud::get_row(db, &cfg, record_id)?;
-
-    let parent_label = cfg.screen.label.clone();
-    let mut panels = vec![RelationPanel {
-        entity_key: screen_key.to_string(),
-        label: parent_label,
-        primary: true,
-        via_field: None,
-        fields: row_to_panel_fields(&cfg, &parent),
-    }];
-
+    cfg: &crate::dda::config::ScreenConfigFile,
+    row: &Map<String, Value>,
+    panels: &mut Vec<RelationPanel>,
+    label_suffix: &str,
+) -> Result<(), String> {
     for field in &cfg.fields {
-        if field.field_type == "entity_ref" {
-            let Some(ref_key) = field_ref_entity(field) else {
-                continue;
-            };
-            let fk = parent
-                .get(&field.key)
-                .or_else(|| parent.get(&field.column))
-                .and_then(|v| {
-                    if v.is_null() {
-                        None
-                    } else {
-                        Some(v.to_string().trim_matches('"').to_string())
-                    }
-                })
-                .filter(|s| !s.is_empty());
-            let Some(fk_id) = fk else {
-                continue;
-            };
-
-            let ref_cfg = load_screen_config(data_dir, ref_key)?;
-            let ref_row = crate::dda::crud::get_row(db, &ref_cfg, &fk_id)?;
-            let ref_label = ref_cfg.screen.label.clone();
-            panels.push(RelationPanel {
-                entity_key: ref_key.to_string(),
-                label: ref_label,
-                primary: false,
-                via_field: Some(field.key.clone()),
-                fields: row_to_panel_fields(&ref_cfg, &ref_row),
-            });
-            continue;
-        }
-
         if field.field_type == "entity_embed" {
             let Some(ref_key) = field_ref_entity(field) else {
                 continue;
             };
-            let embed_fields = embed_panel_fields(&cfg, &parent, &field.key);
+            let embed_fields = embed_panel_fields(cfg, row, &field.key);
             if embed_fields.is_empty() {
                 continue;
             }
             let ref_cfg = load_screen_config(data_dir, ref_key)?;
             panels.push(RelationPanel {
                 entity_key: ref_key.to_string(),
-                label: ref_cfg.screen.label.clone(),
+                label: format!("{}{label_suffix}", ref_cfg.screen.label),
                 primary: false,
                 via_field: Some(field.key.clone()),
                 fields: embed_fields,
@@ -329,35 +319,134 @@ pub fn relation_detail(
                 continue;
             };
             let ref_cfg = load_screen_config(data_dir, ref_key)?;
-            let raw = parent.get(&field.key).or_else(|| parent.get(&field.column));
+            let raw = row.get(&field.key).or_else(|| row.get(&field.column));
             let items = parse_embed_list_objects(raw);
             if items.is_empty() {
                 continue;
             }
             for (idx, obj) in items.into_iter().enumerate() {
-                let fields: Vec<RelationPanelField> = obj
-                    .iter()
-                    .map(|(k, v)| RelationPanelField {
-                        key: k.clone(),
-                        label: k.clone(),
-                        value: display_value(v),
-                    })
-                    .collect();
                 panels.push(RelationPanel {
                     entity_key: ref_key.to_string(),
                     label: format!(
-                        "{} — élément {}",
+                        "{} — élément {}{label_suffix}",
                         ref_cfg.screen.label,
                         idx + 1
                     ),
                     primary: false,
                     via_field: Some(field.key.clone()),
-                    fields,
+                    fields: embed_list_item_fields(&ref_cfg, &obj),
                 });
             }
         }
     }
+    Ok(())
+}
 
+fn append_linked_panels(
+    db: &Database,
+    data_dir: &std::path::Path,
+    cfg: &crate::dda::config::ScreenConfigFile,
+    row: &Map<String, Value>,
+    panels: &mut Vec<RelationPanel>,
+) -> Result<(), String> {
+    for field in &cfg.fields {
+        if field.field_type != "entity_ref" {
+            continue;
+        }
+        let Some(ref_key) = field_ref_entity(field) else {
+            continue;
+        };
+        let fk = row
+            .get(&field.key)
+            .or_else(|| row.get(&field.column))
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.to_string().trim_matches('"').to_string())
+                }
+            })
+            .filter(|s| !s.is_empty());
+        let Some(fk_id) = fk else {
+            continue;
+        };
+
+        let ref_cfg = load_screen_config(data_dir, ref_key)?;
+        let ref_row = crate::dda::crud::get_row(db, &ref_cfg, &fk_id)?;
+        panels.push(RelationPanel {
+            entity_key: ref_key.to_string(),
+            label: ref_cfg.screen.label.clone(),
+            primary: false,
+            via_field: Some(field.key.clone()),
+            fields: row_to_panel_fields(&ref_cfg, &ref_row),
+        });
+    }
+
+    append_embed_panels_from_row(data_dir, cfg, row, panels, "")?;
+    Ok(())
+}
+
+fn append_extra_line_panels(
+    data_dir: &std::path::Path,
+    cfg: &crate::dda::config::ScreenConfigFile,
+    row: &Map<String, Value>,
+    panels: &mut Vec<RelationPanel>,
+) -> Result<(), String> {
+    let extras = parse_embed_list_objects(row.get(super::parent_lignes::CREATE_LINES_FORM_KEY));
+    let extra_lines: Vec<Map<String, Value>> = if !extras.is_empty() {
+        extras
+    } else {
+        super::parent_lignes::parse_lignes_items(row.get(super::parent_lignes::LIGNES_COLUMN))
+            .into_iter()
+            .skip(1)
+            .collect()
+    };
+    for (idx, line) in extra_lines.into_iter().enumerate() {
+        let line_num = idx + 2;
+        let suffix = format!(" — ligne {line_num}");
+        let line_fields = row_to_panel_fields(cfg, &line);
+        if !line_fields.is_empty() {
+            panels.push(RelationPanel {
+                entity_key: cfg.screen.key.clone(),
+                label: format!("{}{suffix}", cfg.screen.label),
+                primary: false,
+                via_field: Some(super::parent_lignes::LIGNES_COLUMN.into()),
+                fields: line_fields,
+            });
+        }
+        append_embed_panels_from_row(data_dir, cfg, &line, panels, &suffix)?;
+    }
+    Ok(())
+}
+
+/// Panneaux lecture seule : entité mère + liaisons + embed + lignes supplémentaires.
+pub fn build_relation_panels(
+    db: &Database,
+    data_dir: &std::path::Path,
+    cfg: &crate::dda::config::ScreenConfigFile,
+    row: &Map<String, Value>,
+) -> Result<Vec<RelationPanel>, String> {
+    let mut panels = vec![RelationPanel {
+        entity_key: cfg.screen.key.clone(),
+        label: cfg.screen.label.clone(),
+        primary: true,
+        via_field: None,
+        fields: row_to_panel_fields(cfg, row),
+    }];
+    append_linked_panels(db, data_dir, cfg, row, &mut panels)?;
+    append_extra_line_panels(data_dir, cfg, row, &mut panels)?;
+    Ok(panels)
+}
+
+pub fn relation_detail(
+    db: &Database,
+    data_dir: &std::path::Path,
+    screen_key: &str,
+    record_id: &str,
+) -> Result<RelationDetailResponse, String> {
+    let cfg = load_screen_config(data_dir, screen_key)?;
+    let parent = crate::dda::crud::get_row(db, &cfg, record_id)?;
+    let panels = build_relation_panels(db, data_dir, &cfg, &parent)?;
     Ok(RelationDetailResponse { panels })
 }
 
@@ -642,6 +731,9 @@ pub fn embed_values_from_record(
 }
 
 /// Objet fille (clés sans préfixe) pour liste embarquée.
+/// Entité d'origine du circuit d'impact stock (première mère, ex. demande d'achat).
+pub const IMPACT_ORIGIN_ENTITY_KEY: &str = "demande_d'achat";
+
 /// Métadonnées d'impact stock pour une liaison multiple (ligne embarquée) :
 /// champ quantité côté ligne + sens (incrément / décrément) pour afficher l'input.
 #[derive(Debug, Clone, Serialize)]
@@ -653,13 +745,24 @@ pub struct EmbedImpactMeta {
     pub action: String,
     /// Libellé du champ stock de la fille (pour l'input).
     pub label: String,
+    /// Entité où la quantité est saisie une seule fois (demande d'achat).
+    pub origin_entity_key: String,
+    /// Quantité non modifiable (aval du circuit ou DA déjà signée).
+    pub qty_read_only: bool,
+    /// Entité fille référencée (ex. article).
+    pub child_entity_key: String,
+    /// Champ stock sur la fille servant de plafond (ex. qte_initial), si décrément.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_cap_field: Option<String>,
 }
 
 /// Renvoie l'impact stock configuré sur la liaison multiple, le cas échéant.
 pub fn embed_impact_meta(
+    db: &Database,
     registry: &EntityRegistry,
     screen_key: &str,
     field_key: &str,
+    record_id: Option<&str>,
 ) -> Option<EmbedImpactMeta> {
     let parent = registry.find(screen_key)?;
     let attr = parent.attributs.iter().find(|a| a.nom == field_key)?;
@@ -684,7 +787,8 @@ pub fn embed_impact_meta(
         _ => return None,
     };
     let child = super::embed::resolve_child(registry, attr)?;
-    let child_attr = child.attributs.iter().find(|a| a.nom == source)?;
+    let leaf = source.rsplit('.').next().unwrap_or(source);
+    let child_attr = child.attributs.iter().find(|a| a.nom == leaf)?;
     if !super::relation_impact::is_numeric_impactable(&child_attr.attr_type) {
         return None;
     }
@@ -692,10 +796,48 @@ pub fn embed_impact_meta(
         .label
         .clone()
         .unwrap_or_else(|| child_attr.nom.clone());
+    let qty_field = if source.contains('.') {
+        leaf.to_string()
+    } else {
+        source.to_string()
+    };
+    let origin_entity_key = if attr.relation_impact_defer {
+        IMPACT_ORIGIN_ENTITY_KEY.to_string()
+    } else {
+        screen_key.to_string()
+    };
+    let on_origin = screen_key == origin_entity_key;
+    let qty_read_only = if !on_origin {
+        true
+    } else if let Some(rid) = record_id.filter(|s| !s.trim().is_empty()) {
+        super::record_signature::is_record_signed(db, screen_key, rid, registry)
+            .unwrap_or(false)
+    } else {
+        false
+    };
     Some(EmbedImpactMeta {
-        qty_field: source.to_string(),
+        qty_field,
         action: action.to_string(),
-        label,
+        label: if source.contains('.') {
+            format!("{source} ({label})")
+        } else {
+            label
+        },
+        origin_entity_key,
+        qty_read_only,
+        child_entity_key: child.nom.clone(),
+        stock_cap_field: if action == "decrement" {
+            Some(
+                attr.relation_impact_target
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(leaf)
+                    .to_string(),
+            )
+        } else {
+            None
+        },
     })
 }
 
@@ -719,7 +861,56 @@ pub fn embed_child_object_from_record(
         .ok_or_else(|| format!("Entité fille introuvable pour « {field_key} »."))?;
     let ref_cfg = load_screen_config(data_dir, &child.nom)?;
     let row = crate::dda::crud::get_row(db, &ref_cfg, record_id)?;
-    Ok(super::embed::child_object_from_row_for_embed_list(child, &row))
+    let mut out = super::embed::child_object_from_row_for_embed_list(&child, &row);
+    if let Some(cap_field) = parent_attr
+        .relation_impact_target
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if let Some(n) = row.get(cap_field).and_then(super::relation_impact::json_to_f64) {
+            if let Some(num) = serde_json::Number::from_f64(n) {
+                out.insert(super::embed::EMBED_STOCK_CAP.to_string(), Value::Number(num));
+            }
+        }
+    }
+    for (list_attr, list_child) in super::child_table::embed_list_attrs(&child, &registry) {
+        let items =
+            super::child_table::load_embed_list(db, &child.nom, record_id, list_child)?;
+        out.insert(
+            list_attr.nom.clone(),
+            Value::Array(items.into_iter().map(Value::Object).collect()),
+        );
+    }
+    Ok(out)
+}
+
+/// Lit un champ numérique sur une entité fille (par id ou référence).
+pub fn read_child_numeric_field(
+    db: &Database,
+    data_dir: &std::path::Path,
+    entity_key: &str,
+    field_key: &str,
+    record_id: Option<&str>,
+    reference: Option<&str>,
+) -> Result<Option<f64>, String> {
+    use super::schema::table_name;
+    let registry = super::registry::load(data_dir)?;
+    let child = registry
+        .find(entity_key)
+        .ok_or_else(|| format!("Entité « {entity_key} » introuvable."))?;
+    let table = table_name(entity_key);
+    let id = if let Some(rid) = record_id.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(rid.to_string())
+    } else if let Some(r) = reference.map(str::trim).filter(|s| !s.is_empty()) {
+        super::relation_impact::lookup_child_id_by_reference(db, &table, r)?
+    } else {
+        None
+    };
+    let id = id.ok_or_else(|| "Enregistrement fille introuvable.".to_string())?;
+    let cfg = load_screen_config(data_dir, &child.nom)?;
+    let row = crate::dda::crud::get_row(db, &cfg, &id)?;
+    Ok(row.get(field_key).and_then(super::relation_impact::json_to_f64))
 }
 
 pub fn registry_entity_ref_targets(registry: &EntityRegistry) -> Vec<(String, String)> {

@@ -7,6 +7,12 @@ use super::compteur::{self, is_compteur_attr};
 use super::registry::{EntityAttribute, EntityDef, EntityRegistry};
 use super::schema::attr_column;
 
+/// ID source conservé dans une ligne embarquée (copie depuis un enregistrement existant).
+pub const EMBED_SOURCE_RECORD_ID: &str = "_source_record_id";
+
+/// Plafond de quantité d'impact (stock article au moment de la copie, session UI).
+pub const EMBED_STOCK_CAP: &str = "_embedStockCap";
+
 pub fn ref_entity_key(attr: &EntityAttribute) -> Option<String> {
     if attr.attr_type != "entity" {
         return None;
@@ -62,10 +68,24 @@ pub fn sql_columns_for_entity_attr(
     let mut cols = Vec::new();
     for child_attr in copyable_child_attributes(child) {
         if is_compteur_attr(child_attr) {
-            let base = embedded_column_name(attr, child_attr);
-            cols.push((format!("{base}_libelle"), "TEXT"));
-            cols.push((format!("{base}_jjmmaaaa"), "TEXT"));
-            cols.push((format!("{base}_numero"), "INTEGER"));
+            let embed_base = embedded_column_name(attr, child_attr);
+            let child_col = super::schema::attr_column(child_attr);
+            for col in compteur::all_sql_columns(child_attr) {
+                let suffix = col
+                    .strip_prefix(&format!("{child_col}_"))
+                    .unwrap_or("");
+                let mapped = if suffix.is_empty() {
+                    embed_base.clone()
+                } else {
+                    format!("{embed_base}_{suffix}")
+                };
+                let col_type = if mapped.ends_with("_numero") {
+                    "INTEGER"
+                } else {
+                    "TEXT"
+                };
+                cols.push((mapped, col_type));
+            }
         } else {
             cols.push((
                 embedded_column_name(attr, child_attr),
@@ -217,6 +237,17 @@ pub fn child_object_from_row_for_embed_list(
 ) -> Map<String, Value> {
     let mut out = child_object_from_row_inner(child, child_row, true);
     ensure_generic_embed_label(child, &mut out, child_row);
+    if let Some(id) = child_row
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        out.insert(
+            EMBED_SOURCE_RECORD_ID.into(),
+            Value::String(id.to_string()),
+        );
+    }
     out
 }
 
@@ -249,9 +280,16 @@ fn numero_to_string(v: &Value) -> Option<String> {
     }
 }
 
-/// « Matricule complète » de la fille : date (jjmmaaaa) + n° (zéro-paddé) du 1er compteur/matricule.
+/// « Matricule complète » : `<base><date jjmmaaaa><compteur>`.
 fn full_matricule(child: &EntityDef, child_row: &Map<String, Value>) -> Option<String> {
     for attr in child.attributs.iter().filter(|a| is_compteur_attr(a)) {
+        if compteur::is_matricule_attr(attr) {
+            let s = compteur::format_matricule_from_row(child_row, attr);
+            if !s.is_empty() {
+                return Some(s);
+            }
+            continue;
+        }
         let date = child_row
             .get(&compteur::column_jjmmaaaa(attr))
             .and_then(|v| v.as_str())

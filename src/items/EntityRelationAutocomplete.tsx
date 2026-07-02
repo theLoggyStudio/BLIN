@@ -6,6 +6,10 @@ import { Alert } from "@/items/Alert";
 import { RelationOptionRow } from "@/items/RelationOptionLine";
 import { RELATION_SUGGESTIONS_LIMIT } from "@/constants/variable.constant";
 import { floatingMenuZIndex } from "@/lib/modalStack";
+import {
+  computeFloatingMenuStyle,
+  relationAutocompleteMenuMaxHeight,
+} from "@/lib/floatingMenuPosition";
 import { cn } from "@/lib/utils";
 import type { RelationSelectOption } from "@/types/entity";
 
@@ -189,6 +193,16 @@ export function EntityRelationAutocomplete({
 
   const currentLabel = displayLabel?.trim() || resolvedLabel;
 
+  const menuStyle = useMemo(() => {
+    if (!open || !menuRect) return null;
+    const { placement: _p, ...style } = computeFloatingMenuStyle(
+      menuRect,
+      floatingMenuZIndex(),
+      { preferredMaxHeight: relationAutocompleteMenuMaxHeight() },
+    );
+    return style;
+  }, [open, menuRect]);
+
   const resetSearchState = () => {
     setQuery("");
     setOptions([]);
@@ -303,21 +317,14 @@ export function EntityRelationAutocomplete({
             className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground"
           />
         )}
-        {open &&
-          menuRect &&
+        {menuStyle &&
           createPortal(
             <div
               id={listboxId}
               role="listbox"
               aria-labelledby={inputId}
-              className="max-h-[min(20rem,70vh)] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
-              style={{
-                position: "fixed",
-                top: menuRect.bottom + 4,
-                left: menuRect.left,
-                width: menuRect.width,
-                zIndex: floatingMenuZIndex(),
-              }}
+              className="overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+              style={menuStyle}
             >
               {allowEmpty && (
                 <button

@@ -75,20 +75,79 @@ fn build_options(attr: &EntityAttribute) -> Vec<FieldOption> {
     vec![]
 }
 
+fn build_matricule_fields(
+    attr: &EntityAttribute,
+    list_enabled: bool,
+    matricules: &super::matricule_registry::MatriculeRegistry,
+) -> Vec<FieldDef> {
+    let root = attr
+        .label
+        .clone()
+        .unwrap_or_else(|| attr.nom.clone());
+    let hint = "Généré automatiquement à l'enregistrement (base + date jjmmaaaa + n°).";
+    let matricule_base = matricules
+        .resolve_for_attr(attr)
+        .map(|d| d.base.clone());
+    let mut fields: Vec<FieldDef> = compteur::all_sql_columns(attr)
+        .into_iter()
+        .map(|col| FieldDef {
+            key: col.clone(),
+            column: col,
+            field_type: "hidden".into(),
+            label: String::new(),
+            required: false,
+            default: None,
+            options: vec![],
+            list: None,
+            filter: None,
+            form: None,
+            visible_when: None,
+            validation: None,
+        })
+        .collect();
+    fields.push(FieldDef {
+        key: attr.nom.clone(),
+        column: attr.nom.clone(),
+        field_type: "matricule".into(),
+        label: root,
+        required: false,
+        default: None,
+        options: vec![],
+        list: Some(FieldListMeta {
+            enabled: list_enabled,
+            sortable: list_enabled,
+        }),
+        filter: None,
+        form: Some(FieldFormMeta {
+            col_span: None,
+            placeholder: Some(hint.into()),
+            min: None,
+            step: None,
+            read_only: Some(true),
+            auto_generated: Some(true),
+            storage_folder: None,
+            max_files: None,
+            accept: None,
+            ref_entity: None,
+            relation_exclusive_parent: None,
+            relation_multiple: None,
+            embed_parent: None,
+            matricule_base: matricule_base.clone(),
+            ..Default::default()
+        }),
+        visible_when: None,
+        validation: None,
+    });
+    fields
+}
+
 fn build_compteur_fields(attr: &EntityAttribute, list_enabled: bool) -> Vec<FieldDef> {
     let root = attr
         .label
         .clone()
         .unwrap_or_else(|| attr.nom.clone());
-    let is_matricule = attr.attr_type == "matricule";
-    let hint = if is_matricule {
-        "Saisissez la partie matricule ; date (jjmmaaaa) + n° sont auto."
-    } else {
-        "Rempli automatiquement à l'enregistrement (non modifiable)."
-    };
-    let libelle_col = compteur::column_libelle(attr);
+    let hint = "Rempli automatiquement à l'enregistrement (non modifiable).";
     let mk = |key: String, column: String, label: String, field_type: &str, list: bool| {
-        let is_manual_part = is_matricule && key == libelle_col;
         FieldDef {
             key,
             column,
@@ -107,8 +166,8 @@ fn build_compteur_fields(attr: &EntityAttribute, list_enabled: bool) -> Vec<Fiel
                 placeholder: None,
                 min: None,
                 step: None,
-                read_only: Some(!is_manual_part),
-                auto_generated: Some(!is_manual_part),
+                read_only: Some(true),
+                auto_generated: Some(true),
                 storage_folder: None,
                 max_files: None,
                 accept: None,
@@ -116,6 +175,7 @@ fn build_compteur_fields(attr: &EntityAttribute, list_enabled: bool) -> Vec<Fiel
                 relation_exclusive_parent: None,
                 relation_multiple: None,
                 embed_parent: None,
+            ..Default::default()
             }),
             visible_when: None,
             validation: None,
@@ -125,11 +185,7 @@ fn build_compteur_fields(attr: &EntityAttribute, list_enabled: bool) -> Vec<Fiel
         mk(
             compteur::column_libelle(attr),
             compteur::column_libelle(attr),
-            if is_matricule {
-                format!("{root} — Matricule (manuel)")
-            } else {
-                format!("{root} — Libellé")
-            },
+            format!("{root} — Libellé"),
             "text",
             false,
         ),
@@ -151,12 +207,7 @@ fn build_compteur_fields(attr: &EntityAttribute, list_enabled: bool) -> Vec<Fiel
     .into_iter()
     .map(|mut f| {
         if let Some(form) = f.form.as_mut() {
-            let is_manual_matricule = is_matricule && f.key == libelle_col;
-            if is_manual_matricule {
-                form.placeholder = Some(hint.into());
-            } else if !is_matricule {
-                form.placeholder = Some(hint.into());
-            }
+            form.placeholder = Some(hint.into());
         }
         f
     })
@@ -227,6 +278,7 @@ fn build_field_with_key_column(
             relation_exclusive_parent: None,
             relation_multiple: None,
             embed_parent,
+            ..Default::default()
         }),
         visible_when: None,
         validation: if attr.attr_type == "email" {
@@ -286,6 +338,7 @@ fn build_entity_embed_header(parent_attr: &EntityAttribute, child: &EntityDef) -
             relation_exclusive_parent: Some(true),
             relation_multiple: Some(false),
             embed_parent: None,
+            ..Default::default()
         }),
         visible_when: None,
         validation: None,
@@ -324,6 +377,7 @@ fn build_entity_embed_list_field(parent_attr: &EntityAttribute, child: &EntityDe
             relation_exclusive_parent: Some(true),
             relation_multiple: Some(true),
             embed_parent: None,
+            ..Default::default()
         }),
         visible_when: None,
         validation: None,
@@ -375,6 +429,7 @@ fn build_embedded_compteur_fields(
             relation_exclusive_parent: None,
             relation_multiple: None,
             embed_parent: Some(parent_key.clone()),
+            ..Default::default()
         }),
         visible_when: None,
         validation: None,
@@ -484,6 +539,9 @@ fn first_listable_column(ent: &EntityDef) -> String {
         }
     }
     for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
+        if compteur::is_matricule_attr(attr) {
+            return attr.nom.clone();
+        }
         if is_compteur_attr(attr) {
             return compteur::column_numero(attr);
         }
@@ -526,7 +584,12 @@ fn pluralize_label(label: &str) -> String {
     format!("{t}s")
 }
 
-pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> ScreenConfigFile {
+pub fn build_screen_config(
+    ent: &EntityDef,
+    registry: &EntityRegistry,
+    data_dir: &std::path::Path,
+) -> ScreenConfigFile {
+    let matricules = super::matricule_registry::load(data_dir).unwrap_or_default();
     let label = entity_display_label(ent);
     let label_plural = pluralize_label(&label);
     let pk = "id".to_string();
@@ -584,7 +647,9 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
         } else {
             attr.attr_type != "photo"
         };
-        if is_compteur_attr(attr) {
+        if compteur::is_matricule_attr(attr) {
+            fields.extend(build_matricule_fields(attr, list_on, &matricules));
+        } else if is_compteur_attr(attr) {
             fields.extend(build_compteur_fields(attr, list_on));
         } else if attr.attr_type == "entity" {
             if let Some(child) = embed::resolve_child(registry, attr) {
@@ -643,6 +708,7 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
                 relation_exclusive_parent: None,
                 relation_multiple: None,
                 embed_parent: None,
+            ..Default::default()
             }),
             visible_when: None,
             validation: None,
@@ -677,6 +743,7 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
                 relation_exclusive_parent: None,
                 relation_multiple: None,
                 embed_parent: None,
+            ..Default::default()
             }),
             visible_when: Some(VisibleWhen {
                 field: SIGNATURE_STATUS_COLUMN.into(),
@@ -714,6 +781,7 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
                 relation_exclusive_parent: None,
                 relation_multiple: None,
                 embed_parent: None,
+            ..Default::default()
             }),
             visible_when: Some(VisibleWhen {
                 field: SIGNATURE_STATUS_COLUMN.into(),
@@ -751,6 +819,7 @@ pub fn build_screen_config(ent: &EntityDef, registry: &EntityRegistry) -> Screen
                 relation_exclusive_parent: None,
                 relation_multiple: None,
                 embed_parent: None,
+            ..Default::default()
             }),
             visible_when: Some(VisibleWhen {
                 field: SIGNATURE_STATUS_COLUMN.into(),
@@ -912,7 +981,7 @@ mod tests {
             logo: None,
             entities: vec![client, articles, da.clone()],
         };
-        let cfg = build_screen_config(&da, &registry);
+        let cfg = build_screen_config(&da, &registry, std::path::Path::new("."));
         assert!(
             !cfg.fields.iter().any(|f| f.key == "_detail"),
             "le détail relationnel est géré par l'UI, pas une colonne SQLite"

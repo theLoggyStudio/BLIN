@@ -216,7 +216,7 @@
   }
 
   .dashboard-chat-footer-inner {
-    @apply relative z-30 mx-auto flex w-full max-w-2xl flex-col gap-3;
+    @apply relative z-30 mx-auto flex w-full max-w-2xl flex-col gap-2;
   }
 
   .command-bar-wrap {
@@ -505,6 +505,50 @@
 
   .command-bar-input {
     @apply min-w-0 flex-1 bg-transparent px-3 py-2.5 text-base text-foreground outline-none placeholder:text-muted md:px-4 md:py-2 md:text-sm;
+  }
+
+  .command-bar-image {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted transition-colors;
+  }
+
+  .command-bar-image:hover:not(:disabled) {
+    @apply bg-muted/25 text-foreground;
+  }
+
+  .command-bar-image--active {
+    @apply bg-secondary/15 text-secondary;
+  }
+
+  .command-bar-attachment {
+    @apply mb-2 flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2;
+  }
+
+  .command-bar-attachment-thumb {
+    @apply h-10 w-10 shrink-0 rounded-md border border-border object-cover;
+  }
+
+  .command-bar-attachment-name {
+    @apply min-w-0 flex-1 truncate text-xs text-muted;
+  }
+
+  .command-bar-attachment-remove {
+    @apply rounded-full p-1 text-muted hover:bg-muted/30 hover:text-foreground;
+  }
+
+  .command-bar-image-error {
+    @apply mb-2 text-xs text-primary;
+  }
+
+  .chat-code-block-wrap {
+    @apply overflow-hidden rounded-lg border border-border bg-background;
+  }
+
+  .chat-code-block-header {
+    @apply flex items-center justify-between border-b border-border px-3 py-1.5;
+  }
+
+  .chat-code-block {
+    @apply max-h-80 overflow-auto p-3 text-xs leading-relaxed text-foreground;
   }
 
   .command-bar-mic {

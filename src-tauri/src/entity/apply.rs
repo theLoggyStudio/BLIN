@@ -18,6 +18,8 @@ pub fn apply_registry(
     progress: Option<&SyncReporter>,
 ) -> Result<Vec<String>, String> {
     let mut registry = registry::load(data_dir)?;
+    let matricules = super::matricule_registry::load(data_dir).unwrap_or_default();
+    matricules.resolve_unlinked_attrs(&mut registry);
     let stock_changed = super::stock::ensure_stock_module(&mut registry);
     super::tache_visibility::ensure_tache_visibility_in_registry(&mut registry);
     super::validation::ensure_tache_workflow_attrs(&mut registry);
@@ -73,7 +75,7 @@ pub fn apply_registry(
             super::tache_visibility::ensure_visibility_columns(db)?;
             super::validation::ensure_tache_workflow_columns(db)?;
         }
-        let cfg = config::build_screen_config(ent, &registry);
+        let cfg = config::build_screen_config(ent, &registry, data_dir);
         let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
         if let Some(rep) = progress {
             rep.tick(format!("{label} — configuration DDA"), Some(&ent.nom), "config");

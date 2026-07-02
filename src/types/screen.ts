@@ -143,8 +143,8 @@ export interface FieldDef {
     refEntity?: string;
     relationExclusiveParent?: boolean;
     relationMultiple?: boolean;
-    /** Champ dupliqué depuis une entité fille embarquée. */
-    embedParent?: string;
+    /** Base matricule injectée dans le DDA (ex. CMD). */
+    matriculeBase?: string;
   };
   visibleWhen?: { field: string; equals: string | number | boolean };
   validation?: FieldValidation;

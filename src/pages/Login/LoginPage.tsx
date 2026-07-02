@@ -10,6 +10,7 @@ import { Modal } from "@/items/Modal";
 import { QRCodeSVG } from "qrcode.react";
 import { getInvalidCredentialsMessage } from "@/lib/loginMessagesCache";
 import { DEFAULT_ADMIN_EMAIL } from "@/constants/variable.constant";
+import { isIpcConnectionError, isTauriApp, tauriUnavailableMessage } from "@/lib/tauriEnv";
 
 interface RemoteConnectionResponse {
   ip?: string;
@@ -34,17 +35,36 @@ export function LoginPage() {
   const loadScanUrl = useCallback(async () => {
     setScanLoading(true);
     setScanError(null);
+
+    if (!isTauriApp()) {
+      setScanUrl("");
+      setScanError(tauriUnavailableMessage());
+      setScanLoading(false);
+      return;
+    }
+
     try {
-      const data = await invoke<RemoteConnectionResponse>("remote_connection_get");
+      const data = await Promise.race([
+        invoke<RemoteConnectionResponse>("remote_connection_get"),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 8000),
+        ),
+      ]);
       if (data?.success && (data.frontUrl || data.url)) {
         setScanUrl(data.frontUrl || data.url || "");
       } else {
         setScanUrl("");
         setScanError("Impossible d'obtenir l'adresse réseau. Vérifiez votre connexion.");
       }
-    } catch {
+    } catch (err) {
       setScanUrl("");
-      setScanError("Impossible d'obtenir l'adresse réseau du PC.");
+      if (String(err).includes("timeout")) {
+        setScanError("Délai dépassé — réessayez ou vérifiez votre réseau Wi‑Fi.");
+      } else if (isIpcConnectionError(err)) {
+        setScanError(tauriUnavailableMessage());
+      } else {
+        setScanError("Impossible d'obtenir l'adresse réseau du PC.");
+      }
     } finally {
       setScanLoading(false);
     }
@@ -178,7 +198,7 @@ export function LoginPage() {
             <Alert variant="danger" size="box" centered className="text-xs" message={scanError} />
           )}
           <p className="text-xs text-muted text-center">
-            Utilisez l&apos;adresse IP locale du PC (même réseau Wi‑Fi). Le jeton QR expire après 15 minutes.
+            Scannez le QR code pour ouvrir le tableau de bord mobile (même réseau Wi‑Fi). Jeton valide 15 minutes.
           </p>
           <div className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted break-all">
             {scanUrl || "—"}

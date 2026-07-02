@@ -27,6 +27,11 @@ pub struct ChangePasswordRequest {
     pub confirm_password: String,
 }
 
+#[derive(Deserialize)]
+pub struct VerifyPasswordRequest {
+    pub password: String,
+}
+
 fn session_user_from_auth(
     id: String,
     nom: String,
@@ -62,16 +67,49 @@ fn cached_login_messages(state: &AppState) -> LoginMessagesPayload {
 }
 
 /// Prépare en arrière-plan la salutation et le message d'identifiants invalides (Loggy).
+/// Réponse immédiate (fallbacks) — personnification IA en thread si llama disponible.
 #[tauri::command]
 pub fn auth_prepare_login_messages(state: State<'_, AppState>) -> Result<LoginMessagesPayload, String> {
-    let db = state.db.lock();
-    let prepared = login_messages::prepare(&db);
-    drop(db);
-    *state.login_messages.lock() = prepared.clone();
+    {
+        let cache = state.login_messages.lock();
+        if cache.prepared {
+            return Ok(LoginMessagesPayload {
+                greeting: cache.greeting.clone(),
+                invalid_credentials: cache.invalid_credentials.clone(),
+                prepared: true,
+            });
+        }
+    }
+
+    let fast = {
+        let db = state.db.lock();
+        login_messages::prepare_fast(&db)
+    };
+
+    if !fast.prepared {
+        let db_arc = state.db.clone();
+        let cache_arc = state.login_messages.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            loop {
+                if let Some(db) = db_arc.try_lock() {
+                    let prepared = login_messages::prepare(&db);
+                    if prepared.prepared {
+                        *cache_arc.lock() = prepared;
+                    }
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
+        });
+    } else {
+        *state.login_messages.lock() = fast.clone();
+    }
+
     Ok(LoginMessagesPayload {
-        greeting: prepared.greeting,
-        invalid_credentials: prepared.invalid_credentials,
-        prepared: prepared.prepared,
+        greeting: fast.greeting,
+        invalid_credentials: fast.invalid_credentials,
+        prepared: fast.prepared,
     })
 }
 
@@ -79,6 +117,14 @@ pub fn auth_prepare_login_messages(state: State<'_, AppState>) -> Result<LoginMe
 #[tauri::command]
 pub fn auth_get_login_messages(state: State<'_, AppState>) -> Result<LoginMessagesPayload, String> {
     Ok(cached_login_messages(&state))
+}
+
+/// État de la synchronisation lourde au démarrage (DDA + registre + RAG).
+#[tauri::command]
+pub fn app_startup_sync_status(
+    state: State<'_, AppState>,
+) -> Result<crate::startup_sync::StartupSyncStatusPayload, String> {
+    Ok(state.startup_sync.lock().to_payload())
 }
 
 #[tauri::command]
@@ -140,6 +186,18 @@ pub fn auth_login(
     })
 }
 
+/// Ré-authentification (dépliage d'un panneau Paramètres).
+#[tauri::command]
+pub fn auth_verify_password(
+    state: State<'_, AppState>,
+    payload: VerifyPasswordRequest,
+) -> Result<(), String> {
+    let session = state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    db.verify_user_password(&session.user.id, &payload.password)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn auth_change_password(
     state: State<'_, AppState>,
@@ -197,6 +255,7 @@ pub fn auth_current_user(state: State<'_, AppState>) -> Result<SessionUser, Stri
             user: user.clone(),
         });
     }
+
     Ok(user)
 }
 

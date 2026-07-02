@@ -198,11 +198,16 @@ pub fn list_rows_with_options(
     }
 
     let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
+    let mut rows = stmt
         .query_map(rusqlite::params_from_iter(sql_params.iter()), row_to_json_map)
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
+    if let Some(ent) = registry.find(&cfg.screen.key) {
+        for row in rows.iter_mut() {
+            crate::entity::compteur::hydrate_matricule_display(row, ent);
+        }
+    }
     Ok(rows)
 }
 
@@ -239,6 +244,11 @@ pub fn get_row_with_options(
     }
     hydrate_embed_lists(db, cfg, &mut row)?;
     crate::entity::parent_lignes::hydrate_form_lines(&mut row, cfg);
+    if let Ok(registry) = crate::entity::registry::load(&db.data_dir) {
+        if let Some(ent) = registry.find(&cfg.screen.key) {
+            crate::entity::compteur::hydrate_matricule_display(&mut row, ent);
+        }
+    }
     Ok(row)
 }
 
@@ -352,6 +362,12 @@ pub fn create_row_with_user_and_options(
         return Err(validation_error_json(&report));
     }
     let embed_lists = extract_embed_lists(&mut data, cfg, &registry);
+    crate::entity::relation_impact::validate_embed_impact_quantities(
+        db,
+        &db.data_dir,
+        &cfg.screen.key,
+        &embed_lists,
+    )?;
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let table = &cfg.screen.table;
@@ -513,6 +529,12 @@ pub fn update_row_with_options(
         return Err(validation_error_json(&report));
     }
     let embed_lists = extract_embed_lists(&mut data, cfg, &registry);
+    crate::entity::relation_impact::validate_embed_impact_quantities(
+        db,
+        &db.data_dir,
+        &cfg.screen.key,
+        &embed_lists,
+    )?;
     let table = &cfg.screen.table;
     let pk = &cfg.screen.primary_key;
     let mut sets = Vec::new();

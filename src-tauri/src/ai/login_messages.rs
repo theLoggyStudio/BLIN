@@ -1,8 +1,5 @@
 //! Messages de connexion pré-personnifiés au démarrage (salutation + identifiants invalides).
 
-use std::thread;
-use std::time::Duration;
-
 use crate::ai::alert_personify::personify_alert;
 use crate::ai::greetings;
 use crate::ai::llama_server::LlamaServer;
@@ -18,20 +15,28 @@ pub struct PreparedLoginMessages {
     pub prepared: bool,
 }
 
-fn wait_for_llama(db: &Database, max_ms: u64) {
-    let steps = max_ms / 250;
-    for _ in 0..steps {
-        if LlamaServer::model_ready() {
-            let _ = LlamaServer::prepare(db, false);
-            return;
-        }
-        thread::sleep(Duration::from_millis(250));
+/// Retour immédiat sans attendre llama-server (évite de bloquer l'écran de connexion).
+pub fn prepare_fast(db: &Database) -> PreparedLoginMessages {
+    let app_name = crate::entity::branding::ecosystem_name(&db.data_dir);
+    if !LlamaServer::model_ready() {
+        return PreparedLoginMessages {
+            greeting: fallback_greeting(&app_name),
+            invalid_credentials: fallback_invalid(),
+            prepared: false,
+        };
     }
+    prepare_with_llama(db)
 }
 
 /// Prépare les messages Loggy pour la page de connexion (salutation sans nom + erreur identifiants).
 pub fn prepare(db: &Database) -> PreparedLoginMessages {
-    wait_for_llama(db, 45_000);
+    if !LlamaServer::model_ready() {
+        return prepare_fast(db);
+    }
+    prepare_with_llama(db)
+}
+
+fn prepare_with_llama(db: &Database) -> PreparedLoginMessages {
     let app_name = crate::entity::branding::ecosystem_name(&db.data_dir);
     let raw_greeting = greetings::format_login_greeting("", &app_name);
     let greeting = personify_alert(db, &raw_greeting, "success");
@@ -75,7 +80,7 @@ pub fn inject_user_name_into_greeting(prepared: &str, user_name: &str) -> String
     format!("{name}, {prepared}")
 }
 
-fn fallback_greeting(app_name: &str) -> String {
+pub fn fallback_greeting(app_name: &str) -> String {
     let t = greetings::format_login_greeting("", app_name);
     t.strip_prefix("Connexion — ")
         .unwrap_or(&t)

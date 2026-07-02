@@ -20,6 +20,7 @@ import { FieldReadOnlyValue } from "@/engine/FieldReadOnlyValue";
 import { defaultStorageFolder, mediaEntityId } from "./mediaUtils";
 import { isFieldVisible } from "./screenUtils";
 import { toDateInputValue, toDatetimeLocalValue, toTimeInputValue } from "@/lib/dateInputValues";
+import { MatriculeField } from "@/items/MatriculeField";
 import { cn } from "@/lib/utils";
 
 interface FieldRendererProps {
@@ -38,6 +39,8 @@ interface FieldRendererProps {
   storageFolders?: string[];
   /** Pour les liaisons entity_ref : exclure l'enregistrement en cours de la règle d'exclusivité parent. */
   excludeRecordId?: string;
+  /** ID de l'enregistrement en cours (formulaire edit) — verrouillage quantité impact. */
+  recordId?: string;
   /** Tous les champs de l'écran (groupes embarqués). */
   allFields?: FieldDef[];
   fieldErrorsMap?: Record<string, ValidationIssue>;
@@ -256,6 +259,7 @@ export function FieldRenderer({
   uploadDraftId,
   storageFolders,
   excludeRecordId,
+  recordId,
   allFields = [],
   fieldErrorsMap,
   fieldWarningsMap,
@@ -345,6 +349,7 @@ export function FieldRenderer({
         displayOnly={displayOnly}
         screenKey={screenKey}
         excludeRecordId={excludeRecordId}
+        recordId={recordId}
         fieldError={fieldError}
         onChange={onChange}
         onBlur={onBlur}
@@ -422,6 +427,18 @@ export function FieldRenderer({
         accept={field.form?.accept}
         fieldError={fieldError}
         fieldWarning={fieldWarning}
+      />,
+    );
+  }
+
+  if (field.type === "matricule") {
+    return wrap(
+      <MatriculeField
+        field={field}
+        values={values}
+        screenKey={screenKey}
+        hint={fieldHint ?? field.form?.placeholder}
+        onBatchChange={onBatchChange}
       />,
     );
   }

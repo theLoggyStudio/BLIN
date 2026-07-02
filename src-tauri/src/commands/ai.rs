@@ -1,10 +1,13 @@
 use serde::Serialize;
-use tauri::State;
+use std::path::PathBuf;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::ai::agent::Agent;
 use crate::ai::store::{AiConversationSummary, AiMessageRow};
 use crate::ai::config::{default_model_path, MODEL_DISPLAY_NAME};
 use crate::ai::hardware_profile;
+use crate::ai::runtime_config;
+use crate::ai::runtime_install::{self, AiInstallProgress};
 use crate::ai::tools::{execute_pending, ToolResult};
 use crate::ai::web_search::{self, WebSearchConfig};
 use crate::ai::{ChatReply, LlamaServer};
@@ -17,6 +20,7 @@ pub struct AiStatus {
     pub model_present: bool,
     pub model_name: String,
     pub model_path: String,
+    pub install_dir: Option<String>,
     pub server_healthy: bool,
     pub gpu_enabled: bool,
     pub backend: String,
@@ -29,6 +33,8 @@ pub struct AiStatus {
     pub web_search_enabled: bool,
     pub experience_entries: i64,
     pub db_dir: String,
+    pub db_path: String,
+    pub db_paths: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -84,6 +90,8 @@ pub fn ai_status(state: State<'_, AppState>) -> Result<AiStatus, String> {
         model_present: LlamaServer::model_ready(),
         model_name: MODEL_DISPLAY_NAME.to_string(),
         model_path: default_model_path().to_string_lossy().to_string(),
+        install_dir: runtime_config::configured_install_dir(&db.data_dir)
+            .map(|p| p.to_string_lossy().to_string()),
         server_healthy: healthy,
         gpu_enabled: LlamaServer::using_gpu(Some(&db)),
         backend,
@@ -96,7 +104,72 @@ pub fn ai_status(state: State<'_, AppState>) -> Result<AiStatus, String> {
         web_search_enabled: web_cfg.enabled,
         experience_entries: db.ai_experience_count().unwrap_or(0),
         db_dir: db.data_dir.to_string_lossy().to_string(),
+        db_path: db.main_db_path().to_string_lossy().to_string(),
+        db_paths: db.list_sqlite_file_paths(),
     })
+}
+
+#[derive(Serialize)]
+pub struct AiRuntimeStatus {
+    pub ready: bool,
+    pub configured: bool,
+    pub install_dir: Option<String>,
+    pub default_install_dir: String,
+    pub model_path: String,
+    pub llama_bin: bool,
+    pub model_present: bool,
+}
+
+#[derive(serde::Deserialize)]
+pub struct AiRuntimeInstallPayload {
+    pub install_dir: String,
+}
+
+/// Statut installation Loggy (accessible avant connexion).
+#[tauri::command]
+pub fn ai_runtime_status(state: State<'_, AppState>) -> Result<AiRuntimeStatus, String> {
+    let db = state.db.lock();
+    runtime_config::refresh_from_data_dir(&db.data_dir);
+    Ok(AiRuntimeStatus {
+        ready: runtime_config::runtime_ready(),
+        configured: runtime_config::configured_install_dir(&db.data_dir).is_some(),
+        install_dir: runtime_config::configured_install_dir(&db.data_dir)
+            .map(|p| p.to_string_lossy().to_string()),
+        default_install_dir: runtime_config::default_install_dir().to_string_lossy().to_string(),
+        model_path: default_model_path().to_string_lossy().to_string(),
+        llama_bin: LlamaServer::bin_ready(),
+        model_present: LlamaServer::model_ready(),
+    })
+}
+
+/// Télécharge llama-server + modèle GGUF dans le dossier choisi (événements Tauri).
+#[tauri::command]
+pub fn ai_runtime_install(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    payload: AiRuntimeInstallPayload,
+) -> Result<(), String> {
+    let install_dir = PathBuf::from(payload.install_dir.trim());
+    if install_dir.as_os_str().is_empty() {
+        return Err("Choisissez un dossier d'installation.".into());
+    }
+    let db_arc = state.db.clone();
+    std::thread::spawn(move || {
+        let db = db_arc.lock();
+        let app_handle = app.clone();
+        let progress = Box::new(move |p: AiInstallProgress| {
+            let _ = app_handle.emit("ai-install-progress", p);
+        });
+        match runtime_install::install_to(&db, &install_dir, progress) {
+            Ok(()) => {
+                let _ = app.emit("ai-install-done", ());
+            }
+            Err(e) => {
+                let _ = app.emit("ai-install-error", e);
+            }
+        }
+    });
+    Ok(())
 }
 
 #[derive(serde::Deserialize)]
@@ -136,6 +209,145 @@ pub fn ai_web_search_set_config(
     web_search::save_config(&db.data_dir, &cfg)?;
     Ok(AiWebSearchConfigResponse {
         enabled: cfg.enabled,
+    })
+}
+
+#[derive(serde::Deserialize)]
+pub struct AiVisionConfigPayload {
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Rétrocompatibilité.
+    #[serde(default)]
+    pub gemini_api_key: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+#[tauri::command]
+pub fn ai_vision_get_config(
+    state: State<'_, AppState>,
+) -> Result<crate::ai::vision::VisionConfigPublic, String> {
+    state
+        .desktop_sessions
+        .require_privilege("parametres:assistant")?;
+    let db = state.db.lock();
+    Ok(crate::ai::vision::public_config(&db.data_dir))
+}
+
+#[tauri::command]
+pub fn ai_vision_set_config(
+    state: State<'_, AppState>,
+    payload: AiVisionConfigPayload,
+) -> Result<crate::ai::vision::VisionConfigPublic, String> {
+    state
+        .desktop_sessions
+        .require_privilege("parametres:assistant")?;
+    let db = state.db.lock();
+    let mut cfg = crate::ai::vision::load_config(&db.data_dir);
+    let key = payload
+        .api_key
+        .as_deref()
+        .or(payload.gemini_api_key.as_deref());
+    crate::ai::vision::apply_config_patch(
+        &mut cfg,
+        payload.provider.as_deref(),
+        key,
+        payload.model.as_deref(),
+    );
+    crate::ai::vision::save_config(&db.data_dir, &cfg)?;
+    Ok(crate::ai::vision::public_config(&db.data_dir))
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct AiVisionAttributeHint {
+    pub nom: String,
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct AiVisionEntityOptions {
+    #[serde(default)]
+    pub requires_signature: bool,
+    #[serde(default)]
+    pub ai_suggestions: bool,
+    #[serde(default)]
+    pub signatory_role_ids: Vec<String>,
+    #[serde(default)]
+    pub attribute_hints: Vec<AiVisionAttributeHint>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct AiVisionAnalyzeRequest {
+    pub message: String,
+    pub image_base64: String,
+    pub conversation_id: Option<String>,
+    #[serde(default)]
+    pub entity_options: Option<AiVisionEntityOptions>,
+}
+
+#[tauri::command]
+pub fn ai_vision_analyze(
+    state: State<'_, AppState>,
+    payload: AiVisionAnalyzeRequest,
+) -> Result<ChatReply, String> {
+    use uuid::Uuid;
+
+    let session = state.desktop_sessions.require_session()?;
+    if payload.image_base64.trim().is_empty() {
+        return Err("Image manquante.".into());
+    }
+    let db = state.db.lock();
+    let conv_id = payload
+        .conversation_id
+        .as_deref()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    if payload.conversation_id.is_none() {
+        let title = "Analyse image".to_string();
+        db.ai_create_conversation(&conv_id, &session.user.id, &title)
+            .map_err(|e| e.to_string())?;
+    }
+    let user_line = if payload.message.trim().is_empty() {
+        "[Image jointe — analyse vision]".to_string()
+    } else {
+        format!("{} [Image jointe]", payload.message.trim())
+    };
+    db.ai_add_message(&conv_id, "user", &user_line)
+        .map_err(|e| e.to_string())?;
+
+    let vision_opts = payload.entity_options.map(|o| crate::ai::vision::VisionEntityOptions {
+        requires_signature: o.requires_signature,
+        ai_suggestions: o.ai_suggestions,
+        signatory_role_ids: o.signatory_role_ids,
+        attribute_hints: o
+            .attribute_hints
+            .into_iter()
+            .map(|h| crate::ai::vision::VisionAttributeHint {
+                nom: h.nom,
+                required: h.required,
+            })
+            .collect(),
+    });
+
+    let msg = crate::ai::vision::analyze_image(
+        &db.data_dir,
+        &payload.message,
+        &payload.image_base64,
+        vision_opts,
+    )?;
+    db.ai_add_message(&conv_id, "assistant", &msg)
+        .map_err(|e| e.to_string())?;
+    Ok(ChatReply {
+        conversation_id: conv_id,
+        message: msg,
+        tool_results: vec![],
+        display_blocks: vec![],
+        cols_request: None,
+        open_entity_create: None,
+        open_registry_entity_create: None,
     })
 }
 
@@ -482,7 +694,7 @@ pub struct AiConversationIdPayload {
 
 #[tauri::command]
 pub fn ai_list_conversations(state: State<'_, AppState>) -> Result<Vec<AiConversationSummary>, String> {
-    let session = state.desktop_sessions.require_privilege("ai:utiliser")?;
+    let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
     db.ai_list_conversations(&session.user.id)
         .map_err(|e| e.to_string())
@@ -493,7 +705,7 @@ pub fn ai_conversation_messages(
     state: State<'_, AppState>,
     payload: AiConversationIdPayload,
 ) -> Result<Vec<AiMessageRow>, String> {
-    let session = state.desktop_sessions.require_privilege("ai:utiliser")?;
+    let session = state.desktop_sessions.require_session()?;
     let db = state.db.lock();
     if !db
         .ai_conversation_owned_by(&payload.conversation_id, &session.user.id)
@@ -563,13 +775,13 @@ pub fn ai_start_server(state: State<'_, AppState>) -> Result<String, String> {
     let db = state.db.lock();
     if !LlamaServer::bin_ready() {
         return Err(
-            "Binaire llama-server introuvable. Vérifiez le dossier llama-b8184-bin-win-cpu-x64 à la racine du projet."
+            "Binaire llama-server introuvable. Installez Loggy via Parametres ou l'assistant au premier lancement."
                 .into(),
         );
     }
     if !LlamaServer::model_ready() {
         return Err(format!(
-            "Modèle GGUF absent : {}. Lancez npm run llm:install ou copiez le fichier manuellement.",
+            "Modele GGUF absent : {}. Lancez l'installation Loggy (choix du dossier IA).",
             default_model_path().display()
         ));
     }

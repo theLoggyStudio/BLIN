@@ -151,6 +151,8 @@ fn default_entity_def(nom: &str) -> EntityDef {
                 relation_impact_target: None,
                 relation_impact_action: None,
                 relation_impact_defer: false,
+                stock_alert_threshold: None,
+                matricule_ref: None,
             },
             EntityAttribute {
                 nom: "libelle".into(),
@@ -166,6 +168,8 @@ fn default_entity_def(nom: &str) -> EntityDef {
                 relation_impact_target: None,
                 relation_impact_action: None,
                 relation_impact_defer: false,
+                stock_alert_threshold: None,
+                matricule_ref: None,
             },
         ],
     }

@@ -10,6 +10,7 @@ import { Select } from "@/items/Select";
 import { Table, type Column } from "@/items/Table";
 import { Text } from "@/items/Text";
 import { Textarea } from "@/items/Textarea";
+import { MatriculeDefPicker } from "@/items/MatriculeDefPicker";
 import { EntityRegistryPromptButton } from "@/items/EntityRegistryPromptButton";
 import { SyncProgressBar } from "@/items/SyncProgressBar";
 import type { EntitySyncProgress } from "@/types/syncProgress";
@@ -22,6 +23,15 @@ import type {
 import type { RoleRow } from "@/types/users";
 import { useAlert } from "@/contexts/AlertContext";
 import { isOrphanEntityKey } from "@/lib/orphanEntities";
+import {
+  applyLabelsFromNoms,
+  findDuplicateAttributeNom,
+  labelFromNom,
+} from "@/lib/entityDefForm";
+import {
+  localNumericImpactPaths,
+  nestedNumericImpactPaths,
+} from "@/lib/entityImpactPaths";
 
 const ATTR_TYPES: { value: string; label: string }[] = [
   { value: "boolean", label: "Booléen" },
@@ -33,7 +43,7 @@ const ATTR_TYPES: { value: string; label: string }[] = [
   { value: "enum", label: "Liste (enum — options ci-dessous)" },
   { value: "float", label: "Décimal (float)" },
   { value: "integer", label: "Entier (integer)" },
-  { value: "matricule", label: "Matricule (manuel + date + n° quotidien)" },
+  { value: "matricule", label: "Matricule (base + date + n° auto)" },
   { value: "number", label: "Nombre (number)" },
   { value: "photo", label: "Photo (fichier image)" },
   { value: "stock", label: "Quantité (stock)" },
@@ -47,7 +57,6 @@ const EXAMPLE_JSON =
 function emptyEntity(): EntityDef {
   return {
     nom: "",
-    label: "",
     description: "",
     ai_suggestions: true,
     requires_signature: false,
@@ -61,7 +70,6 @@ function emptyAttr(): EntityAttribute {
   return {
     nom: "",
     type: "string",
-    label: "",
     required: false,
     relation_multiple: false,
     relation_exclusive_parent: true,
@@ -69,27 +77,24 @@ function emptyAttr(): EntityAttribute {
   };
 }
 
-const NUMERIC_IMPACT_TYPES = new Set([
-  "stock",
-  "number",
-  "integer",
-  "float",
-  "compteur",
-  "matricule",
-]);
-
-function isNumericImpactType(type: string): boolean {
-  return NUMERIC_IMPACT_TYPES.has(type);
+function impactSourcePathOptions(
+  registry: EntityRegistry,
+  ownerEntity: EntityDef,
+  linkRef: string | undefined,
+): { value: string; label: string }[] {
+  const refEnt = registry.entities.find((e) => e.nom === linkRef?.trim());
+  return [
+    ...localNumericImpactPaths(ownerEntity),
+    ...nestedNumericImpactPaths(registry, refEnt),
+  ];
 }
 
-function numericFieldsForEntity(ent: EntityDef | undefined): { value: string; label: string }[] {
-  if (!ent) return [];
-  return ent.attributs
-    .filter((a) => isNumericImpactType(String(a.type)))
-    .map((a) => ({
-      value: a.nom,
-      label: a.label?.trim() ? `${a.label} (${a.nom})` : a.nom,
-    }));
+function impactTargetPathOptions(
+  registry: EntityRegistry,
+  linkRef: string | undefined,
+): { value: string; label: string }[] {
+  const refEnt = registry.entities.find((e) => e.nom === linkRef?.trim());
+  return nestedNumericImpactPaths(registry, refEnt);
 }
 
 function withRegistryMeta(
@@ -284,11 +289,25 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
         );
         return;
       }
+      if (attr.type === "stock") {
+        const threshold = Number(attr.stock_alert_threshold);
+        if (!Number.isFinite(threshold) || threshold <= 0) {
+          showWarning(
+            `L'attribut « ${attr.nom || "?"} » (stock) requiert une quantité alarmante strictement positive.`,
+          );
+          return;
+        }
+      }
     }
-    const nom = entityModal.nom.trim().toLowerCase().replace(/\s+/g, "_");
-    const draftEnt: EntityDef = {
-      nom,
-      label: entityModal.label?.trim() || entityModal.nom.trim(),
+    const dupAttr = findDuplicateAttributeNom(entityModal.attributs);
+    if (dupAttr) {
+      showWarning(
+        `Le nom d'attribut « ${dupAttr} » est utilisé plusieurs fois dans cette entité. Chaque attribut doit avoir un nom unique.`,
+      );
+      return;
+    }
+    const draftEnt = applyLabelsFromNoms({
+      ...entityModal,
       description: entityModal.description?.trim() || undefined,
       ai_suggestions: Boolean(entityModal.ai_suggestions),
       requires_signature: Boolean(entityModal.requires_signature),
@@ -296,34 +315,39 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
         ? [...(entityModal.signatory_role_ids ?? [])]
         : [],
       is_session: true,
-      attributs: entityModal.attributs
-        .filter((a) => a.nom.trim())
-        .map((a) => ({
-          ...a,
-          nom: a.nom.trim().toLowerCase().replace(/\s+/g, "_"),
-          required: Boolean(a.required),
-          relation_multiple: a.type === "entity" ? Boolean(a.relation_multiple) : undefined,
-          ref:
-            a.type === "entity"
-              ? (a.ref?.trim().toLowerCase().replace(/\s+/g, "_") ?? undefined)
-              : undefined,
-          relation_exclusive_parent: a.type === "entity" ? true : undefined,
-          relation_impact_source:
-            a.type === "entity" && a.relation_impact_source?.trim()
-              ? a.relation_impact_source.trim()
-              : undefined,
-          relation_impact_target:
-            a.type === "entity" && a.relation_impact_target?.trim()
-              ? a.relation_impact_target.trim()
-              : undefined,
-          relation_impact_action:
-            a.type === "entity" && a.relation_impact_action
-              ? a.relation_impact_action
-              : undefined,
-          relation_impact_defer:
-            a.type === "entity" ? Boolean(a.relation_impact_defer) : undefined,
-        })),
-    };
+      attributs: entityModal.attributs.map((a) => ({
+        ...a,
+        required: Boolean(a.required),
+        relation_multiple: a.type === "entity" ? Boolean(a.relation_multiple) : undefined,
+        ref:
+          a.type === "entity"
+            ? (a.ref?.trim().toLowerCase().replace(/\s+/g, "_") ?? undefined)
+            : undefined,
+        relation_exclusive_parent: a.type === "entity" ? true : undefined,
+        relation_impact_source:
+          a.type === "entity" && a.relation_impact_source?.trim()
+            ? a.relation_impact_source.trim()
+            : undefined,
+        relation_impact_target:
+          a.type === "entity" && a.relation_impact_target?.trim()
+            ? a.relation_impact_target.trim()
+            : undefined,
+        relation_impact_action:
+          a.type === "entity" && a.relation_impact_action
+            ? a.relation_impact_action
+            : undefined,
+        relation_impact_defer:
+          a.type === "entity" ? Boolean(a.relation_impact_defer) : undefined,
+        matricule_ref:
+          a.type === "matricule" && a.matricule_ref?.trim()
+            ? a.matricule_ref.trim()
+            : undefined,
+        stock_alert_threshold:
+          a.type === "stock" && a.stock_alert_threshold != null
+            ? Number(a.stock_alert_threshold)
+            : undefined,
+      })),
+    });
     const ent: EntityDef = { ...draftEnt };
     const next = withRegistryMeta(registry, { entities: [...registry.entities] });
     if (entityIndex === null) {
@@ -345,7 +369,7 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
 
   const columns: Column<EntityDef & { _index: number }>[] = [
     { key: "nom", header: "Nom (clé)", render: (r) => r.nom },
-    { key: "label", header: "Libellé", render: (r) => r.label ?? r.nom },
+    { key: "label", header: "Libellé", render: (r) => r.label ?? labelFromNom(r.nom) },
     {
       key: "attributs",
       header: "Attributs",
@@ -495,12 +519,7 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
               label="Nom (clé technique)"
               value={entityModal.nom}
               onChange={(e) => setEntityModal({ ...entityModal, nom: e.target.value })}
-              hint="ex. users, clients, tache"
-            />
-            <Input
-              label="Libellé affiché"
-              value={entityModal.label ?? ""}
-              onChange={(e) => setEntityModal({ ...entityModal, label: e.target.value })}
+              hint="ex. users, clients, tache — le libellé affiché est généré automatiquement"
             />
             <Textarea
               label="Description"
@@ -551,8 +570,8 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                 <Text variant="label">Rôles signataires</Text>
                 <Text variant="muted" className="text-xs">
                   Trigger automatique : à chaque création d&apos;un objet, une tâche « signature »
-                  privée est générée pour chaque rôle sélectionné (entité Tâche requise). Un seul
-                  signataire agréé suffit pour signer l&apos;objet.
+                  privée est générée pour chaque rôle sélectionné (entité Tâche requise). Tous les
+                  rôles cochés doivent signer avant utilisation en liaison et impacts stock.
                 </Text>
                 {roles.length === 0 ? (
                   <p className="text-sm text-muted">Aucun rôle — créez des rôles dans Paramètres.</p>
@@ -611,6 +630,7 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                     attributs[idx] = { ...attr, nom: e.target.value };
                     setEntityModal({ ...entityModal, attributs });
                   }}
+                  hint="Unique dans l'entité — libellé généré automatiquement"
                 />
                 <Select
                   label="Type"
@@ -627,6 +647,9 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                       relation_exclusive_parent:
                         type === "entity" ? true : undefined,
                       enum_options: type === "enum" ? attr.enum_options ?? [] : undefined,
+                      matricule_ref: type === "matricule" ? attr.matricule_ref : undefined,
+                      stock_alert_threshold:
+                        type === "stock" ? attr.stock_alert_threshold : undefined,
                     };
                     setEntityModal({ ...entityModal, attributs });
                   }}
@@ -649,6 +672,49 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                       setEntityModal({ ...entityModal, attributs });
                     }}
                     hint="ex. lundi,mardi,mercredi"
+                  />
+                )}
+                {attr.type === "matricule" && (
+                  <MatriculeDefPicker
+                    value={attr.matricule_ref}
+                    onChange={(matriculeRef) => {
+                      const attributs = [...entityModal.attributs];
+                      attributs[idx] = { ...attr, matricule_ref: matriculeRef };
+                      setEntityModal({ ...entityModal, attributs });
+                    }}
+                  />
+                )}
+                {attr.type === "stock" && (
+                  <Input
+                    type="number"
+                    label="Quantité alarmante"
+                    required
+                    min={1}
+                    step={1}
+                    value={
+                      attr.stock_alert_threshold != null
+                        ? String(attr.stock_alert_threshold)
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const attributs = [...entityModal.attributs];
+                      const raw = e.target.value.trim();
+                      attributs[idx] = {
+                        ...attr,
+                        stock_alert_threshold:
+                          raw === "" ? undefined : Number(raw.replace(",", ".")),
+                      };
+                      setEntityModal({ ...entityModal, attributs });
+                    }}
+                    hint="Obligatoire — une tâche vous prévient lorsque le stock descend à ce seuil ou en dessous."
+                    error={
+                      entityValidationAttempted &&
+                      (attr.stock_alert_threshold == null ||
+                        !Number.isFinite(Number(attr.stock_alert_threshold)) ||
+                        Number(attr.stock_alert_threshold) <= 0)
+                        ? "Saisissez une quantité alarmante > 0."
+                        : undefined
+                    }
                   />
                 )}
                 {attr.type === "entity" && (
@@ -686,19 +752,11 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                             }}
                             options={[
                               { value: "", label: "— Aucun impact —" },
-                              ...numericFieldsForEntity(entityModal),
-                              ...(attr.relation_multiple
-                                ? numericFieldsForEntity(
-                                    registry.entities.find((e) => e.nom === attr.ref?.trim()),
-                                  ).map((o) => ({
-                                    value: o.value,
-                                    label: `${o.label} (ligne fille)`,
-                                  }))
-                                : []),
+                              ...impactSourcePathOptions(registry, entityModal, attr.ref),
                             ]}
                           />
                           <Select
-                            label="Champ cible (entité fille)"
+                            label="Champ cible (entité liée)"
                             value={attr.relation_impact_target ?? ""}
                             onChange={(e) => {
                               const attributs = [...entityModal.attributs];
@@ -710,9 +768,7 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                             }}
                             options={[
                               { value: "", label: "— Choisir —" },
-                              ...numericFieldsForEntity(
-                                registry.entities.find((e) => e.nom === attr.ref?.trim()),
-                              ),
+                              ...impactTargetPathOptions(registry, attr.ref),
                             ]}
                           />
                           <Select
@@ -797,15 +853,6 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                   </div>
                 )}
                 <Input
-                  label="Libellé"
-                  value={attr.label ?? ""}
-                  onChange={(e) => {
-                    const attributs = [...entityModal.attributs];
-                    attributs[idx] = { ...attr, label: e.target.value };
-                    setEntityModal({ ...entityModal, attributs });
-                  }}
-                />
-                <Input
                   label="Valeur par défaut"
                   value={attr.default != null ? String(attr.default) : ""}
                   onChange={(e) => {
@@ -840,7 +887,7 @@ export function EntityPanel({ onSaved }: EntityPanelProps) {
                 {(attr.type === "compteur" || attr.type === "matricule") && (
                   <p className="text-xs text-muted sm:col-span-2">
                     {attr.type === "matricule"
-                      ? "Matricule : saisie manuelle + date du jour (jjmmaaaa) + numéro quotidien auto."
+                      ? "Matricule : choisissez une définition (base + libellé). À la création, un numéro unique est généré : base + date (jjmmaaaa) + compteur."
                       : "Compteur : libellé, date du jour (jjmmaaaa) et numéro générés automatiquement à la création (champs visibles en lecture seule)."}
                   </p>
                 )}

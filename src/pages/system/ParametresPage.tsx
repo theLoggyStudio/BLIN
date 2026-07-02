@@ -12,6 +12,7 @@ import {
   type ParametresPanelsState,
 } from "@/lib/parametresPanels";
 import { usePrivilege } from "@/hooks/usePrivilege";
+import { useParametresPanelUnlock } from "@/hooks/useParametresPanelUnlock";
 import {
   privilegeForParametresPanel,
 } from "@/lib/parametresPrivileges";
@@ -19,15 +20,19 @@ import { RolesPanel } from "@/items/RolesPanel";
 import { UsersPanel } from "@/items/UsersPanel";
 import { ImportExportPanel } from "@/items/ImportExportPanel";
 import { EntityPanel } from "@/items/EntityPanel";
+import { RegistryArchivePanel } from "@/items/RegistryArchivePanel";
 import { PrintModelsPanel } from "@/items/PrintModelsPanel";
 import { ThemePanel } from "@/items/ThemePanel";
 import { useAuth } from "@/hooks/useAuth";
 import { useEntityBranding } from "@/hooks/useEntityBranding";
 import { PersonnalisationIaPanel } from "@/items/PersonnalisationIaPanel";
+import { ParametresPasswordModal } from "@/items/ParametresPasswordModal";
 import { Button } from "@/items/Button";
 import { CollapsiblePanel } from "@/items/CollapsiblePanel";
+import { Input } from "@/items/Input";
+import { Select } from "@/items/Select";
 import { Text } from "@/items/Text";
-import type { AiStatus, AiWebSearchConfig } from "@/types/ai";
+import type { AiStatus, AiVisionConfigPublic, AiWebSearchConfig } from "@/types/ai";
 
 function llamaServerStatus(status: AiStatus): { value: string; ok?: boolean } {
   if (!status.model_present) {
@@ -64,6 +69,13 @@ function StatusLine({ label, value, ok }: { label: string; value: string; ok?: b
   );
 }
 
+function resolveSqliteFilePaths(status: AiStatus): string[] {
+  if (status.db_paths?.length) return status.db_paths;
+  if (status.db_path) return [status.db_path];
+  const dir = status.db_dir.replace(/[/\\]+$/, "");
+  return [`${dir}\\blin-gestion.sqlite`];
+}
+
 /** Écran système — compte, runtime Loggy et maintenance DDA. */
 import { ENTITY_REGISTRY_SYNCED_EVENT } from "@/constants/events";
 
@@ -71,32 +83,48 @@ export function ParametresPage() {
   const { title } = useEntityBranding();
   const { user, syncSessionPrivileges } = useAuth();
   const canParamAssistant = usePrivilege("parametres:assistant");
+  const canParamPersonnalisation = usePrivilege("parametres:personnalisation_ia");
   const canParamCompte = usePrivilege("parametres:compte");
   const canParamTheme = usePrivilege("parametres:theme");
   const canParamImpression = usePrivilege("parametres:impression");
   const canParamEntites = usePrivilege("parametres:entites");
   const canParamEntitesCreer = usePrivilege("parametres:entites:creer");
+  const canParamArchives = usePrivilege("parametres:archives");
+  const canParamImportsExports = usePrivilege("parametres:imports_exports");
   const canParamRoles = usePrivilege("parametres:roles");
   const canParamUtilisateurs = usePrivilege("parametres:utilisateurs");
+  const {
+    passwordModalOpen,
+    requestUnlock,
+    closePasswordModal,
+    onPasswordVerified,
+  } = useParametresPanelUnlock();
   const [panelsOpen, setPanelsOpen] = useState<ParametresPanelsState>(loadParametresPanelsState);
-  const [ioJournalOpen, setIoJournalOpen] = useState(false);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [webSearch, setWebSearch] = useState(true);
+  const [visionConfig, setVisionConfig] = useState<AiVisionConfigPublic | null>(null);
+  const [visionProvider, setVisionProvider] = useState("openrouter");
+  const [visionApiKey, setVisionApiKey] = useState("");
+  const [visionModel, setVisionModel] = useState("");
 
   const loadStatus = useCallback(async () => {
     setLoadingStatus(true);
     setError(null);
     try {
-      const [s, web] = await Promise.all([
+      const [s, web, vision] = await Promise.all([
         invoke<AiStatus>("ai_status"),
         invoke<AiWebSearchConfig>("ai_web_search_get_config"),
+        invoke<AiVisionConfigPublic>("ai_vision_get_config"),
       ]);
       setStatus(s);
       setWebSearch(web.enabled);
+      setVisionConfig(vision);
+      setVisionProvider(vision.provider || "openrouter");
+      setVisionModel(vision.model || "");
     } catch (e) {
       setStatus(null);
       setError(String(e));
@@ -130,21 +158,26 @@ export function ParametresPage() {
   const visiblePanelIds = useMemo((): ParametresPanelId[] => {
     const ids: ParametresPanelId[] = [];
     if (canParamAssistant) ids.push("assistant");
-    if (canParamAssistant) ids.push("personnalisation_ia");
+    if (canParamPersonnalisation) ids.push("personnalisation_ia");
     if (canParamCompte) ids.push("compte");
     if (canParamTheme) ids.push("theme");
     if (canParamImpression) ids.push("impression");
     if (canParamEntites || canParamEntitesCreer) ids.push("entites");
+    if (canParamArchives) ids.push("archives");
+    if (canParamImportsExports) ids.push("imports_exports");
     if (canParamRoles) ids.push("roles");
     if (canParamUtilisateurs) ids.push("utilisateurs");
     return ids;
   }, [
     canParamAssistant,
+    canParamPersonnalisation,
     canParamCompte,
     canParamTheme,
     canParamImpression,
     canParamEntites,
     canParamEntitesCreer,
+    canParamArchives,
+    canParamImportsExports,
     canParamRoles,
     canParamUtilisateurs,
   ]);
@@ -157,12 +190,28 @@ export function ParametresPage() {
     });
   }, []);
 
+  const handlePanelOpenChange = useCallback(
+    (id: ParametresPanelId, open: boolean) => {
+      if (!open) {
+        setPanelOpen(id, false);
+        return;
+      }
+      void requestUnlock().then((ok) => {
+        if (ok) setPanelOpen(id, true);
+      });
+    },
+    [requestUnlock, setPanelOpen],
+  );
+
   const expandAllPanels = () => {
-    setPanelsOpen((prev) => {
-      const next = { ...prev };
-      for (const id of visiblePanelIds) next[id] = true;
-      saveParametresPanelsState(next);
-      return next;
+    void requestUnlock().then((ok) => {
+      if (!ok) return;
+      setPanelsOpen((prev) => {
+        const next = { ...prev };
+        for (const id of visiblePanelIds) next[id] = true;
+        saveParametresPanelsState(next);
+        return next;
+      });
     });
   };
 
@@ -237,7 +286,7 @@ export function ParametresPage() {
             title={`Assistant — ${title}`}
             subtitle="Modèle local, recherche Internet optionnelle"
             open={panelOpen("assistant")}
-            onOpenChange={(open) => setPanelOpen("assistant", open)}
+            onOpenChange={(open) => handlePanelOpenChange("assistant", open)}
             headerAction={
               <Button
                 variant="ghost"
@@ -267,6 +316,11 @@ export function ParametresPage() {
                   value={status.llama_bin ? "Prêt" : "Introuvable"}
                   ok={status.llama_bin}
                 />
+                <StatusLine
+                  label="Dossier IA (Loggy)"
+                  value={status.install_dir ?? "Non configuré — installez au premier lancement"}
+                  ok={!!status.install_dir && status.model_present}
+                />
                 <StatusLine label="Serveur IA" {...llamaServerStatus(status)} />
                 <StatusLine label="Backend" value={status.backend} />
                 <StatusLine
@@ -295,7 +349,21 @@ export function ParametresPage() {
                   value={status.web_search_enabled ? "Activée (DuckDuckGo)" : "Désactivée"}
                   ok={status.web_search_enabled}
                 />
-                <StatusLine label="Bases de données" value={status.db_dir} />
+                <StatusLine label="Dossier données" value={status.db_dir} />
+                <div className="border-b border-border py-2 last:border-0">
+                  <span className="text-sm text-muted">Fichiers base de données (.sqlite)</span>
+                  <p className="mt-1 text-xs text-muted">
+                    Blin utilise l&apos;extension <span className="font-mono">.sqlite</span>, pas{" "}
+                    <span className="font-mono">.db</span>.
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {resolveSqliteFilePaths(status).map((p) => (
+                      <li key={p} className="break-all font-mono text-xs text-foreground">
+                        {p}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
                 {!modelReady && (
                   <p className="mt-4 text-xs text-muted break-all">
                     Chemin modèle : <span className="font-mono">{status.model_path}</span>
@@ -329,6 +397,120 @@ export function ParametresPage() {
                 Autoriser Loggy à rechercher sur Internet (questions pratiques, actualités…)
               </span>
             </label>
+
+            <div className="mt-4 space-y-3 rounded-lg border border-border px-3 py-3">
+              <p className="text-sm font-medium text-foreground">Analyse d&apos;image (tableau de bord)</p>
+              <Text variant="muted" className="text-xs">
+                Pour lire une capture (facture, formulaire…) et produire un JSON à coller manuellement.
+                OpenRouter est gratuit (sans carte bancaire) — recommandé si vous n&apos;avez pas Gemini.
+              </Text>
+              <Select
+                label="Fournisseur"
+                value={visionProvider}
+                onChange={(e) => {
+                  const p = e.target.value;
+                  setVisionProvider(p);
+                  if (!visionModel.trim() || visionModel === visionConfig?.model) {
+                    setVisionModel(p === "gemini" ? "gemini-2.0-flash" : "openrouter/free");
+                  }
+                }}
+                options={[
+                  { value: "openrouter", label: "OpenRouter (gratuit, recommandé)" },
+                  { value: "gemini", label: "Google Gemini (gratuit via AI Studio)" },
+                ]}
+              />
+              <Text variant="muted" className="text-xs">
+                {visionProvider === "openrouter" ? (
+                  <>
+                    Clé sur{" "}
+                    <a
+                      href="https://openrouter.ai/keys"
+                      className="text-secondary underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+                          openUrl("https://openrouter.ai/keys"),
+                        );
+                      }}
+                    >
+                      openrouter.ai/keys
+                    </a>
+                  </>
+                ) : (
+                  <>
+                    Clé sur{" "}
+                    <a
+                      href="https://aistudio.google.com/apikey"
+                      className="text-secondary underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+                          openUrl("https://aistudio.google.com/apikey"),
+                        );
+                      }}
+                    >
+                      Google AI Studio
+                    </a>
+                  </>
+                )}
+              </Text>
+              {visionConfig?.configured && visionConfig.keyHint && (
+                <p className="text-xs text-muted">
+                  Clé enregistrée {visionConfig.keyHint} · {visionConfig.providerLabel} · modèle{" "}
+                  {visionConfig.model}
+                </p>
+              )}
+              <Input
+                label="Clé API"
+                type="password"
+                value={visionApiKey}
+                onChange={(e) => setVisionApiKey(e.target.value)}
+                placeholder={
+                  visionConfig?.configured
+                    ? "Nouvelle clé (laisser vide pour conserver l'actuelle)"
+                    : visionProvider === "openrouter"
+                      ? "sk-or-…"
+                      : "AIza…"
+                }
+                autoComplete="off"
+              />
+              <Input
+                label="Modèle (optionnel)"
+                value={visionModel}
+                onChange={(e) => setVisionModel(e.target.value)}
+                placeholder={
+                  visionProvider === "gemini" ? "gemini-2.0-flash" : "qwen/qwen2.5-vl-72b-instruct:free"
+                }
+                hint={
+                  visionProvider === "openrouter"
+                    ? "Ex. qwen/qwen2.5-vl-72b-instruct:free, openrouter/free, google/gemini-2.0-flash-exp:free"
+                    : "Ex. gemini-2.0-flash"
+                }
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!!busy || (!visionApiKey.trim() && !visionConfig?.configured)}
+                onClick={() =>
+                  void runAction("vision", async () => {
+                    const updated = await invoke<AiVisionConfigPublic>("ai_vision_set_config", {
+                      payload: {
+                        provider: visionProvider,
+                        api_key: visionApiKey.trim() || undefined,
+                        model: visionModel.trim() || undefined,
+                      },
+                    });
+                    setVisionConfig(updated);
+                    setVisionApiKey("");
+                    return updated.configured
+                      ? "Configuration vision enregistrée — analyse d'image disponible sur le tableau de bord."
+                      : "Indiquez une clé API pour activer l'analyse d'image.";
+                  })
+                }
+              >
+                Enregistrer l&apos;analyse d&apos;image
+              </Button>
+            </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
               <Button
@@ -387,7 +569,7 @@ export function ParametresPage() {
             title="Personnalisation IA"
             subtitle="Voix de Loggy — activation, réglages et voix personnelles"
             open={panelOpen("personnalisation_ia")}
-            onOpenChange={(open) => setPanelOpen("personnalisation_ia", open)}
+            onOpenChange={(open) => handlePanelOpenChange("personnalisation_ia", open)}
             overflowVisibleWhenOpen
           >
             <PersonnalisationIaPanel />
@@ -399,7 +581,7 @@ export function ParametresPage() {
           title="Compte"
           subtitle="Session active sur ce poste"
           open={panelOpen("compte")}
-          onOpenChange={(open) => setPanelOpen("compte", open)}
+          onOpenChange={(open) => handlePanelOpenChange("compte", open)}
         >
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated text-muted">
@@ -419,7 +601,7 @@ export function ParametresPage() {
           title="Thème de couleurs"
           subtitle="Apparence de l'interface — enregistré sur ce poste"
           open={panelOpen("theme")}
-          onOpenChange={(open) => setPanelOpen("theme", open)}
+          onOpenChange={(open) => handlePanelOpenChange("theme", open)}
           headerAction={<Palette className="h-4 w-4 text-muted" aria-hidden />}
           overflowVisibleWhenOpen
         >
@@ -432,7 +614,7 @@ export function ParametresPage() {
             title="Création de modèles d'impression"
             subtitle="Éditeur HTML/CSS — fiche PDF par ligne de tableau"
             open={panelOpen("impression")}
-            onOpenChange={(open) => setPanelOpen("impression", open)}
+            onOpenChange={(open) => handlePanelOpenChange("impression", open)}
           >
             <PrintModelsPanel />
           </CollapsiblePanel>
@@ -443,7 +625,7 @@ export function ParametresPage() {
             title="Entités métier"
             subtitle="Source de vérité — tables SQLite et formulaires auto"
             open={panelOpen("entites")}
-            onOpenChange={(open) => setPanelOpen("entites", open)}
+            onOpenChange={(open) => handlePanelOpenChange("entites", open)}
           >
             <EntityPanel
               onSaved={async () => {
@@ -454,12 +636,23 @@ export function ParametresPage() {
           </CollapsiblePanel>
         </Guard>
 
+        <Guard privilege={privilegeForParametresPanel("archives")}>
+          <CollapsiblePanel
+            title="Archives du registre"
+            subtitle="5 dernières versions avant synchronisation — copie JSON"
+            open={panelOpen("archives")}
+            onOpenChange={(open) => handlePanelOpenChange("archives", open)}
+          >
+            <RegistryArchivePanel />
+          </CollapsiblePanel>
+        </Guard>
+
         <Guard privilege={privilegeForParametresPanel("roles")}>
           <CollapsiblePanel
             title="Rôles et Privilèges"
             subtitle="Création des rôles et affectation des privilèges"
             open={panelOpen("roles")}
-            onOpenChange={(open) => setPanelOpen("roles", open)}
+            onOpenChange={(open) => handlePanelOpenChange("roles", open)}
           >
             <RolesPanel />
           </CollapsiblePanel>
@@ -470,18 +663,18 @@ export function ParametresPage() {
             title="Utilisateurs"
             subtitle="Comptes, e-mail et affectation de rôle"
             open={panelOpen("utilisateurs")}
-            onOpenChange={(open) => setPanelOpen("utilisateurs", open)}
+            onOpenChange={(open) => handlePanelOpenChange("utilisateurs", open)}
           >
             <UsersPanel />
           </CollapsiblePanel>
         </Guard>
 
-        <Guard anyOf={["parametres:entites", "parametres:entites:creer"]}>
+        <Guard privilege={privilegeForParametresPanel("imports_exports")}>
           <CollapsiblePanel
             title="Imports / Exports"
             subtitle="Journal des importations et exportations par utilisateur"
-            open={ioJournalOpen}
-            onOpenChange={setIoJournalOpen}
+            open={panelOpen("imports_exports")}
+            onOpenChange={(open) => handlePanelOpenChange("imports_exports", open)}
           >
             <ImportExportPanel />
           </CollapsiblePanel>
@@ -489,6 +682,12 @@ export function ParametresPage() {
           </>
         )}
       </div>
+
+      <ParametresPasswordModal
+        open={passwordModalOpen}
+        onClose={closePasswordModal}
+        onVerified={onPasswordVerified}
+      />
     </div>
     </div>
   );

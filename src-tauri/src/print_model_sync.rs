@@ -66,14 +66,14 @@ pub fn sync_entity_base_print_models(db: &Database, cfg: &ScreenConfigFile) -> R
 /// Resynchronise tous les modèles auto DDA après enregistrement du registre (filet de sécurité).
 pub fn resync_all_registry_print_models(
     db: &Database,
-    _data_dir: &Path,
+    data_dir: &Path,
     registry: &EntityRegistry,
 ) -> Result<(), String> {
     for ent in &registry.entities {
         if registry::is_orphan_entity_key(&ent.nom) {
             continue;
         }
-        let cfg = crate::entity::config::build_screen_config(ent, registry);
+        let cfg = crate::entity::config::build_screen_config(ent, registry, data_dir);
         sync_entity_base_print_models(db, &cfg)?;
     }
     Ok(())

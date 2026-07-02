@@ -754,6 +754,7 @@ export function DataScreen({
       uploadDraftId={uploadDraftIdRef.current}
       storageFolders={config.screen.storage?.folders}
       excludeRecordId={excludeRecordId}
+      recordId={excludeRecordId}
     />
   );
 

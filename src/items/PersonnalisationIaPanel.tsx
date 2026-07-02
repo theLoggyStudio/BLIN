@@ -17,6 +17,7 @@ import {
   isLoggyVoiceAutoEnabled,
   isLoggyVoiceEnabled,
   isLoggyVoiceSupported,
+  isSharedVoiceId,
   listSystemVoices,
   newVoiceProfileId,
   saveVoiceProfile,
@@ -24,6 +25,9 @@ import {
   setLoggyVoiceAutoEnabled,
   setLoggyVoiceEnabled,
   speakWithProfile,
+  formatPitchLabel,
+  PITCH_MIN,
+  PITCH_MAX,
   type VoiceProfile,
 } from "@/lib/loggyVoice";
 
@@ -113,8 +117,8 @@ export function PersonnalisationIaPanel() {
   const profiles = getVoiceProfilesForUser(userId);
   const activeId = getActiveVoiceId(userId);
   const selected = getVoiceProfile(activeId) ?? profiles[0];
-  const isDefault = selected.id === DEFAULT_VOICE_ID;
-  const ownedCount = profiles.filter((p) => p.id !== DEFAULT_VOICE_ID).length;
+  const isShared = isSharedVoiceId(selected.id);
+  const ownedCount = profiles.filter((p) => p.owner !== null).length;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -156,7 +160,7 @@ export function PersonnalisationIaPanel() {
     : "";
 
   const updateSelected = (patch: Partial<VoiceProfile>) => {
-    if (isDefault || selected.owner === null) return;
+    if (isShared || selected.owner === null) return;
     saveVoiceProfile({ ...selected, ...patch });
   };
 
@@ -177,7 +181,7 @@ export function PersonnalisationIaPanel() {
   };
 
   const removeSelected = () => {
-    if (isDefault) return;
+    if (isShared) return;
     deleteVoiceProfile(selected.id);
     setActiveVoiceId(userId, DEFAULT_VOICE_ID);
   };
@@ -306,10 +310,17 @@ export function PersonnalisationIaPanel() {
             </div>
 
             <div className="space-y-4">
-              {isDefault ? (
+              {isShared ? (
                 <Text variant="muted" className="text-xs">
-                  La voix par défaut est partagée par tous les utilisateurs et n&apos;est pas
-                  modifiable (réglages affichés ci-dessous). Créez votre propre voix pour la régler.
+                  Cette voix est partagée par tous les utilisateurs et n&apos;est pas modifiable
+                  (réglages affichés ci-dessous). Créez votre propre voix pour la personnaliser.
+                  {selected.id !== DEFAULT_VOICE_ID && (
+                    <>
+                      {" "}
+                      Les voix asiatiques utilisent les voix japonaises/chinoises installées sur
+                      Windows (Paramètres → Heure et langue → Voix).
+                    </>
+                  )}
                 </Text>
               ) : (
                 <Input
@@ -323,19 +334,19 @@ export function PersonnalisationIaPanel() {
                 label="Voix système de base"
                 options={voiceOptions}
                 value={selectedVoiceValue}
-                disabled={isDefault}
+                disabled={isShared}
                 onChange={(e) => updateSelected({ voiceURI: e.target.value || null })}
               />
               <Slider
-                label="Voix : grave → aiguë (tonalité)"
+                label="Tonalité (filtre grave ↔ aiguë)"
                 value={selected.pitch}
-                min={0.5}
-                max={2}
+                min={PITCH_MIN}
+                max={PITCH_MAX}
                 step={0.05}
-                display={selected.pitch.toFixed(2)}
-                disabled={isDefault}
-                minLabel="Grave"
-                maxLabel="Aiguë"
+                display={`${formatPitchLabel(selected.pitch)} (${selected.pitch.toFixed(2)})`}
+                disabled={isShared}
+                minLabel="Très grave"
+                maxLabel="Très aiguë"
                 onChange={(v) => updateSelected({ pitch: v })}
               />
               <Slider
@@ -345,7 +356,7 @@ export function PersonnalisationIaPanel() {
                 max={2}
                 step={0.05}
                 display={selected.rate.toFixed(2)}
-                disabled={isDefault}
+                disabled={isShared}
                 minLabel="Lente"
                 maxLabel="Rapide"
                 onChange={(v) => updateSelected({ rate: v })}
@@ -357,12 +368,12 @@ export function PersonnalisationIaPanel() {
                 max={1}
                 step={0.05}
                 display={`${Math.round(selected.volume * 100)} %`}
-                disabled={isDefault}
+                disabled={isShared}
                 minLabel="Faible"
                 maxLabel="Fort"
                 onChange={(v) => updateSelected({ volume: v })}
               />
-              {!isDefault && (
+              {!isShared && (
                 <div className="flex justify-end">
                   <Button type="button" variant="ghost" size="sm" onClick={removeSelected}>
                     <Trash2 className="h-4 w-4" />

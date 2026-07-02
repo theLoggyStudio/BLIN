@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { ChatAssistantContent } from "@/items/ChatAssistantContent";
 import { ChatLinkifiedText } from "@/items/ChatLinkifiedText";
 import { ChatLoggyAttachments } from "@/items/ChatLoggyAttachments";
 import { LoggySpeakButton } from "@/items/LoggySpeakButton";
@@ -24,6 +25,8 @@ export interface DashboardChatEntry {
 interface DashboardChatThreadProps {
   entries: DashboardChatEntry[];
   className?: string;
+  /** Chargement d'une conversation depuis l'historique. */
+  loadingHistory?: boolean;
   onOpenEntityFromChat?: (entityKey: string) => void;
   onChatFollowUp?: (text: string) => void;
 }
@@ -32,6 +35,7 @@ interface DashboardChatThreadProps {
 export function DashboardChatThread({
   entries,
   className,
+  loadingHistory = false,
   onOpenEntityFromChat,
   onChatFollowUp,
 }: DashboardChatThreadProps) {
@@ -58,8 +62,14 @@ export function DashboardChatThread({
 
   if (entries.length === 0) {
     return (
-      <div className={cn("dashboard-chat-empty", className)} aria-hidden>
-        <div className="dashboard-chat-center-loader" />
+      <div className={cn("dashboard-chat-empty flex-col gap-3", className)} aria-hidden={!loadingHistory}>
+        {loadingHistory ? (
+          <div className="dashboard-chat-center-loader" aria-label="Chargement de la discussion" />
+        ) : (
+          <p className="max-w-sm text-center text-sm text-muted">
+            Aucun message affiché. Posez une question ci-dessous ou ouvrez l&apos;historique.
+          </p>
+        )}
       </div>
     );
   }
@@ -89,10 +99,14 @@ export function DashboardChatThread({
                 {entry.content ? <LoggySpeakButton text={entry.content} /> : null}
               </div>
               {entry.content ? (
-                <ChatLinkifiedText
-                  text={entry.content}
-                  className="loggy-chat-text whitespace-pre-wrap"
-                />
+                entry.content.includes("```") ? (
+                  <ChatAssistantContent text={entry.content} />
+                ) : (
+                  <ChatLinkifiedText
+                    text={entry.content}
+                    className="loggy-chat-text whitespace-pre-wrap"
+                  />
+                )
               ) : entry.loading ? (
                 <p className="loggy-chat-text loggy-chat-typing" aria-hidden>
                   <span className="loggy-chat-dot" />

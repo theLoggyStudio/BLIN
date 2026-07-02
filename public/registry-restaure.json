@@ -1,0 +1,347 @@
+{
+  "ecosysteme": "Blin",
+  "slogan": "Organisez vos tâches au quotidien",
+  "logo_url": null,
+  "entities": [
+    {
+      "nom": "tache",
+      "label": "Tâche",
+      "description": "Tâches et rappels — création via le tableau de bord ou Loggy",
+      "ai_suggestions": false,
+      "requires_signature": false,
+      "signatory_role_ids": [],
+      "is_session": false,
+      "attributs": [
+        { "nom": "libelle", "type": "string", "label": "Intitulé", "required": true },
+        { "nom": "description", "type": "string", "label": "Description", "required": false },
+        { "nom": "date_echeance", "type": "date", "label": "Date", "required": false },
+        { "nom": "heure_debut", "type": "time", "label": "Heure", "required": true },
+        {
+          "nom": "statut",
+          "type": "enum[a_faire,en_cours,terminee]",
+          "label": "Statut",
+          "required": false,
+          "default": "a_faire"
+        },
+        {
+          "nom": "priorite",
+          "type": "enum[basse,normale,haute]",
+          "label": "Priorité",
+          "required": false,
+          "default": "normale"
+        },
+        {
+          "nom": "type_tache",
+          "type": "enum[signature,validation,generale,destockage]",
+          "label": "Type",
+          "required": false,
+          "default": "generale"
+        },
+        {
+          "nom": "visibilite",
+          "type": "enum[publique,privee,personnalisee]",
+          "label": "Visibilité",
+          "required": false,
+          "default": "publique"
+        },
+        { "nom": "roles_visibles", "type": "string", "label": "Rôles autorisés (personnalisé)", "required": false },
+        { "nom": "entite_a_signer", "type": "string", "label": "Entité à signer", "required": false },
+        { "nom": "enregistrement_id", "type": "string", "label": "ID enregistrement", "required": false },
+        { "nom": "role_signataire", "type": "string", "label": "Rôle signataire", "required": false },
+        { "nom": "intitule", "type": "string", "label": "Intitulé", "required": false },
+        { "nom": "entite_a_valider", "type": "string", "label": "Entité à valider", "required": false },
+        { "nom": "role_validateur", "type": "string", "label": "Rôle valideur", "required": false },
+        { "nom": "utilisateur_cible", "type": "string", "label": "Utilisateur cible", "required": false }
+      ]
+    },
+    {
+      "nom": "client",
+      "label": "Client",
+      "description": "Fichier clients — champs alignés import CSV",
+      "ai_suggestions": true,
+      "requires_signature": false,
+      "signatory_role_ids": [],
+      "is_session": true,
+      "attributs": [
+        {
+          "nom": "nom",
+          "type": "string",
+          "label": "Nom",
+          "required": false,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        { "nom": "reference", "type": "string", "label": "Référence", "required": true },
+        { "nom": "prenom", "type": "string", "label": "Prénom", "required": false },
+        { "nom": "age", "type": "number", "label": "Âge", "required": false },
+        { "nom": "ville", "type": "string", "label": "Ville", "required": false },
+        { "nom": "profession", "type": "string", "label": "Profession", "required": false },
+        { "nom": "email", "type": "email", "label": "E-mail", "required": false },
+        { "nom": "telephone", "type": "string", "label": "Téléphone", "required": false }
+      ]
+    },
+    {
+      "nom": "article",
+      "label": "Article",
+      "description": "Catalogue véhicules — champs alignés import CSV",
+      "ai_suggestions": true,
+      "requires_signature": false,
+      "signatory_role_ids": [],
+      "is_session": true,
+      "attributs": [
+        {
+          "nom": "nom",
+          "type": "string",
+          "label": "Nom",
+          "required": false,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        { "nom": "reference", "type": "string", "label": "Référence", "required": true },
+        { "nom": "marque", "type": "string", "label": "Marque", "required": false },
+        { "nom": "modele", "type": "string", "label": "Modèle", "required": false },
+        { "nom": "annee", "type": "number", "label": "Année", "required": false },
+        { "nom": "couleur", "type": "string", "label": "Couleur", "required": false },
+        {
+          "nom": "carburant",
+          "type": "enum[Essence,Diesel,Hybride,Electrique,GPL,Hybride rechargeable]",
+          "label": "Carburant",
+          "required": false
+        },
+        { "nom": "kilometrage", "type": "number", "label": "Kilométrage", "required": false },
+        { "nom": "immatriculation", "type": "string", "label": "Immatriculation", "required": false },
+        { "nom": "ville", "type": "string", "label": "Ville", "required": false },
+        { "nom": "prix", "type": "number", "label": "Prix", "required": false },
+        { "nom": "qte_initial", "type": "stock", "label": "Quantité en stock", "required": false, "stock_alert_threshold": 2 }
+      ]
+    },
+    {
+      "nom": "demande_d'achat",
+      "label": "Demande d'achat",
+      "description": "Demande d'achat avec client et lignes véhicules",
+      "ai_suggestions": true,
+      "requires_signature": true,
+      "signatory_role_ids": ["role-directeur"],
+      "is_session": true,
+      "attributs": [
+        {
+          "nom": "client",
+          "type": "entity",
+          "label": "Client",
+          "required": true,
+          "ref": "client",
+          "relation_multiple": false
+        },
+        {
+          "nom": "articles",
+          "type": "entity",
+          "label": "Articles",
+          "required": true,
+          "ref": "article",
+          "relation_multiple": true,
+          "relation_impact_source": "qte_initial",
+          "relation_impact_target": "qte_initial",
+          "relation_impact_action": "decrement",
+          "relation_impact_defer": true
+        }
+      ]
+    },
+    {
+      "nom": "commande",
+      "label": "Commande",
+      "description": "Commande liée aux demandes d'achat",
+      "ai_suggestions": true,
+      "requires_signature": true,
+      "signatory_role_ids": ["role-directeur"],
+      "is_session": true,
+      "attributs": [
+        {
+          "nom": "da",
+          "type": "entity",
+          "label": "Demande d'achat",
+          "required": true,
+          "ref": "demande_d'achat",
+          "relation_multiple": true
+        },
+        {
+          "nom": "matricule",
+          "type": "matricule",
+          "label": "Matricule",
+          "required": false,
+          "matricule_ref": "79332ed3-e784-4c65-a4b2-c8f73107ddf0"
+        }
+      ]
+    },
+    {
+      "nom": "facture",
+      "label": "Facture",
+      "description": "Document de vente de véhicule",
+      "ai_suggestions": true,
+      "requires_signature": true,
+      "signatory_role_ids": ["role-directeur"],
+      "is_session": true,
+      "attributs": [
+        {
+          "nom": "date",
+          "type": "date",
+          "label": "Date",
+          "required": true,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "vendeur",
+          "type": "entity",
+          "label": "Vendeur",
+          "required": true,
+          "ref": "client",
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "acheteur",
+          "type": "entity",
+          "label": "Acheteur",
+          "required": true,
+          "ref": "client",
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "vehicule",
+          "type": "entity",
+          "label": "Véhicule",
+          "required": true,
+          "ref": "article",
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "description",
+          "type": "string",
+          "label": "Description",
+          "required": true,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "montant_total",
+          "type": "number",
+          "label": "Montant Total",
+          "required": true,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "conditions_paiement",
+          "type": "string",
+          "label": "Conditions de Paiement",
+          "required": true,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "date_paiement",
+          "type": "date",
+          "label": "Date de Paiement",
+          "required": true,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        },
+        {
+          "nom": "informations_supplementaires",
+          "type": "string",
+          "label": "Informations Supplémentaires",
+          "required": false,
+          "ref": null,
+          "relation_multiple": false,
+          "relation_exclusive_parent": true,
+          "default": null,
+          "enum_options": null,
+          "relation_impact_source": null,
+          "relation_impact_target": null,
+          "relation_impact_action": null,
+          "relation_impact_defer": false,
+          "matricule_ref": null
+        }
+      ]
+    }
+  ]
+}

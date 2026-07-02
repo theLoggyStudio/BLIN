@@ -12,8 +12,10 @@ mod print_model_sync;
 mod print_seed;
 mod print_template;
 mod privileges;
+mod network_local;
 mod remote;
 mod session;
+mod startup_sync;
 mod sync_progress;
 
 use parking_lot::Mutex;
@@ -34,12 +36,15 @@ pub struct AppState {
     pub login_messages: Arc<Mutex<PreparedLoginMessages>>,
     /// Réserve de réponses Loggy pré-générées (alertes instantanées).
     pub alert_pool: Arc<ai::alert_pool::AlertPool>,
+    /// État de la synchronisation lourde au démarrage (arrière-plan).
+    pub startup_sync: startup_sync::SharedStartupSync,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -47,24 +52,9 @@ pub fn run() {
                 .expect("répertoire données application");
 
             let database = Database::open(app_data_dir).expect("initialisation base de données SQLite");
-            {
-                let db = &database;
-                dda::schema::ensure_dda_registry_table(db).expect("dda registry");
-                let data_dir = db.data_dir.clone();
-                if let Err(e) = dda::sync_all_screens(db, &data_dir) {
-                    eprintln!("Avertissement sync DDA (l'app démarre quand même) : {e}");
-                }
-                if let Err(e) = entity::bootstrap::ensure_default_registry(&data_dir) {
-                    eprintln!("Avertissement registre par défaut : {e}");
-                }
-                let prev = entity::registry::load(&data_dir).unwrap_or_default();
-                if let Err(e) = entity::apply_registry(db, &data_dir, &prev, None) {
-                    eprintln!("Avertissement sync entités : {e}");
-                }
-                if let Err(e) = dda::reindex_ai_knowledge(db) {
-                    eprintln!("Avertissement réindexation Loggy : {e}");
-                }
-            }
+            ai::runtime_config::refresh_from_data_dir(&database.data_dir);
+            dda::schema::ensure_dda_registry_table(&database).expect("dda registry");
+
             let pool_dir = database.data_dir.clone();
             let alert_pool = Arc::new(
                 ai::alert_pool::AlertPool::open(&pool_dir).unwrap_or_else(|e| {
@@ -74,24 +64,35 @@ pub fn run() {
             );
 
             let db = Arc::new(Mutex::new(database));
+            let startup_sync = startup_sync::new_shared_state();
             let desktop_sessions: SharedSession = Arc::new(SessionManager::new());
             let remote_sessions: SharedRemoteSessions = Arc::new(RemoteSessionStore::new());
 
             let pairing_arc = Arc::new(Mutex::new(String::new()));
 
             app.manage(AppState {
-                db,
+                db: db.clone(),
                 desktop_sessions,
                 remote_sessions,
                 pairing_token: pairing_arc,
                 login_messages: Arc::new(Mutex::new(PreparedLoginMessages::default())),
                 alert_pool,
+                startup_sync: startup_sync.clone(),
             });
 
             let data_dir = app.state::<AppState>().db.lock().data_dir.clone();
-            if let Err(e) = entity::branding::apply_window_branding(app.handle(), &data_dir) {
-                eprintln!("Avertissement branding fenêtre au démarrage : {e}");
+            if let Err(e) = entity::branding::apply_window_title(app.handle(), &data_dir) {
+                eprintln!("Avertissement titre fenêtre au démarrage : {e}");
             }
+            if let Err(e) =
+                entity::branding::apply_window_icon_if_changed(app.handle(), &data_dir, true)
+            {
+                eprintln!("Avertissement icône barre des tâches au démarrage : {e}");
+            }
+
+            network_local::warm_local_ip_cache();
+
+            startup_sync::spawn_startup_sync(app.handle().clone(), db, startup_sync);
 
             Ok(())
         })
@@ -100,10 +101,14 @@ pub fn run() {
             commands::auth::auth_logout,
             commands::auth::auth_current_user,
             commands::auth::auth_change_password,
+            commands::auth::auth_verify_password,
             commands::auth::auth_sync_session_privileges,
             commands::auth::auth_prepare_login_messages,
             commands::auth::auth_get_login_messages,
+            commands::auth::app_startup_sync_status,
             commands::ai::ai_status,
+            commands::ai::ai_runtime_status,
+            commands::ai::ai_runtime_install,
             commands::ai::ai_profile_runtime,
             commands::ai::ai_reindex,
             commands::ai::ai_chat,
@@ -120,6 +125,9 @@ pub fn run() {
             commands::ai::ai_rename_conversation,
             commands::ai::ai_web_search_get_config,
             commands::ai::ai_web_search_set_config,
+            commands::ai::ai_vision_get_config,
+            commands::ai::ai_vision_set_config,
+            commands::ai::ai_vision_analyze,
             commands::ai::ai_confirm_action,
             commands::ai::ai_dismiss_action,
             commands::ai::ai_stop_server,
@@ -137,7 +145,12 @@ pub fn run() {
             commands::dda::dda_media_upload,
             commands::dda::dda_media_delete,
             commands::entity::entity_registry_get,
+            commands::entity::entity_registry_archive_list,
+            commands::entity::entity_registry_archive_get,
             commands::entity::entity_registry_save,
+            commands::entity::entity_branding_get,
+            commands::entity::entity_branding_apply_title,
+            commands::entity::entity_branding_restore_icon,
             commands::entity::entity_branding_apply_window,
             commands::entity::entity_logo_from_url,
             commands::entity::entity_check_access,
@@ -151,8 +164,11 @@ pub fn run() {
             commands::entity::entity_get_screen_config,
             commands::entity::entity_stats_config,
             commands::entity::entity_compteur_preview,
+            commands::entity::entity_matricule_registry_list,
+            commands::entity::entity_matricule_registry_create,
             commands::entity::entity_inline_create_allowed,
             commands::entity::entity_embed_impact_meta,
+            commands::entity::entity_child_numeric_field,
             commands::entity::entity_relation_options,
             commands::entity::entity_embed_values_from_record,
             commands::entity::entity_embed_child_from_record,

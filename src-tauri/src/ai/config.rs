@@ -41,7 +41,11 @@ pub fn project_root() -> PathBuf {
 }
 
 fn runtime_base_roots() -> Vec<PathBuf> {
-    let mut roots = vec![project_root()];
+    let mut roots = Vec::new();
+    if let Some(install) = crate::ai::runtime_config::install_root() {
+        roots.push(install);
+    }
+    roots.push(project_root());
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
             roots.push(exe_dir.to_path_buf());
@@ -61,11 +65,15 @@ pub fn runtime_bundle_dir(bundle_name: &str) -> PathBuf {
         if fallback.is_none() {
             fallback = Some(candidate.clone());
         }
-        if candidate.is_dir() {
+        if candidate.join("llama-server.exe").is_file() || candidate.is_dir() {
             return candidate;
         }
     }
-    fallback.unwrap_or_else(|| project_root().join(bundle_name))
+    fallback.unwrap_or_else(|| {
+        crate::ai::runtime_config::install_root()
+            .unwrap_or_else(project_root)
+            .join(bundle_name)
+    })
 }
 
 pub fn bundle_name_for_backend(kind: LlamaBackendKind) -> &'static str {

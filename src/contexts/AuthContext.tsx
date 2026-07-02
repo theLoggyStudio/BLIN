@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { resetAiStartupSequence, runAiStartupSequence } from "@/lib/aiStartup";
 import {
   createContext,
   useCallback,
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const current = await invoke<User>("auth_current_user");
       applyUser(current);
+      void runAiStartupSequence();
     } catch {
       applyUser(null);
     } finally {
@@ -74,12 +76,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMustChangePassword(
         response.must_change_password || Boolean(response.user.must_change_password),
       );
+      void runAiStartupSequence();
     },
     [applyUser],
   );
 
   const logout = useCallback(async () => {
     await invoke("auth_logout");
+    resetAiStartupSequence();
     applyUser(null);
     setLoginNotices([]);
     setLoginGreeting(null);

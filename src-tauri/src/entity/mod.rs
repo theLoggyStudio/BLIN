@@ -6,6 +6,7 @@ pub mod attr_types;
 pub mod bootstrap;
 pub mod branding;
 pub mod compteur;
+pub mod matricule_registry;
 pub mod config;
 pub mod create_draft;
 pub mod registry_create_draft;
@@ -16,6 +17,7 @@ pub mod io_log;
 pub mod logo;
 pub mod knowledge;
 pub mod registry;
+pub mod registry_archive;
 pub mod record_signature;
 pub mod session_scope;
 pub mod relations;
@@ -54,7 +56,7 @@ pub fn load_screen_config(
     let ent = registry
         .find(entity_key)
         .ok_or_else(|| format!("Entité « {entity_key} » introuvable."))?;
-    Ok(config::build_screen_config(ent, &registry))
+    Ok(config::build_screen_config(ent, &registry, data_dir))
 }
 
 pub fn match_intent(message: &str, data_dir: &Path) -> Option<String> {

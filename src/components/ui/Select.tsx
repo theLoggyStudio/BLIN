@@ -19,6 +19,10 @@ import {
   SELECT_OPTIONS_PAGINATE_THRESHOLD,
 } from "@/constants/variable.constant";
 import { floatingMenuZIndex } from "@/lib/modalStack";
+import {
+  computeFloatingMenuStyle,
+  SELECT_MENU_MAX_HEIGHT,
+} from "@/lib/floatingMenuPosition";
 import { cn } from "@/lib/utils";
 
 export interface SelectOption {
@@ -153,6 +157,16 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(
       "aria-invalid": !!error,
     };
 
+    const menuStyle = useMemo(() => {
+      if (!open || !menuRect) return null;
+      const { placement: _p, ...style } = computeFloatingMenuStyle(
+        menuRect,
+        floatingMenuZIndex(),
+        { preferredMaxHeight: SELECT_MENU_MAX_HEIGHT },
+      );
+      return style;
+    }, [open, menuRect]);
+
     return (
       <div className="flex flex-col gap-1.5">
         {label && (
@@ -201,21 +215,14 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(
             />
           </button>
 
-          {open &&
-            menuRect &&
+          {menuStyle &&
             createPortal(
               <ul
                 id={listboxId}
                 role="listbox"
                 aria-labelledby={selectId}
-                className="max-h-60 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-xl"
-                style={{
-                  position: "fixed",
-                  top: menuRect.bottom + 4,
-                  left: menuRect.left,
-                  width: menuRect.width,
-                  zIndex: floatingMenuZIndex(),
-                }}
+                className="overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-xl"
+                style={menuStyle}
               >
                 {placeholder && (
                   <li

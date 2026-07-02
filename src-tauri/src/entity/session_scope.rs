@@ -187,7 +187,7 @@ pub fn apply_active_session_on_create(
             .ok_or_else(|| format!("Entité fille « {} » introuvable.", binding.field_key))?;
         let session_row = crate::dda::crud::get_row(
             db,
-            &super::config::build_screen_config(session_ent, registry),
+            &super::config::build_screen_config(session_ent, registry, &db.data_dir),
             &active.record_id,
         )
         .map_err(|_| format!("Enregistrement session introuvable ({})", active.record_id))?;
@@ -290,7 +290,7 @@ pub fn resolve_record_label(
     let ent = registry
         .find(entity_key)
         .ok_or_else(|| format!("Entité « {entity_key} » introuvable."))?;
-    let cfg = super::config::build_screen_config(ent, registry);
+    let cfg = super::config::build_screen_config(ent, registry, data_dir);
     let row = crate::dda::crud::get_row(db, &cfg, record_id)
         .map_err(|_| format!("Enregistrement session introuvable ({record_id})."))?;
     Ok(record_display_label(ent, &row))

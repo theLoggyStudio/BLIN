@@ -38,6 +38,10 @@ export function formatCellValue(field: FieldDef | undefined, value: unknown): st
     const n = parseImagesValue(value).length;
     return n > 0 ? `${n} photo${n > 1 ? "s" : ""}` : "—";
   }
+  if (field?.type === "matricule") {
+    const display = typeof value === "string" && value.trim() ? value : String(value ?? "");
+    return display.trim() || "—";
+  }
   if (value == null || value === "") return "—";
   if (field?.key.endsWith("_jjmmaaaa")) return formatJjmmaaaaFr(value);
   if (field?.type === "date") return formatDateFr(value);

@@ -5,9 +5,12 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use chrono::Utc;
+use uuid::Uuid;
+
 use super::load_screen_config;
 use super::registry::{EntityDef, EntityRegistry};
-use super::relations::row_to_panel_fields;
+use super::relations::{build_relation_panels, row_to_panel_fields, RelationPanel};
 use super::schema::{table_has_column, table_name};
 const TACHE_ENTITY_KEY: &str = "tache";
 use crate::db::Database;
@@ -223,6 +226,165 @@ pub fn is_signable(
     ))
 }
 
+#[derive(Debug, Clone)]
+struct RoleSignatureEntry {
+    role_id: String,
+    user_id: String,
+    signer_label: String,
+}
+
+fn record_role_signatures(
+    db: &Database,
+    entity_key: &str,
+    record_id: &str,
+) -> Result<Vec<RoleSignatureEntry>, String> {
+    let mut stmt = db
+        .conn
+        .prepare(
+            "SELECT role_id, user_id, signer_label FROM entity_record_role_signatures
+             WHERE entity_key = ?1 AND record_id = ?2
+             ORDER BY signed_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![entity_key, record_id], |row| {
+            Ok(RoleSignatureEntry {
+                role_id: row.get(0)?,
+                user_id: row.get(1)?,
+                signer_label: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(rows.flatten().collect())
+}
+
+fn record_signed_role_ids(
+    db: &Database,
+    entity_key: &str,
+    record_id: &str,
+) -> Result<Vec<String>, String> {
+    Ok(record_role_signatures(db, entity_key, record_id)?
+        .into_iter()
+        .map(|e| e.role_id)
+        .collect())
+}
+
+pub fn role_has_signed(
+    db: &Database,
+    entity_key: &str,
+    record_id: &str,
+    role_id: &str,
+) -> Result<bool, String> {
+    let n: i64 = db
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM entity_record_role_signatures
+             WHERE entity_key = ?1 AND record_id = ?2 AND role_id = ?3",
+            rusqlite::params![entity_key, record_id, role_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(n > 0)
+}
+
+fn insert_role_signature(
+    db: &Database,
+    entity_key: &str,
+    record_id: &str,
+    role_id: &str,
+    user_id: &str,
+    signer_label: &str,
+) -> Result<(), String> {
+    db.conn
+        .execute(
+            "INSERT INTO entity_record_role_signatures
+             (id, entity_key, record_id, role_id, user_id, signer_label, signed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                Uuid::new_v4().to_string(),
+                entity_key,
+                record_id,
+                role_id,
+                user_id,
+                signer_label,
+                Utc::now().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn clear_role_signatures(
+    db: &Database,
+    entity_key: &str,
+    record_id: &str,
+) -> Result<(), String> {
+    db.conn
+        .execute(
+            "DELETE FROM entity_record_role_signatures
+             WHERE entity_key = ?1 AND record_id = ?2",
+            rusqlite::params![entity_key, record_id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn all_required_roles_signed(
+    db: &Database,
+    registry: &EntityRegistry,
+    entity_key: &str,
+    record_id: &str,
+) -> Result<bool, String> {
+    let Some(ent) = registry.find(entity_key) else {
+        return Ok(true);
+    };
+    let signed = record_signed_role_ids(db, entity_key, record_id)?;
+    Ok(ent
+        .signatory_role_ids
+        .iter()
+        .all(|role_id| signed.iter().any(|s| s == role_id)))
+}
+
+/// Vrai si, après la signature du rôle courant, tous les signataires requis auront signé.
+fn signing_would_complete_all_roles(
+    db: &Database,
+    registry: &EntityRegistry,
+    entity_key: &str,
+    record_id: &str,
+    signing_role_id: &str,
+) -> Result<bool, String> {
+    let Some(ent) = registry.find(entity_key) else {
+        return Ok(false);
+    };
+    if ent.signatory_role_ids.is_empty() {
+        return Ok(false);
+    }
+    let signed = record_signed_role_ids(db, entity_key, record_id)?;
+    Ok(ent.signatory_role_ids.iter().all(|role_id| {
+        role_id == signing_role_id || signed.iter().any(|s| s == role_id)
+    }))
+}
+
+fn combined_signers_label(entries: &[RoleSignatureEntry]) -> String {
+    entries
+        .iter()
+        .map(|e| e.signer_label.as_str())
+        .collect::<Vec<_>>()
+        .join(" ; ")
+}
+
+fn role_nom_for_id(db: &Database, role_id: &str) -> String {
+    db.list_roles()
+        .ok()
+        .and_then(|roles| {
+            roles
+                .into_iter()
+                .find(|r| r.id == role_id)
+                .map(|r| r.nom)
+        })
+        .unwrap_or_else(|| role_id.to_string())
+}
+
 /// Seul le créateur peut modifier/supprimer tant que l'objet n'est pas signé ; jamais après signature.
 pub fn assert_record_editable_by_user(
     db: &Database,
@@ -349,6 +511,15 @@ pub fn signatory_contacts_for_entity(
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RoleSignatureProgress {
+    pub role_id: String,
+    pub role_nom: String,
+    pub signed: bool,
+    pub signer_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RecordSignatureDetail {
     pub entity_key: String,
     pub entity_label: String,
@@ -361,7 +532,11 @@ pub struct RecordSignatureDetail {
     pub refused_by: Option<String>,
     pub refusal_reason: Option<String>,
     pub fields: Vec<super::relations::RelationPanelField>,
+    pub panels: Vec<RelationPanel>,
     pub signatory_contacts: Vec<SignatoryContact>,
+    pub signature_roles: Vec<RoleSignatureProgress>,
+    pub signature_required_count: usize,
+    pub signature_done_count: usize,
 }
 
 pub fn record_signature_detail(
@@ -378,10 +553,10 @@ pub fn record_signature_detail(
     let can_sign = can_sign_entity(&registry, entity_key, &role_id);
     let signed = is_record_signed(db, entity_key, record_id, &registry)?;
     let rejected = is_record_refused(db, entity_key, record_id, &registry)?;
-    let pending = is_signature_pending(db, entity_key, record_id, &registry)?;
     let signable = is_signable(db, entity_key, record_id, &registry)?;
-    let can_act_sign = signable && can_sign;
-    let can_act_reject = pending && can_sign;
+    let user_role_signed = role_has_signed(db, entity_key, record_id, &role_id)?;
+    let can_act_sign = signable && can_sign && !user_role_signed;
+    let can_act_reject = signable && can_sign;
     let refused_by = if rejected {
         record_string_column(db, entity_key, record_id, REFUSED_BY_COLUMN)?
     } else {
@@ -395,12 +570,40 @@ pub fn record_signature_detail(
     let signatory_contacts = signatory_contacts_for_entity(db, &registry, entity_key)?;
     let cfg = load_screen_config(data_dir, entity_key)?;
     let entity_label = cfg.screen.label.clone();
-    let fields = if can_view {
+    let (fields, panels) = if can_view {
         let row = crate::dda::crud::get_row(db, &cfg, record_id)?;
-        row_to_panel_fields(&cfg, &row)
+        let panels = build_relation_panels(db, data_dir, &cfg, &row)?;
+        let fields = panels
+            .iter()
+            .find(|p| p.primary)
+            .map(|p| p.fields.clone())
+            .unwrap_or_else(|| row_to_panel_fields(&cfg, &row));
+        (fields, panels)
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
+
+    let ent = registry.find(entity_key);
+    let signed_entries = record_role_signatures(db, entity_key, record_id)?;
+    let signature_roles: Vec<RoleSignatureProgress> = ent
+        .map(|e| {
+            e.signatory_role_ids
+                .iter()
+                .map(|role_id| {
+                    let entry = signed_entries.iter().find(|s| s.role_id == *role_id);
+                    RoleSignatureProgress {
+                        role_id: role_id.clone(),
+                        role_nom: role_nom_for_id(db, role_id),
+                        signed: entry.is_some(),
+                        signer_label: entry.map(|e| e.signer_label.clone()),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let signature_done_count = signature_roles.iter().filter(|r| r.signed).count();
+    let signature_required_count = signature_roles.len();
+
     Ok(RecordSignatureDetail {
         entity_key: entity_key.to_string(),
         entity_label,
@@ -413,11 +616,15 @@ pub fn record_signature_detail(
         refused_by,
         refusal_reason,
         fields,
+        panels,
         signatory_contacts,
+        signature_roles,
+        signature_required_count,
+        signature_done_count,
     })
 }
 
-/// Signe l'objet une seule fois (n'importe quel signataire agréé) et clôture les tâches associées.
+/// Chaque rôle signataire doit signer ; l'impact stock/liaison n'a lieu qu'une fois tous signés.
 pub fn sign_record(
     db: &Database,
     data_dir: &Path,
@@ -443,22 +650,57 @@ pub fn sign_record(
     if !can_view_entity(privileges, entity_key) {
         return Err("Droit insuffisant pour consulter cette entité.".into());
     }
+    if role_has_signed(db, entity_key, record_id, &role_id)? {
+        return Err("Votre rôle a déjà signé cet objet.".into());
+    }
+
+    if signing_would_complete_all_roles(db, &registry, entity_key, record_id, &role_id)? {
+        super::relation_impact::validate_impacts_before_record_validated(
+            db,
+            data_dir,
+            entity_key,
+            record_id,
+        )?;
+    }
 
     let was_refused = is_record_refused(db, entity_key, record_id, &registry)?;
     let signer_label = signer_label(db, user_id, &role_id)?;
     let creator_id = record_string_column(db, entity_key, record_id, CREATED_BY_COLUMN)?;
 
+    insert_role_signature(
+        db,
+        entity_key,
+        record_id,
+        &role_id,
+        user_id,
+        &signer_label,
+    )?;
+
+    close_signature_tasks_for_role(db, &registry, entity_key, record_id, &role_id)?;
+
     let table = table_name(entity_key);
+    let all_signed = all_required_roles_signed(db, &registry, entity_key, record_id)?;
+
     if table_has_column(db, &table, SIGNATURE_STATUS_COLUMN)? {
+        let new_status = if all_signed {
+            STATUS_SIGNE
+        } else {
+            STATUS_NON_SIGNE
+        };
         let mut sets = vec![format!("{SIGNATURE_STATUS_COLUMN} = ?1")];
         let mut params: Vec<rusqlite::types::Value> =
-            vec![rusqlite::types::Value::Text(STATUS_SIGNE.into())];
+            vec![rusqlite::types::Value::Text(new_status.into())];
         let mut idx = 2usize;
-        if table_has_column(db, &table, SIGNED_BY_COLUMN)? {
+
+        if all_signed && table_has_column(db, &table, SIGNED_BY_COLUMN)? {
+            let entries = record_role_signatures(db, entity_key, record_id)?;
             sets.push(format!("{SIGNED_BY_COLUMN} = ?{idx}"));
-            params.push(rusqlite::types::Value::Text(signer_label.clone()));
+            params.push(rusqlite::types::Value::Text(combined_signers_label(&entries)));
             idx += 1;
+        } else if was_refused && table_has_column(db, &table, SIGNED_BY_COLUMN)? {
+            sets.push(format!("{SIGNED_BY_COLUMN} = NULL"));
         }
+
         if was_refused {
             for col in [REFUSED_BY_COLUMN, REFUSAL_REASON_COLUMN] {
                 if table_has_column(db, &table, col)? {
@@ -466,6 +708,7 @@ pub fn sign_record(
                 }
             }
         }
+
         params.push(rusqlite::types::Value::Text(record_id.to_string()));
         let sql = format!("UPDATE {table} SET {} WHERE id = ?{idx}", sets.join(", "));
         let n = db
@@ -477,10 +720,14 @@ pub fn sign_record(
         }
     }
 
-    close_signature_tasks(db, &registry, entity_key, record_id)?;
-
     let cfg = load_screen_config(data_dir, entity_key)?;
     let row = crate::dda::crud::get_row(db, &cfg, record_id)?;
+
+    if !all_signed {
+        return Ok(());
+    }
+
+    close_signature_tasks(db, &registry, entity_key, record_id)?;
 
     super::validation::spawn_other_signatory_roles_signed_notices(
         db,
@@ -581,6 +828,7 @@ pub fn reject_record(
         }
     }
 
+    clear_role_signatures(db, entity_key, record_id)?;
     close_signature_tasks(db, &registry, entity_key, record_id)?;
 
     let cfg = load_screen_config(data_dir, entity_key)?;
@@ -613,6 +861,35 @@ pub fn reject_record(
         }
     }
 
+    if let Err(e) = super::validation::spawn_signature_tasks(db, data_dir, entity_key, &row) {
+        eprintln!("Recréation tâches signature après refus {entity_key}/{record_id} : {e}");
+    }
+
+    Ok(())
+}
+
+pub fn close_signature_tasks_for_role(
+    db: &Database,
+    registry: &EntityRegistry,
+    entity_key: &str,
+    record_id: &str,
+    role_id: &str,
+) -> Result<(), String> {
+    if registry.find(TACHE_ENTITY_KEY).is_none() {
+        return Ok(());
+    }
+    let tache_table = table_name(TACHE_ENTITY_KEY);
+    let sql = format!(
+        "UPDATE {tache_table} SET statut = 'terminee'
+         WHERE type_tache = 'signature'
+           AND entite_a_signer = ?1
+           AND enregistrement_id = ?2
+           AND role_signataire = ?3
+           AND statut != 'terminee'"
+    );
+    db.conn
+        .execute(&sql, rusqlite::params![entity_key, record_id, role_id])
+        .map_err(|e| format!("Clôture des tâches de signature (rôle) : {e}"))?;
     Ok(())
 }
 

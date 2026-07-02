@@ -47,6 +47,9 @@ pub struct EntityRelationFieldPayload {
     pub field_key: String,
     #[serde(default)]
     pub exclude_record_id: Option<String>,
+    /// Enregistrement en cours d'édition (verrouillage quantité impact après signature).
+    #[serde(default)]
+    pub record_id: Option<String>,
     /// Filtre texte (LIKE sur le libellé) pour l'autocomplétion.
     #[serde(default)]
     pub search: Option<String>,
@@ -148,6 +151,35 @@ pub fn entity_registry_get(state: State<'_, AppState>) -> Result<EntityRegistryR
     })
 }
 
+#[tauri::command]
+pub fn entity_registry_archive_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<entity::registry_archive::RegistryArchiveSummary>, String> {
+    state
+        .desktop_sessions
+        .require_privilege("parametres:archives")?;
+    let db = state.db.lock();
+    entity::registry_archive::list_summaries(&db, entity::registry_archive::MAX_REGISTRY_ARCHIVES)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Deserialize)]
+pub struct EntityRegistryArchiveIdPayload {
+    pub id: String,
+}
+
+#[tauri::command]
+pub fn entity_registry_archive_get(
+    state: State<'_, AppState>,
+    payload: EntityRegistryArchiveIdPayload,
+) -> Result<String, String> {
+    state
+        .desktop_sessions
+        .require_privilege("parametres:archives")?;
+    let db = state.db.lock();
+    entity::registry_archive::get_json(&db, &payload.id).map_err(|e| e.to_string())
+}
+
 #[derive(Deserialize)]
 pub struct EntityLogoUrlPayload {
     pub url: String,
@@ -178,7 +210,11 @@ pub fn entity_registry_save(
     let previous = entity::registry::load(&data_dir)?;
     let mut registry = entity::registry::normalize_registry(payload.registry);
     let auto_created = entity::relations::ensure_referenced_entities(&mut registry);
+    if let Ok(matricules) = entity::matricule_registry::load(&data_dir) {
+        matricules.resolve_unlinked_attrs(&mut registry);
+    }
     registry = entity::registry::normalize_registry(registry);
+    entity::registry::validate_registry(&registry).map_err(|e| e.to_string())?;
     let entity_count = registry.entities.len();
     let removed_count = previous
         .entities
@@ -188,6 +224,7 @@ pub fn entity_registry_save(
     let total_steps = 3 + count_apply_registry_steps(entity_count, removed_count);
     let reporter = SyncReporter::new(&app, total_steps);
     reporter.prep("Enregistrement du registre", "save");
+    entity::registry_archive::push_previous(&db, &previous).map_err(|e| e.to_string())?;
     entity::registry::save(&data_dir, &registry)?;
     drop(db);
 
@@ -214,6 +251,52 @@ pub fn entity_registry_save(
 #[derive(Serialize)]
 pub struct BrandingApplyResponse {
     pub window_title: String,
+}
+
+#[derive(Serialize)]
+pub struct BrandingGetResponse {
+    pub ecosysteme: String,
+    pub slogan: String,
+    pub logo: Option<String>,
+}
+
+/// Identité écosystème (titre, slogan, logo) — lecture publique sans privilège.
+#[tauri::command]
+pub fn entity_branding_get(state: State<'_, AppState>) -> Result<BrandingGetResponse, String> {
+    let db = state.db.lock();
+    let data_dir = db.data_dir.clone();
+    drop(db);
+    let (ecosysteme, slogan) = entity::branding::load_branding(&data_dir);
+    Ok(BrandingGetResponse {
+        ecosysteme,
+        slogan,
+        logo: entity::registry::load_logo_from_disk(&data_dir),
+    })
+}
+
+/// Met à jour uniquement le titre de fenêtre (sans toucher l'icône barre des tâches).
+#[tauri::command]
+pub fn entity_branding_apply_title(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<BrandingApplyResponse, String> {
+    let db = state.db.lock();
+    let data_dir = db.data_dir.clone();
+    drop(db);
+    let window_title = entity::branding::apply_window_title(&app, &data_dir)?;
+    Ok(BrandingApplyResponse { window_title })
+}
+
+/// No-op si l'icône n'a pas changé depuis le dernier `set_icon`.
+#[tauri::command]
+pub fn entity_branding_restore_icon(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state.db.lock();
+    let data_dir = db.data_dir.clone();
+    drop(db);
+    entity::branding::apply_window_icon(&app, &data_dir)
 }
 
 /// Applique écosystème + slogan + icône sur la fenêtre Tauri (titre barre, barre des tâches).
@@ -565,11 +648,13 @@ pub fn entity_registry_append_entity(
     registry = entity::registry::normalize_registry(registry);
     let auto_created = entity::relations::ensure_referenced_entities(&mut registry);
     registry = entity::registry::normalize_registry(registry);
+    entity::registry::validate_registry(&registry).map_err(|e| e.to_string())?;
     let entity_count = registry.entities.len();
     let removed_count = 0usize;
     let total_steps = 3 + count_apply_registry_steps(entity_count, removed_count);
     let reporter = SyncReporter::new(&app, total_steps);
     reporter.prep("Enregistrement du registre", "save");
+    entity::registry_archive::push_previous(&db, &previous).map_err(|e| e.to_string())?;
     entity::registry::save(&data_dir, &registry)?;
     drop(db);
 
@@ -626,6 +711,40 @@ pub fn entity_compteur_preview(
     entity::compteur::preview_compteurs_on_create(&db, &registry, &payload.entity_key)
 }
 
+/// Catalogue global des définitions de matricule (libellé + base).
+#[tauri::command]
+pub fn entity_matricule_registry_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<entity::matricule_registry::MatriculeDef>, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    Ok(entity::matricule_registry::load(&db.data_dir)?.matricules)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatriculeCreatePayload {
+    pub libelle: String,
+    pub base: String,
+}
+
+/// Crée une définition de matricule (libellé et base uniques).
+#[tauri::command]
+pub fn entity_matricule_registry_create(
+    state: State<'_, AppState>,
+    payload: MatriculeCreatePayload,
+) -> Result<entity::matricule_registry::MatriculeDef, String> {
+    state.desktop_sessions.require_privilege("parametres:modifier")?;
+    let db = state.db.lock();
+    entity::matricule_registry::create_matricule(
+        &db.data_dir,
+        entity::matricule_registry::MatriculeCreatePayload {
+            libelle: payload.libelle,
+            base: payload.base,
+        },
+    )
+}
+
 /// Impact stock d'une liaison multiple (ligne embarquée) : champ quantité + sens.
 /// Permet au formulaire d'afficher l'input quantité dans chaque ligne.
 #[tauri::command]
@@ -636,11 +755,45 @@ pub fn entity_embed_impact_meta(
     state.desktop_sessions.require_session()?;
     let db = state.db.lock();
     let registry = entity::registry::load(&db.data_dir)?;
+    let record_id = payload
+        .record_id
+        .as_deref()
+        .or(payload.exclude_record_id.as_deref());
     Ok(entity::relations::embed_impact_meta(
+        &db,
         &registry,
         &payload.screen_key,
         &payload.field_key,
+        record_id,
     ))
+}
+
+#[derive(Deserialize)]
+pub struct EntityChildNumericFieldPayload {
+    pub entity_key: String,
+    pub field_key: String,
+    #[serde(default)]
+    pub record_id: Option<String>,
+    #[serde(default)]
+    pub reference: Option<String>,
+}
+
+/// Valeur numérique d'un champ sur une entité fille (stock article, plafond quantité embarquée).
+#[tauri::command]
+pub fn entity_child_numeric_field(
+    state: State<'_, AppState>,
+    payload: EntityChildNumericFieldPayload,
+) -> Result<Option<f64>, String> {
+    state.desktop_sessions.require_session()?;
+    let db = state.db.lock();
+    entity::relations::read_child_numeric_field(
+        &db,
+        &db.data_dir,
+        &payload.entity_key,
+        &payload.field_key,
+        payload.record_id.as_deref(),
+        payload.reference.as_deref(),
+    )
 }
 
 /// Autorise (ou non) la création « + Créer un nouveau » d'une fille embarquée.
@@ -952,7 +1105,9 @@ pub async fn entity_import_csv(
 pub fn io_log_summary(
     state: State<'_, AppState>,
 ) -> Result<Vec<entity::io_log::IoLogSummary>, String> {
-    state.desktop_sessions.require_session()?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:imports_exports")?;
     let db = state.db.lock();
     entity::io_log::summary(&db)
 }
@@ -967,7 +1122,9 @@ pub fn io_log_detail(
     state: State<'_, AppState>,
     payload: IoLogDetailPayload,
 ) -> Result<Vec<entity::io_log::IoLogEntry>, String> {
-    state.desktop_sessions.require_session()?;
+    state
+        .desktop_sessions
+        .require_privilege("parametres:imports_exports")?;
     let db = state.db.lock();
     entity::io_log::detail(&db, &payload.user_name)
 }

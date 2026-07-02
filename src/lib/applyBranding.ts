@@ -25,7 +25,7 @@ function updateFavicon(logoSrc: string) {
   link.href = logoSrc;
 }
 
-/** Titre navigateur, favicon, titre et icône de fenêtre Tauri (via commande native). */
+/** Titre navigateur, favicon (sans toucher l'icône barre des tâches — gérée côté Rust). */
 export async function applyAppBranding(branding: AppBranding): Promise<void> {
   const windowTitle = buildWindowTitle(branding.title, branding.slogan);
   document.title = windowTitle;
@@ -34,7 +34,7 @@ export async function applyAppBranding(branding: AppBranding): Promise<void> {
   if (!isTauri()) return;
 
   try {
-    const res = await invoke<{ window_title: string }>("entity_branding_apply_window");
+    const res = await invoke<{ window_title: string }>("entity_branding_apply_title");
     if (res.window_title) {
       document.title = res.window_title;
     }
@@ -46,17 +46,9 @@ export async function applyAppBranding(branding: AppBranding): Promise<void> {
       /* fenêtre non prête */
     }
   }
+}
 
-  try {
-    const win = getCurrentWindow();
-    const res = await fetch(branding.logoSrc);
-    if (res.ok) {
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      const { Image } = await import("@tauri-apps/api/image");
-      const image = await Image.fromBytes(bytes);
-      await win.setIcon(image);
-    }
-  } catch {
-    /* icône fenêtre / barre des tâches */
-  }
+/** @deprecated L'icône barre des tâches n'est plus rafraîchie à l'exécution. */
+export async function restoreTaskbarIcon(): Promise<void> {
+  /* no-op — icône appliquée au démarrage ou si le logo écosystème change */
 }

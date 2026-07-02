@@ -104,10 +104,13 @@ impl RemoteSessionStore {
         self.inner.read().get(token).cloned()
     }
 
+    pub fn require_session(&self, token: &str) -> Result<ActiveSession, String> {
+        self.get(token)
+            .ok_or_else(|| "Session mobile expirée — reconnectez-vous".to_string())
+    }
+
     pub fn require_privilege(&self, token: &str, privilege: &str) -> Result<ActiveSession, String> {
-        let session = self
-            .get(token)
-            .ok_or_else(|| "Session mobile expirée — reconnectez-vous".to_string())?;
+        let session = self.require_session(token)?;
         crate::privileges::require_privilege(&session.user.privileges, privilege)?;
         Ok(session)
     }

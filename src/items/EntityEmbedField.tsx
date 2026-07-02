@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Plus } from "lucide-react";
 import { FieldRenderer } from "@/engine/FieldRenderer";
@@ -14,6 +14,55 @@ import { embedRefKey } from "@/lib/createFormLines";
 import { blurActiveElement } from "@/lib/focus";
 import type { RelationSelectOption } from "@/types/entity";
 import type { FieldDef, ScreenRow, ValidationIssue } from "@/types/screen";
+
+interface EmbedImpactMeta {
+  qtyField: string;
+  action: "increment" | "decrement";
+  label: string;
+  originEntityKey: string;
+  qtyReadOnly: boolean;
+  childEntityKey: string;
+  stockCapField?: string | null;
+}
+
+const DA_ENTITY_KEY = "demande_d'achat";
+const EMBED_SOURCE_ID = "_source_record_id";
+const EMBED_STOCK_CAP = "_embedStockCap";
+
+function rowSourceId(row: Record<string, unknown>): string | null {
+  const id = row[EMBED_SOURCE_ID];
+  return id != null && String(id).trim() ? String(id).trim() : null;
+}
+
+function rowCapKey(row: Record<string, unknown>, idx: number): string {
+  return rowSourceId(row) ?? String(row.reference ?? row.nom ?? idx);
+}
+
+function clampQtyInput(raw: string, max?: number): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return raw;
+  let v = Math.max(0, n);
+  if (max != null && Number.isFinite(max)) v = Math.min(v, max);
+  return Number.isInteger(v) ? String(Math.trunc(v)) : String(v);
+}
+
+function pickDefaultImpactQty(
+  child: Record<string, unknown>,
+  qtyField: string,
+  max?: number,
+): string {
+  const direct = child[qtyField];
+  if (direct != null && String(direct).trim() !== "") {
+    return clampQtyInput(String(direct), max);
+  }
+  const cap = child[EMBED_STOCK_CAP];
+  if (cap != null && String(cap).trim() !== "") {
+    return clampQtyInput(String(cap), max);
+  }
+  return "";
+}
 
 function parseEmbedListValue(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) {
@@ -32,6 +81,32 @@ function parseEmbedListValue(value: unknown): Record<string, unknown>[] {
     }
   }
   return [];
+}
+
+function EmbedNestedArticlesReadonly({
+  articles,
+  qtyField = "qte_initial",
+}: {
+  articles: unknown;
+  qtyField?: string;
+}) {
+  const rows = parseEmbedListValue(articles);
+  if (rows.length === 0) return null;
+  return (
+    <ul className="m-0 list-none space-y-1 border-l-2 border-border pl-3 pt-1">
+      {rows.map((art, i) => (
+        <li key={`nested-art-${i}`} className="text-xs text-muted">
+          {rowLabel(art)}
+          {art[qtyField] != null && String(art[qtyField]).trim() !== "" && (
+            <span className="text-foreground">
+              {" "}
+              — {embedFieldLabel(qtyField)} : {String(art[qtyField])}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function readChildValue(values: ScreenRow, field: FieldDef): unknown {
@@ -378,6 +453,8 @@ interface EntityEmbedListEditorProps {
   displayOnly?: boolean;
   screenKey: string;
   excludeRecordId?: string;
+  /** Enregistrement parent en cours (verrouillage quantité après signature DA). */
+  recordId?: string;
   fieldError?: ValidationIssue;
   onChange: (key: string, value: unknown) => void;
   onBlur?: (key: string) => void;
@@ -391,6 +468,7 @@ export function EntityEmbedListEditor({
   displayOnly,
   screenKey,
   excludeRecordId,
+  recordId,
   fieldError,
   onChange,
   onBlur,
@@ -398,12 +476,9 @@ export function EntityEmbedListEditor({
   const refEntity = field.form?.refEntity?.trim() ?? "";
   const rows = parseEmbedListValue(value);
   const [pickOpen, setPickOpen] = useState(false);
-  // Impact stock de la liaison (champ quantité + sens incrément/décrément).
-  const [impactMeta, setImpactMeta] = useState<{
-    qtyField: string;
-    action: "increment" | "decrement";
-    label: string;
-  } | null>(null);
+  const [impactMeta, setImpactMeta] = useState<EmbedImpactMeta | null>(null);
+  const [stockCaps, setStockCaps] = useState<Record<string, number>>({});
+  const editingRecordId = recordId ?? excludeRecordId;
 
   useEffect(() => {
     if (!refEntity || !screenKey || !field.key) {
@@ -413,12 +488,12 @@ export function EntityEmbedListEditor({
     let cancelled = false;
     void (async () => {
       try {
-        const meta = await invoke<{
-          qtyField: string;
-          action: "increment" | "decrement";
-          label: string;
-        } | null>("entity_embed_impact_meta", {
-          payload: { screen_key: screenKey, field_key: field.key },
+        const meta = await invoke<EmbedImpactMeta | null>("entity_embed_impact_meta", {
+          payload: {
+            screen_key: screenKey,
+            field_key: field.key,
+            record_id: editingRecordId ?? null,
+          },
         });
         if (!cancelled) setImpactMeta(meta);
       } catch {
@@ -428,7 +503,47 @@ export function EntityEmbedListEditor({
     return () => {
       cancelled = true;
     };
-  }, [refEntity, screenKey, field.key]);
+  }, [refEntity, screenKey, field.key, editingRecordId]);
+
+  useEffect(() => {
+    if (!impactMeta?.stockCapField || impactMeta.action !== "decrement") {
+      setStockCaps({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const caps: Record<string, number> = {};
+      for (let idx = 0; idx < rows.length; idx++) {
+        const row = rows[idx];
+        const key = rowCapKey(row, idx);
+        const embeddedCap = row[EMBED_STOCK_CAP];
+        if (embeddedCap != null && String(embeddedCap).trim() !== "") {
+          const n = Number(embeddedCap);
+          if (Number.isFinite(n)) caps[key] = n;
+        }
+        try {
+          const live = await invoke<number | null>("entity_child_numeric_field", {
+            payload: {
+              entity_key: impactMeta.childEntityKey,
+              field_key: impactMeta.stockCapField,
+              record_id: rowSourceId(row),
+              reference:
+                row.reference != null && String(row.reference).trim()
+                  ? String(row.reference)
+                  : null,
+            },
+          });
+          if (live != null && Number.isFinite(live)) caps[key] = live;
+        } catch {
+          /* stock live indisponible — garde le plafond embarqué */
+        }
+      }
+      if (!cancelled) setStockCaps(caps);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, impactMeta]);
 
   const qtyLabel = impactMeta
     ? impactMeta.action === "decrement"
@@ -436,21 +551,41 @@ export function EntityEmbedListEditor({
       : `${impactMeta.label} (à ajouter)`
     : "";
 
-  const persist = (next: Record<string, unknown>[]) => {
-    onChange(field.key, JSON.stringify(next));
-    onBlur?.(field.key);
-  };
+  const qtyLocked = Boolean(impactMeta?.qtyReadOnly);
 
-  const appendFromRecord = async (recordId: string) => {
+  const persist = useCallback(
+    (next: Record<string, unknown>[]) => {
+      onChange(field.key, JSON.stringify(next));
+      onBlur?.(field.key);
+    },
+    [field.key, onChange, onBlur],
+  );
+
+  const appendFromRecord = async (pickedId: string) => {
     const child = await invoke<Record<string, unknown>>("entity_embed_child_from_record", {
       payload: {
         screen_key: screenKey,
         field_key: field.key,
-        record_id: recordId,
+        record_id: pickedId,
       },
     });
-    // La quantité d'impact est saisie par l'utilisateur (pas le stock copié de la fille).
-    if (impactMeta) child[impactMeta.qtyField] = "";
+    child[EMBED_SOURCE_ID] = pickedId;
+    if (impactMeta && screenKey === impactMeta.originEntityKey) {
+      const capKey = rowCapKey(child, rows.length);
+      const cap =
+        child[EMBED_STOCK_CAP] != null
+          ? Number(child[EMBED_STOCK_CAP])
+          : undefined;
+      const defaultQty = pickDefaultImpactQty(
+        child,
+        impactMeta.qtyField,
+        cap != null && Number.isFinite(cap) ? cap : stockCaps[capKey],
+      );
+      if (defaultQty) child[impactMeta.qtyField] = defaultQty;
+      if (cap != null && Number.isFinite(cap)) {
+        setStockCaps((prev) => ({ ...prev, [capKey]: cap }));
+      }
+    }
     persist([...rows, child]);
   };
 
@@ -462,30 +597,65 @@ export function EntityEmbedListEditor({
 
   const listSubtitle =
     refEntity === "articles"
-      ? "Plusieurs articles embarqués"
-      : refEntity === "demande_dachat"
-        ? "Demandes d'achat embarquées"
+      ? "Plusieurs articles embarqués — quantité saisie ici, figée après signature DA"
+      : refEntity === "demande_d'achat" || refEntity === "demande_dachat"
+        ? "Demandes d'achat embarquées (articles et quantités hérités)"
         : refEntity
           ? `Éléments embarqués (${refEntity})`
           : "Liste embarquée (one-to-many)";
 
   const rowEditKeys = useMemo(() => {
     const keys = ["nom", "qte", "libelle"] as const;
-    return keys.filter(
+    const base = keys.filter(
       (k) => refEntity === "articles" || rows.some((r) => r[k] !== undefined && r[k] !== null),
     );
-  }, [refEntity, rows]);
+    const qtyKey = impactMeta?.qtyField ?? "qte_initial";
+    if (rows.some((r) => r[qtyKey] !== undefined && r[qtyKey] !== null)) {
+      return [...base, qtyKey];
+    }
+    return base;
+  }, [refEntity, rows, impactMeta?.qtyField]);
 
   const updateRow = (idx: number, key: string, val: string) => {
-    const next = rows.map((r, i) => (i === idx ? { ...r, [key]: val } : r));
+    let nextVal = val;
+    if (impactMeta && key === impactMeta.qtyField) {
+      const cap = stockCaps[rowCapKey(rows[idx], idx)];
+      nextVal = clampQtyInput(val, cap);
+    }
+    const next = rows.map((r, i) => (i === idx ? { ...r, [key]: nextVal } : r));
     persist(next);
   };
 
   const locked = readOnly || displayOnly;
+  const showDaNestedArticles =
+    refEntity === DA_ENTITY_KEY || refEntity === "demande_dachat";
 
   if (displayOnly) {
     return (
-      <EmbedListDisplayOnly field={field} rows={rows} rowEditKeys={rowEditKeys} />
+      <CollapsiblePanel title={field.label} subtitle={listSubtitle} defaultOpen>
+        <div className="space-y-2">
+          {rows.length === 0 ? (
+            <p className="text-sm text-foreground">—</p>
+          ) : (
+            rows.map((row, idx) => (
+              <div
+                key={`embed-ro-${idx}`}
+                className="rounded-md border border-border bg-background px-3 py-2"
+              >
+                <p className="text-sm text-foreground">
+                  {formatEmbedRowText(row, rowEditKeys)}
+                </p>
+                {showDaNestedArticles && (
+                  <EmbedNestedArticlesReadonly
+                    articles={row.articles}
+                    qtyField={impactMeta?.qtyField ?? "qte_initial"}
+                  />
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </CollapsiblePanel>
     );
   }
 
@@ -539,14 +709,29 @@ export function EntityEmbedListEditor({
                 ) : (
                   <span className="text-sm text-foreground">{rowLabel(row)}</span>
                 )}
+                {showDaNestedArticles && (
+                  <EmbedNestedArticlesReadonly
+                    articles={row.articles}
+                    qtyField={impactMeta?.qtyField ?? "qte_initial"}
+                  />
+                )}
               </div>
               <div className="flex shrink-0 items-end gap-2 sm:justify-end">
-                {!locked && impactMeta && (
-                  <div className="w-32">
+                {impactMeta && (
+                  <div className="w-36">
                     <Input
                       type="number"
                       label={qtyLabel}
                       value={String(row[impactMeta.qtyField] ?? "")}
+                      readOnly={locked || qtyLocked}
+                      min={0}
+                      max={stockCaps[rowCapKey(row, idx)]}
+                      step={1}
+                      hint={
+                        stockCaps[rowCapKey(row, idx)] != null
+                          ? `Max : ${stockCaps[rowCapKey(row, idx)]} (stock article)`
+                          : undefined
+                      }
                       onChange={(e) => updateRow(idx, impactMeta.qtyField, e.target.value)}
                       onBlur={() => onBlur?.(field.key)}
                     />

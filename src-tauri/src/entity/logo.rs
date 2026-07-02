@@ -14,12 +14,56 @@ pub fn default_icon_png_bytes() -> &'static [u8] {
     include_bytes!("../../icons/icon.png")
 }
 
-/// Garantit `entities/ecosystem-icon.png` (copie l'icône embarquée si absent).
+/// PNG carré (512×512) adapté barre des tâches / set_icon.
+pub fn square_png_for_taskbar(bytes: &[u8], size: u32) -> Result<Vec<u8>, String> {
+    use image::imageops::FilterType;
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+
+    let img = image::load_from_memory(bytes).map_err(|e| format!("Image invalide : {e}"))?;
+    let (iw, ih) = (img.width(), img.height());
+    if iw == 0 || ih == 0 {
+        return Err("Image vide.".into());
+    }
+    let scale = (size as f32 / iw.max(ih) as f32).min(1.0);
+    let w = ((iw as f32 * scale).round() as u32).max(1);
+    let h = ((ih as f32 * scale).round() as u32).max(1);
+    let resized = img.resize(w, h, FilterType::Lanczos3);
+    let mut canvas = RgbaImage::from_pixel(size, size, Rgba([0, 0, 0, 255]));
+    image::imageops::overlay(
+        &mut canvas,
+        &resized.to_rgba8(),
+        ((size - w) / 2).into(),
+        ((size - h) / 2).into(),
+    );
+    let mut out = Vec::new();
+    DynamicImage::ImageRgba8(canvas)
+        .write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
+/// Indique si un logo écosystème personnalisé est enregistré sur disque.
+pub fn has_custom_ecosystem_icon(data_dir: &Path) -> bool {
+    let logo_path = entities_dir(data_dir).join("logo.base64");
+    logo_path.is_file()
+        && fs::read_to_string(&logo_path)
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+}
+
+/// Garantit `entities/ecosystem-icon.png` sans réécrire un fichier déjà présent.
 pub fn ensure_ecosystem_icon_png(data_dir: &Path) -> Result<std::path::PathBuf, String> {
     let dir = entities_dir(data_dir);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(ECOSYSTEM_ICON_FILENAME);
-    if !path.is_file() {
+    if path.is_file() {
+        return Ok(path);
+    }
+    if has_custom_ecosystem_icon(data_dir) {
+        let logo_path = dir.join(super::registry::LOGO_FILENAME);
+        let logo = fs::read_to_string(&logo_path).map_err(|e| e.to_string())?;
+        persist_ecosystem_icon_png(data_dir, Some(logo.trim()))?;
+    } else {
         fs::write(&path, default_icon_png_bytes()).map_err(|e| e.to_string())?;
     }
     Ok(path)
@@ -52,9 +96,10 @@ pub fn persist_ecosystem_icon_png(data_dir: &Path, logo_data_uri: Option<&str>) 
             MAX_LOGO_BYTES / 1024 / 1024
         ));
     }
+    let squared = square_png_for_taskbar(&bytes, 512)?;
     let dir = entities_dir(data_dir);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    fs::write(dir.join(ECOSYSTEM_ICON_FILENAME), &bytes).map_err(|e| e.to_string())
+    fs::write(dir.join(ECOSYSTEM_ICON_FILENAME), &squared).map_err(|e| e.to_string())
 }
 
 fn mime_from_content_type(header: Option<&str>, bytes: &[u8]) -> String {

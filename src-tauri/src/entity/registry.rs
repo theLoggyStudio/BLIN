@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::attr_types::{is_reserved_attribute, normalize_attribute};
+use std::collections::HashSet;
 use super::logo;
 use super::{generated_config_dir, registry_path};
 
@@ -51,6 +52,12 @@ pub struct EntityAttribute {
     pub relation_impact_action: Option<String>,
     #[serde(default)]
     pub relation_impact_defer: bool,
+    /// Seuil d'alerte stock (obligatoire si type `stock`) — tâche auto si quantité ≤ seuil.
+    #[serde(default)]
+    pub stock_alert_threshold: Option<f64>,
+    /// Référence vers une définition du catalogue matricules (`entities/matricules.json`).
+    #[serde(default)]
+    pub matricule_ref: Option<String>,
 }
 
 fn default_attr_type_string() -> String {
@@ -174,9 +181,13 @@ pub fn normalize_registry(mut registry: EntityRegistry) -> EntityRegistry {
         .entities
         .retain(|e| !is_orphan_entity_key(&e.nom));
     for ent in &mut registry.entities {
+        ent.nom = normalize_entity_key(&ent.nom);
+        ent.label = Some(label_from_nom(&ent.nom));
         ent.attributs.retain(|a| !is_reserved_attribute(a));
         for attr in &mut ent.attributs {
+            attr.nom = normalize_entity_key(&attr.nom);
             normalize_attribute(attr);
+            attr.label = Some(label_from_nom(&attr.nom));
         }
         if ent.nom != super::stock::STOCK_ENTITY_KEY && ent.nom != "tache" {
             ent.is_session = true;
@@ -193,6 +204,59 @@ pub fn normalize_registry(mut registry: EntityRegistry) -> EntityRegistry {
         }
     }
     registry
+}
+
+fn normalize_entity_key(raw: &str) -> String {
+    raw.trim().to_lowercase().replace(' ', "_")
+}
+
+/// Libellé affiché : nom technique avec espaces et 1re lettre majuscule.
+pub fn label_from_nom(nom: &str) -> String {
+    let t = nom.trim().replace('_', " ");
+    if t.is_empty() {
+        return String::new();
+    }
+    let mut chars = t.chars();
+    let first = chars.next().unwrap().to_uppercase().collect::<String>();
+    first + chars.as_str()
+}
+
+/// Noms d'entités et d'attributs uniques dans le registre.
+pub fn validate_registry(registry: &EntityRegistry) -> Result<(), String> {
+    let mut entity_keys = HashSet::new();
+    for ent in &registry.entities {
+        let key = ent.nom.trim();
+        if key.is_empty() {
+            return Err("Une entité a un nom (clé) vide.".into());
+        }
+        if !entity_keys.insert(key.to_string()) {
+            return Err(format!("Nom d'entité en double : {key}"));
+        }
+        let mut attr_keys = HashSet::new();
+        for attr in &ent.attributs {
+            let an = attr.nom.trim();
+            if an.is_empty() {
+                continue;
+            }
+            if !attr_keys.insert(an.to_string()) {
+                let label = ent.label.as_deref().unwrap_or(&ent.nom);
+                return Err(format!(
+                    "Attribut « {an} » en double dans l'entité « {label} »."
+                ));
+            }
+            if attr.attr_type == "stock" {
+                let threshold = attr.stock_alert_threshold.unwrap_or(0.0);
+                if threshold <= 0.0 {
+                    let label = ent.label.as_deref().unwrap_or(&ent.nom);
+                    let attr_label = attr.label.as_deref().unwrap_or(&attr.nom);
+                    return Err(format!(
+                        "« {attr_label} » ({label}) : renseignez une quantité alarmante (> 0) pour chaque attribut de type stock."
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn load_logo_from_disk(data_dir: &Path) -> Option<String> {

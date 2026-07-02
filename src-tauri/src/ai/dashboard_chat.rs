@@ -3,7 +3,7 @@
 use uuid::Uuid;
 
 use crate::ai::agent::{ChatColsRequest, ChatDisplayBlock, ChatReply, EntityCreateAction, RegistryEntityCreateAction};
-use crate::ai::intent_filters::{extract_web_search_query, wants_internet_research_intent};
+use crate::ai::intent_filters::wants_internet_research_intent;
 use crate::entity::create_draft;
 use crate::entity::list_preview::{self, visible_chat_message};
 use crate::entity::registry;
@@ -110,7 +110,19 @@ pub fn answer_practical(
     }
 
     if web_search::is_enabled(&db.data_dir) && wants_internet_research_intent(&core) {
-        let query = extract_web_search_query(&core).unwrap_or_else(|| core.clone());
+        let history: Vec<(String, String)> = db
+            .ai_list_messages(&conv_id, 8)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| (m.role, m.content))
+            .collect();
+        let query = match web_search::build_contextual_query(&history, &core) {
+            Some(q) => q,
+            None => {
+                let msg = "Que veux-tu que je recherche sur Internet ? Précise un sujet (par exemple « cherche Tayc sur internet »).";
+                return store_assistant(db, &conv_id, user_message, msg, vec![], None, vec![]);
+            }
+        };
         match web_search::search(&db.data_dir, &query) {
             Ok(result) => {
                 let msg = web_search::synthesize_answer(db, &core, &result)

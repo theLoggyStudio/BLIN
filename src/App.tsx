@@ -17,6 +17,7 @@ import { StockModalProvider } from "@/contexts/StockModalContext";
 import { EntityDefLoggyModalProvider } from "@/contexts/EntityDefLoggyModalContext";
 import { AlertProvider } from "@/contexts/AlertContext";
 import { AppStartupHost } from "@/items/AppStartupHost";
+import { AiRuntimeSetupGate } from "@/items/AiRuntimeSetupGate";
 
 function LoadingScreen() {
   return (
@@ -90,14 +91,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <UiThemeProvider>
-        <EntityBrandingProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <EntityBrandingProvider>
             <AlertProvider>
-              <AppStartupHost />
-              <AppRoutes />
+              <AiRuntimeSetupGate>
+                <AppStartupHost />
+                <AppRoutes />
+              </AiRuntimeSetupGate>
             </AlertProvider>
-          </AuthProvider>
-        </EntityBrandingProvider>
+          </EntityBrandingProvider>
+        </AuthProvider>
       </UiThemeProvider>
     </BrowserRouter>
   );

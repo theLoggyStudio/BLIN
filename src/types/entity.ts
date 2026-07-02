@@ -36,8 +36,18 @@ export interface EntityAttribute {
   relation_impact_action?: "increment" | "decrement" | null;
   /** Reporter l'impact à la validation de l'entité englobante (hiérarchie). */
   relation_impact_defer?: boolean;
+  /** Seuil d'alerte stock (obligatoire si type stock) — tâche auto si quantité ≤ seuil. */
+  stock_alert_threshold?: number | null;
+  /** Référence vers une définition du catalogue matricules. */
+  matricule_ref?: string | null;
   default?: string | number | boolean | null;
   enum_options?: string[];
+}
+
+export interface MatriculeDef {
+  id: string;
+  libelle: string;
+  base: string;
 }
 
 export interface EntityDef {
@@ -217,6 +227,13 @@ export interface SignatoryContact {
 /** @deprecated Utiliser SignatoryContact */
 export type ValidatorContact = SignatoryContact;
 
+export interface RoleSignatureProgress {
+  roleId: string;
+  roleNom: string;
+  signed: boolean;
+  signerLabel?: string | null;
+}
+
 export interface RecordSignatureField {
   key: string;
   label: string;
@@ -235,7 +252,11 @@ export interface RecordSignatureDetail {
   refusedBy?: string | null;
   refusalReason?: string | null;
   fields: RecordSignatureField[];
+  panels: RelationPanel[];
   signatoryContacts: SignatoryContact[];
+  signatureRoles: RoleSignatureProgress[];
+  signatureRequiredCount: number;
+  signatureDoneCount: number;
 }
 
 /** @deprecated Utiliser RecordSignatureDetail */

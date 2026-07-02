@@ -77,6 +77,9 @@ impl Database {
         db.migrate_v20()?;
         db.migrate_v21()?;
         db.migrate_v22()?;
+        db.migrate_v23()?;
+        db.migrate_v24()?;
+        db.migrate_v25()?;
         db.seed()?;
         db.ensure_admin_account()?;
         db.ensure_demo_bureau()?;
@@ -85,6 +88,66 @@ impl Database {
 
     pub fn photos_dir(&self) -> PathBuf {
         self.data_dir.join("photos")
+    }
+
+    pub fn main_db_path(&self) -> PathBuf {
+        self.data_dir.join(DB_FILENAME)
+    }
+
+    /// Chemins absolus des fichiers SQLite existants (`.sqlite`, `.db`, sidecars WAL/SHM).
+    pub fn list_sqlite_file_paths(&self) -> Vec<String> {
+        let mut paths = Vec::new();
+        Self::push_existing_sqlite_bundle(&mut paths, &self.main_db_path());
+        Self::push_existing_sqlite_bundle(
+            &mut paths,
+            &self.data_dir.join("blin-alert-pool.sqlite"),
+        );
+        for legacy_name in LEGACY_DB_FILENAMES {
+            Self::push_existing_sqlite_bundle(&mut paths, &self.data_dir.join(legacy_name));
+        }
+        if let Ok(entries) = std::fs::read_dir(&self.data_dir) {
+            let mut extra = Vec::new();
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                let is_db_file = name.ends_with(".sqlite")
+                    || name.ends_with(".sqlite-wal")
+                    || name.ends_with(".sqlite-shm")
+                    || name.ends_with(".db")
+                    || name.ends_with(".db-wal")
+                    || name.ends_with(".db-shm");
+                if !is_db_file {
+                    continue;
+                }
+                let s = path.to_string_lossy().to_string();
+                if !paths.contains(&s) {
+                    extra.push(s);
+                }
+            }
+            extra.sort();
+            paths.extend(extra);
+        }
+        paths
+    }
+
+    fn push_existing_sqlite_bundle(out: &mut Vec<String>, base: &Path) {
+        if !base.exists() {
+            return;
+        }
+        out.push(base.to_string_lossy().to_string());
+        if let Some(s) = base.to_str() {
+            for suffix in ["-wal", "-shm"] {
+                let side = PathBuf::from(format!("{s}{suffix}"));
+                if side.exists() {
+                    out.push(side.to_string_lossy().to_string());
+                }
+            }
+        }
     }
 
     fn migrate_legacy_db_files(app_data_dir: &Path, target: &Path) -> Result<(), DbError> {
@@ -230,11 +293,14 @@ impl Database {
                     "ai:utiliser",
                     "parametres:voir",
                     "parametres:assistant",
+                    "parametres:personnalisation_ia",
                     "parametres:compte",
                     "parametres:theme",
                     "parametres:impression",
                     "parametres:entites",
                     "parametres:entites:creer",
+                    "parametres:archives",
+                    "parametres:imports_exports",
                     "parametres:roles",
                     "parametres:utilisateurs",
                 ],
@@ -401,6 +467,30 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(flag != 0)
+    }
+
+    /// Vérifie le mot de passe du compte connecté (ré-authentification Paramètres).
+    pub fn verify_user_password(&self, user_id: &str, password: &str) -> Result<(), DbError> {
+        let password_hash: String = self
+            .conn
+            .query_row(
+                "SELECT password_hash FROM users WHERE id = ?1 AND actif = 1",
+                params![user_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    DbError::Message("Compte introuvable.".to_string())
+                }
+                other => DbError::from(other),
+            })?;
+
+        if !verify(password, &password_hash)
+            .map_err(|e| DbError::Message(format!("Vérification mot de passe : {e}")))?
+        {
+            return Err(DbError::Message("Mot de passe incorrect.".to_string()));
+        }
+        Ok(())
     }
 
     pub fn change_password(

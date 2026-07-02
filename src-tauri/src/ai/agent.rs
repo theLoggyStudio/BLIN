@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::ai::config::project_root;
 use crate::ai::intent_filters::{
-    extract_web_search_query, infer_export_tool, infer_list_tool, infer_period_from_message,
+    infer_export_tool, infer_list_tool, infer_period_from_message,
     infer_statut_param, wants_action_intent, wants_detail_intent, wants_export_intent,
     wants_generate_loyers_intent, wants_internet_research_intent, wants_last_bien,
     wants_list_intent, wants_pay_finance_intent, wants_search_intent,
@@ -711,7 +711,14 @@ Contexte:
         if !wants_internet_research_intent(user_message) {
             return None;
         }
-        let query = extract_web_search_query(user_message)?;
+        let history: Vec<(String, String)> = self
+            .db
+            .ai_list_messages(conversation_id, 8)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| (m.role, m.content))
+            .collect();
+        let query = web_search::build_contextual_query(&history, user_message)?;
         let result = web_search::search(&self.db.data_dir, &query).ok()?;
         let answer = web_search::synthesize_answer(self.db, user_message, &result).ok()?;
         let tr = ToolResult {

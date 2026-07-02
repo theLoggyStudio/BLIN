@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
+use crate::network_local;
 use crate::remote::{RemoteConnectionInfo, RemoteServer, RemoteState};
 use crate::AppState;
 
@@ -27,30 +28,34 @@ fn ensure_remote_server(app: &AppHandle, state: &AppState) {
 }
 
 #[tauri::command]
-pub fn remote_connection_get(
+pub async fn remote_connection_get(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<RemoteConnectionResponse, String> {
     ensure_remote_server(&app, &state);
 
-    let token = state
-        .db
-        .lock()
-        .create_pairing_token()
-        .map_err(|e| e.to_string())?;
+    let db = state.db.clone();
+    let pairing_token = state.pairing_token.clone();
 
-    *state.pairing_token.lock() = token.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = db
+            .lock()
+            .create_pairing_token()
+            .map_err(|e| e.to_string())?;
 
-    let RemoteConnectionInfo { url, port, .. } = RemoteServer::connection_info(&token);
-    let ip = local_ip_address::local_ip()
-        .map(|a| a.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+        *pairing_token.lock() = token.clone();
 
-    Ok(RemoteConnectionResponse {
-        ip,
-        url: url.clone(),
-        front_url: url,
-        port,
-        success: true,
+        let RemoteConnectionInfo { url, port, .. } = RemoteServer::connection_info(&token);
+        let ip = network_local::cached_local_ip();
+
+        Ok(RemoteConnectionResponse {
+            ip,
+            url: url.clone(),
+            front_url: url,
+            port,
+            success: true,
+        })
     })
+    .await
+    .map_err(|e| format!("remote_connection_get interrompu : {e}"))?
 }

@@ -1120,6 +1120,50 @@ impl Database {
         Ok(())
     }
 
+    /// Signatures par rôle (tous les signataires obligatoires avant validation).
+    pub fn migrate_v23(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS entity_record_role_signatures (
+                id TEXT PRIMARY KEY NOT NULL,
+                entity_key TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                role_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                signer_label TEXT NOT NULL,
+                signed_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_record_role_sigs_unique
+                ON entity_record_role_signatures(entity_key, record_id, role_id);
+            CREATE INDEX IF NOT EXISTS idx_entity_record_role_sigs_record
+                ON entity_record_role_signatures(entity_key, record_id);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    /// Archives JSON du registre entités (5 dernières versions).
+    pub fn migrate_v24(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS entity_registry_archive (
+                id TEXT PRIMARY KEY NOT NULL,
+                archived_at TEXT NOT NULL,
+                registry_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_entity_registry_archive_at
+                ON entity_registry_archive(archived_at DESC);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    /// Privilèges dédiés : archives registre, personnalisation IA, imports/exports.
+    pub fn migrate_v25(&self) -> Result<(), DbError> {
+        self.ensure_parametres_privileges()?;
+        Ok(())
+    }
+
     /// Journal des imports / exports CSV (par utilisateur et par écran).
     pub fn migrate_v22(&self) -> Result<(), DbError> {
         self.conn.execute_batch(

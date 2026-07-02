@@ -1,8 +1,11 @@
 import { cn } from "@/lib/utils";
+import type { VisionAnalyzeEntityOptions } from "@/types/ai";
 
 export interface PendingQuestion {
   id: string;
   text: string;
+  imageDataUrl?: string;
+  visionEntityOptions?: VisionAnalyzeEntityOptions;
 }
 
 interface DashboardChatQueueProps {
@@ -29,7 +32,10 @@ export function DashboardChatQueue({ items, maxItems, className }: DashboardChat
         {items.map((item, index) => (
           <li key={item.id} className="dashboard-chat-queue-item">
             <span className="dashboard-chat-queue-index">{index + 1}.</span>
-            <span className="dashboard-chat-queue-text">{item.text}</span>
+            <span className="dashboard-chat-queue-text">
+              {item.text}
+              {item.imageDataUrl ? " 🖼" : ""}
+            </span>
           </li>
         ))}
       </ol>

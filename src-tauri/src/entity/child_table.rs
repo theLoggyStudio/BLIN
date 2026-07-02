@@ -28,10 +28,14 @@ fn copyable_child_columns(child: &EntityDef) -> Vec<(String, &'static str)> {
     let mut cols = Vec::new();
     for attr in embed::copyable_child_attributes(child) {
         if is_compteur_attr(attr) {
-            let base = attr_column(attr);
-            cols.push((format!("{base}_libelle"), "TEXT"));
-            cols.push((format!("{base}_jjmmaaaa"), "TEXT"));
-            cols.push((format!("{base}_numero"), "INTEGER"));
+            for col in compteur::all_sql_columns(attr) {
+                let col_type = if col.ends_with("_numero") {
+                    "INTEGER"
+                } else {
+                    "TEXT"
+                };
+                cols.push((col, col_type));
+            }
         } else {
             cols.push((attr_column(attr), sqlite_type(&attr.attr_type)));
         }

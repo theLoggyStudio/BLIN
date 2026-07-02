@@ -103,12 +103,17 @@ pub fn sync_entity_table(
 
     for attr in ent.attributs.iter().filter(|a| !is_reserved_attribute(a)) {
         if is_compteur_attr(attr) {
-            let cols = [
-                (compteur::column_libelle(attr), "TEXT"),
-                (compteur::column_jjmmaaaa(attr), "TEXT"),
-                (compteur::column_numero(attr), "INTEGER"),
-            ];
-            for (col, col_type) in cols {
+            for (col, col_type) in compteur::all_sql_columns(attr)
+                .into_iter()
+                .map(|c| {
+                    let t = if c.ends_with("_numero") {
+                        "INTEGER"
+                    } else {
+                        "TEXT"
+                    };
+                    (c, t)
+                })
+            {
                 if table_has_column(db, &table, &col)? {
                     continue;
                 }

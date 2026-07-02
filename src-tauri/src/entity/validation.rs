@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use super::attr_types::is_reserved_attribute;
-use super::compteur::{self, is_compteur_attr};
+use super::compteur::{self, is_compteur_attr, is_matricule_attr};
 use super::record_signature;
 use super::registry::{EntityAttribute, EntityDef};
 use super::schema::{attr_column, table_has_column, table_name};
@@ -281,13 +281,14 @@ pub fn spawn_other_signatory_roles_signed_notices(
             }
         }
 
-        let libelle = format!("{source_label} signé — {summary}");
+        let libelle = format!("{source_label} entièrement signé — {summary}");
         let objet_intitule = format_record_full_info(source, source_row);
         let description = format!(
-            "L'objet « {source_label} » ({source_entity_key}) a été signé par {signer_label}.\n\
+            "L'objet « {source_label} » ({source_entity_key}) a été validé par l'ensemble des signataires requis.\n\
+             Dernière signature : {signer_label}.\n\
              Enregistrement : {record_id}\n\
              Rôle signataire concerné : {}\n\
-             Votre signature n'était plus requise — consultez la fiche signée.",
+             Consultez la fiche signée.",
             contact.role_nom
         );
         let _ = insert_system_task(
@@ -769,6 +770,12 @@ fn attr_label(attr: &EntityAttribute) -> &str {
 }
 
 fn format_attr_value_for_title(attr: &EntityAttribute, row: &Map<String, Value>) -> String {
+    if is_matricule_attr(attr) {
+        let s = compteur::format_matricule_from_row(row, attr);
+        if !s.is_empty() {
+            return s;
+        }
+    }
     if is_compteur_attr(attr) {
         let lib = row
             .get(&compteur::column_libelle(attr))
@@ -1009,6 +1016,104 @@ pub fn json_value_to_sql(v: &Value, attr_type: &str) -> rusqlite::types::Value {
         Value::String(s) => rusqlite::types::Value::Text(s.clone()),
         other => rusqlite::types::Value::Text(other.to_string()),
     }
+}
+
+const STOCK_LOW_TASK_PREFIX: &str = "Stock bas —";
+
+/// Crée une tâche générale si le stock d'un attribut `stock` passe au seuil d'alerte ou en dessous.
+pub fn spawn_stock_low_alert_task(
+    db: &Database,
+    data_dir: &std::path::Path,
+    child_ent: &EntityDef,
+    child_record_id: &str,
+    target_field: &str,
+    new_value: f64,
+) -> Result<(), String> {
+    use rusqlite::params;
+
+    let Some(target_attr) = child_ent
+        .attributs
+        .iter()
+        .find(|a| a.nom == target_field && a.attr_type == "stock")
+    else {
+        return Ok(());
+    };
+    let threshold = target_attr.stock_alert_threshold.unwrap_or(0.0);
+    if threshold <= 0.0 || new_value > threshold {
+        return Ok(());
+    }
+
+    let tache_table = table_name(TACHE_ENTITY_KEY);
+    let table_ok: i64 = db
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+            params![tache_table],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if table_ok == 0 {
+        return Ok(());
+    }
+
+    let exists: i64 = db
+        .conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM {tache_table}
+                 WHERE type_tache = 'generale'
+                   AND entite_a_valider = ?1
+                   AND enregistrement_id = ?2
+                   AND statut != 'terminee'
+                   AND libelle LIKE ?3"
+            ),
+            params![
+                child_ent.nom,
+                child_record_id,
+                format!("{STOCK_LOW_TASK_PREFIX}%")
+            ],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if exists > 0 {
+        return Ok(());
+    }
+
+    let registry = super::registry::load(data_dir)?;
+    let Some(tache_ent) = registry.find(TACHE_ENTITY_KEY) else {
+        return Ok(());
+    };
+
+    let cfg = super::load_screen_config(data_dir, &child_ent.nom)?;
+    let row = crud::get_row(db, &cfg, child_record_id)?;
+    let article_label = record_summary(child_ent, &row);
+    let field_label = target_attr
+        .label
+        .clone()
+        .unwrap_or_else(|| target_field.to_string());
+
+    let libelle = format!("{STOCK_LOW_TASK_PREFIX} {article_label}");
+    let description = format!(
+        "Le stock de « {article_label} » ({field_label}) est à {new_value} unité(s), \
+         en dessous du seuil d'alerte ({threshold}).\n\
+         Loggy : pensez à lancer une demande d'achat pour réapprovisionner."
+    );
+
+    let _ = insert_system_task(
+        db,
+        tache_ent,
+        &libelle,
+        &description,
+        "generale",
+        None,
+        Some(&child_ent.nom),
+        None,
+        child_record_id,
+        None,
+        None,
+        Some(&article_label),
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

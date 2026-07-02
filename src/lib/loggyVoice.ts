@@ -18,6 +18,21 @@ const CURRENT_USER_KEY = "blin:loggy-voice-current-user";
 
 /** Identifiant de la voix par défaut partagée (non supprimable, non possédée). */
 export const DEFAULT_VOICE_ID = "default";
+/** Voix partagée — style asiatique féminin. */
+export const ASIAN_VOICE_FEMALE_ID = "shared-asian-female";
+/** Voix partagée — style asiatique masculin. */
+export const ASIAN_VOICE_MALE_ID = "shared-asian-male";
+
+const SHARED_VOICE_IDS: readonly string[] = [
+  DEFAULT_VOICE_ID,
+  ASIAN_VOICE_FEMALE_ID,
+  ASIAN_VOICE_MALE_ID,
+];
+
+/** Profil partagé (non modifiable, non supprimable). */
+export function isSharedVoiceId(id: string): boolean {
+  return SHARED_VOICE_IDS.includes(id);
+}
 
 /** Événement émis à chaque changement de configuration vocale. */
 export const LOGGY_VOICE_CHANGED_EVENT = "blin:loggy-voice-changed";
@@ -28,7 +43,7 @@ export interface VoiceProfile {
   name: string;
   /** Voix système (voiceURI) ; null = voix par défaut du système. */
   voiceURI: string | null;
-  /** Tonalité (0.5 → 2, 1 = normale). */
+  /** Tonalité (0.1 → 3, 1 = normale ; filtre grave ↔ aiguë). */
   pitch: number;
   /** Vitesse (0.5 → 2, 1 = normale). */
   rate: number;
@@ -37,6 +52,13 @@ export interface VoiceProfile {
   /** Propriétaire (id utilisateur) ; null = voix par défaut partagée. */
   owner: string | null;
 }
+
+/** Tonalité minimale (très grave). */
+export const PITCH_MIN = 0.1;
+/** Tonalité maximale (très aiguë). */
+export const PITCH_MAX = 3;
+/** Tonalité neutre. */
+export const PITCH_NEUTRAL = 1;
 
 const DEFAULT_PROFILE: VoiceProfile = {
   id: DEFAULT_VOICE_ID,
@@ -49,6 +71,32 @@ const DEFAULT_PROFILE: VoiceProfile = {
   volume: 0.7,
   owner: null,
 };
+
+const ASIAN_FEMALE_PROFILE: VoiceProfile = {
+  id: ASIAN_VOICE_FEMALE_ID,
+  name: "Style asiatique (Yuki)",
+  voiceURI: "Microsoft Haruka - Japanese (Japan)",
+  pitch: 1.45,
+  rate: 1.05,
+  volume: 0.85,
+  owner: null,
+};
+
+const ASIAN_MALE_PROFILE: VoiceProfile = {
+  id: ASIAN_VOICE_MALE_ID,
+  name: "Style asiatique (Ken)",
+  voiceURI: "Microsoft Ichiro - Japanese (Japan)",
+  pitch: 0.95,
+  rate: 1,
+  volume: 0.85,
+  owner: null,
+};
+
+const SHARED_PROFILES: VoiceProfile[] = [
+  DEFAULT_PROFILE,
+  ASIAN_FEMALE_PROFILE,
+  ASIAN_MALE_PROFILE,
+];
 
 function emitChanged(): void {
   window.dispatchEvent(new CustomEvent(LOGGY_VOICE_CHANGED_EVENT));
@@ -139,12 +187,12 @@ function readStoredProfiles(): VoiceProfile[] {
     const parsed = JSON.parse(raw) as VoiceProfile[];
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .filter((p) => p && typeof p.id === "string" && p.id !== DEFAULT_VOICE_ID)
+      .filter((p) => p && typeof p.id === "string" && !isSharedVoiceId(p.id))
       .map((p) => ({
         id: p.id,
         name: String(p.name || "Voix"),
         voiceURI: p.voiceURI ?? null,
-        pitch: clamp(Number(p.pitch), 0.5, 2, 1),
+        pitch: clamp(Number(p.pitch), PITCH_MIN, PITCH_MAX, PITCH_NEUTRAL),
         rate: clamp(Number(p.rate), 0.5, 2, 1),
         volume: clamp(Number(p.volume), 0, 1, 1),
         owner: p.owner ?? null,
@@ -158,7 +206,7 @@ function writeStoredProfiles(profiles: VoiceProfile[]): void {
   try {
     localStorage.setItem(
       PROFILES_KEY,
-      JSON.stringify(profiles.filter((p) => p.id !== DEFAULT_VOICE_ID)),
+      JSON.stringify(profiles.filter((p) => !isSharedVoiceId(p.id))),
     );
   } catch {
     /* noop */
@@ -167,28 +215,29 @@ function writeStoredProfiles(profiles: VoiceProfile[]): void {
 
 /** Tous les profils (voix par défaut en tête). */
 export function getAllVoiceProfiles(): VoiceProfile[] {
-  return [DEFAULT_PROFILE, ...readStoredProfiles()];
+  return [...SHARED_PROFILES, ...readStoredProfiles()];
 }
 
-/** Profils accessibles à un utilisateur : voix par défaut + ses voix. */
+/** Profils accessibles à un utilisateur : voix partagées + ses voix. */
 export function getVoiceProfilesForUser(userId: string | null): VoiceProfile[] {
   const owned = readStoredProfiles().filter((p) => p.owner === userId);
-  return [DEFAULT_PROFILE, ...owned];
+  return [...SHARED_PROFILES, ...owned];
 }
 
 export function getVoiceProfile(id: string): VoiceProfile | null {
-  if (id === DEFAULT_VOICE_ID) return DEFAULT_PROFILE;
+  const shared = SHARED_PROFILES.find((p) => p.id === id);
+  if (shared) return shared;
   return readStoredProfiles().find((p) => p.id === id) ?? null;
 }
 
-/** Crée ou met à jour un profil (la voix par défaut n'est pas modifiable). */
+/** Crée ou met à jour un profil (les voix partagées ne sont pas modifiables). */
 export function saveVoiceProfile(profile: VoiceProfile): void {
-  if (profile.id === DEFAULT_VOICE_ID || profile.owner === null) return;
+  if (isSharedVoiceId(profile.id) || profile.owner === null) return;
   const profiles = readStoredProfiles();
   const idx = profiles.findIndex((p) => p.id === profile.id);
   const normalized: VoiceProfile = {
     ...profile,
-    pitch: clamp(profile.pitch, 0.5, 2, 1),
+    pitch: clamp(profile.pitch, PITCH_MIN, PITCH_MAX, PITCH_NEUTRAL),
     rate: clamp(profile.rate, 0.5, 2, 1),
     volume: clamp(profile.volume, 0, 1, 1),
   };
@@ -199,7 +248,7 @@ export function saveVoiceProfile(profile: VoiceProfile): void {
 }
 
 export function deleteVoiceProfile(id: string): void {
-  if (id === DEFAULT_VOICE_ID) return;
+  if (isSharedVoiceId(id)) return;
   writeStoredProfiles(readStoredProfiles().filter((p) => p.id !== id));
   emitChanged();
 }
@@ -250,9 +299,48 @@ export function listSystemVoices(): SpeechSynthesisVoice[] {
   return window.speechSynthesis.getVoices();
 }
 
-function pickVoice(voiceURI: string | null): SpeechSynthesisVoice | null {
+function pickAsianVoice(preferredURI: string | null, female: boolean): SpeechSynthesisVoice | null {
   const voices = listSystemVoices();
   if (voices.length === 0) return null;
+
+  if (preferredURI) {
+    const exact = voices.find((v) => v.voiceURI === preferredURI || v.name === preferredURI);
+    if (exact) return exact;
+    const hint = preferredURI.replace(/^Microsoft\s+/i, "").split(" - ")[0]?.trim();
+    if (hint) {
+      const byHint = voices.find((v) => v.name.includes(hint));
+      if (byHint) return byHint;
+    }
+  }
+
+  const asian = voices.filter((v) => /^(ja|zh|ko|vi|th)/i.test(v.lang ?? ""));
+  if (asian.length === 0) return null;
+
+  const femaleRe =
+    /haruka|ayumi|huihui|yaoyao|heami|nanami|yunxia|tracy|xiaoxiao|xiaoyi|female|femme/i;
+  const maleRe = /ichiro|kangkang|yunxi|injoon|hyunsu|yunjian|male|homme/i;
+
+  if (female) {
+    return (
+      asian.find((v) => femaleRe.test(v.name)) ??
+      asian.find((v) => !maleRe.test(v.name)) ??
+      asian[0]
+    );
+  }
+  return asian.find((v) => maleRe.test(v.name)) ?? asian[asian.length - 1];
+}
+
+function pickVoice(voiceURI: string | null, profileId?: string): SpeechSynthesisVoice | null {
+  const voices = listSystemVoices();
+  if (voices.length === 0) return null;
+
+  if (profileId === ASIAN_VOICE_FEMALE_ID) {
+    return pickAsianVoice(voiceURI, true) ?? pickVoice(voiceURI);
+  }
+  if (profileId === ASIAN_VOICE_MALE_ID) {
+    return pickAsianVoice(voiceURI, false) ?? pickVoice(voiceURI);
+  }
+
   if (voiceURI) {
     const exact = voices.find((v) => v.voiceURI === voiceURI || v.name === voiceURI);
     if (exact) return exact;
@@ -282,15 +370,99 @@ export function stopLoggyVoice(): void {
   window.speechSynthesis.cancel();
 }
 
+/** Libellé lisible pour une valeur de tonalité. */
+export function formatPitchLabel(pitch: number): string {
+  const p = clamp(pitch, PITCH_MIN, PITCH_MAX, PITCH_NEUTRAL);
+  if (p <= 0.45) return "Très grave";
+  if (p <= 0.8) return "Grave";
+  if (p >= 2.2) return "Très aiguë";
+  if (p >= 1.45) return "Aiguë";
+  return "Neutre";
+}
+
+/** Courbe agressive : pousse davantage vers les extrêmes perceptifs. */
+function pitchCurve(t: number): number {
+  return Math.pow(clamp(t, 0, 1, 0), 2);
+}
+
+/** Tonalité profil → pitch / rate / voix système pour la synthèse. */
+function pitchToSpeechParams(profile: VoiceProfile): {
+  utterPitch: number;
+  utterRate: number;
+  preferGraveVoice: boolean;
+  preferAiguVoice: boolean;
+} {
+  const p = clamp(profile.pitch, PITCH_MIN, PITCH_MAX, PITCH_NEUTRAL);
+  const baseRate = clamp(profile.rate, 0.5, 2, 1);
+
+  if (Math.abs(p - PITCH_NEUTRAL) < 0.04) {
+    return {
+      utterPitch: PITCH_NEUTRAL,
+      utterRate: baseRate,
+      preferGraveVoice: false,
+      preferAiguVoice: false,
+    };
+  }
+
+  if (p < PITCH_NEUTRAL) {
+    const t = pitchCurve((PITCH_NEUTRAL - p) / (PITCH_NEUTRAL - PITCH_MIN));
+    return {
+      utterPitch: PITCH_NEUTRAL - t * PITCH_NEUTRAL,
+      utterRate: baseRate * (1 - t * 0.38),
+      preferGraveVoice: t > 0.35,
+      preferAiguVoice: false,
+    };
+  }
+
+  const t = pitchCurve((p - PITCH_NEUTRAL) / (PITCH_MAX - PITCH_NEUTRAL));
+  return {
+    utterPitch: PITCH_NEUTRAL + t,
+    utterRate: baseRate * (1 + t * 0.28),
+    preferGraveVoice: false,
+    preferAiguVoice: t > 0.35,
+  };
+}
+
+function pickVoiceForPitch(
+  profile: VoiceProfile,
+  preferGrave: boolean,
+  preferAigu: boolean,
+): SpeechSynthesisVoice | null {
+  if (isSharedVoiceId(profile.id)) {
+    return pickVoice(profile.voiceURI, profile.id);
+  }
+  if (!preferGrave && !preferAigu) return pickVoice(profile.voiceURI, profile.id);
+
+  const fr = listSystemVoices().filter((v) => v.lang?.toLowerCase().startsWith("fr"));
+  if (fr.length === 0) return pickVoice(profile.voiceURI, profile.id);
+
+  if (preferGrave) {
+    const grave =
+      fr.find((v) => /paul|henri|claude|gilles|marcel|yves|homme|male|david/i.test(v.name)) ??
+      fr.find((v) => !/julie|hortense|denise|celeste|caroline|femme|female/i.test(v.name)) ??
+      fr[0];
+    return grave;
+  }
+
+  const aigu =
+    fr.find((v) =>
+      /julie|hortense|denise|celeste|caroline|claire|femme|female|elodie/i.test(v.name),
+    ) ?? fr[fr.length - 1];
+  return aigu;
+}
+
 function buildUtterance(text: string, profile: VoiceProfile): SpeechSynthesisUtterance | null {
   const clean = sanitizeForSpeech(text);
   if (!clean) return null;
+
+  const tonal = pitchToSpeechParams(profile);
+
   const utter = new SpeechSynthesisUtterance(clean);
   utter.lang = "fr-FR";
-  utter.pitch = clamp(profile.pitch, 0, 2, 1);
-  utter.rate = clamp(profile.rate, 0.1, 10, 1);
+  utter.pitch = clamp(tonal.utterPitch, 0, 2, PITCH_NEUTRAL);
+  utter.rate = clamp(tonal.utterRate, 0.1, 10, 1);
   utter.volume = clamp(profile.volume, 0, 1, 1);
-  const voice = pickVoice(profile.voiceURI);
+  const voice = pickVoiceForPitch(profile, tonal.preferGraveVoice, tonal.preferAiguVoice);
   if (voice) utter.voice = voice;
   return utter;
 }
@@ -314,12 +486,12 @@ export function speakWithProfile(
     onEnd?.();
     return false;
   }
+  stopLoggyVoice();
   const utter = buildUtterance(text, profile);
   if (!utter) {
     onEnd?.();
     return false;
   }
-  stopLoggyVoice();
   utter.onend = () => onEnd?.();
   utter.onerror = () => onEnd?.();
   window.speechSynthesis.speak(utter);
@@ -400,7 +572,7 @@ export async function analyzeVoiceRecording(blob: Blob): Promise<VoiceAnalysis> 
       f0s.sort((a, b) => a - b);
       fundamentalHz = f0s[Math.floor(f0s.length / 2)];
       // 170 Hz ≈ neutre. Voix grave → pitch < 1, voix aiguë → pitch > 1.
-      pitch = clamp(fundamentalHz / 170, 0.6, 1.6, 1);
+      pitch = clamp(fundamentalHz / 170, PITCH_MIN, PITCH_MAX, PITCH_NEUTRAL);
     }
 
     // Débit : nombre de pics d'énergie (≈ syllabes) par seconde.

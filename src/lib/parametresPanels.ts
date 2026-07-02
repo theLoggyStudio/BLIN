@@ -6,6 +6,8 @@ export const PARAMETRES_PANEL_IDS = [
   "theme",
   "impression",
   "entites",
+  "archives",
+  "imports_exports",
   "roles",
   "utilisateurs",
 ] as const;
@@ -17,25 +19,21 @@ const STORAGE_KEY = "blin:parametres-panels-open";
 export type ParametresPanelsState = Partial<Record<ParametresPanelId, boolean>>;
 
 const DEFAULT_OPEN: ParametresPanelsState = {
-  assistant: true,
+  assistant: false,
   personnalisation_ia: false,
   compte: false,
   theme: false,
   impression: false,
   entites: false,
+  archives: false,
+  imports_exports: false,
   roles: false,
   utilisateurs: false,
 };
 
+/** Toujours repliés à l'arrivée (ré-auth mot de passe à chaque dépliage). */
 export function loadParametresPanelsState(): ParametresPanelsState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_OPEN };
-    const parsed = JSON.parse(raw) as ParametresPanelsState;
-    return { ...DEFAULT_OPEN, ...parsed };
-  } catch {
-    return { ...DEFAULT_OPEN };
-  }
+  return { ...DEFAULT_OPEN };
 }
 
 export function saveParametresPanelsState(state: ParametresPanelsState): void {
@@ -50,7 +48,7 @@ export function allPanelsOpen(
   state: ParametresPanelsState,
   visibleIds: ParametresPanelId[],
 ): boolean {
-  return visibleIds.every((id) => state[id] !== false);
+  return visibleIds.every((id) => state[id] === true);
 }
 
 export function allPanelsClosed(

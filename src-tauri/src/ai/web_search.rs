@@ -532,3 +532,98 @@ pub fn should_use_web_for_message(data_dir: &Path, message: &str) -> bool {
 pub fn query_from_message(message: &str) -> Option<String> {
     extract_web_search_query(message)
 }
+
+/// Demande au modèle local une requête de recherche concise à partir des
+/// derniers messages utilisateur (résout les pronoms « il / lui / elle… »).
+fn llm_query_from_context(prior_user_messages: &[&str]) -> Option<String> {
+    if !LlamaServer::model_ready() {
+        return None;
+    }
+    let convo = prior_user_messages
+        .iter()
+        .rev()
+        .take(4)
+        .rev()
+        .map(|m| format!("- {}", m.trim()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let system = "Tu génères UNIQUEMENT une requête de recherche web courte (2 à 6 mots-clés), en français. \
+         À partir des derniers messages de l'utilisateur, déduis le SUJET principal et résous les pronoms \
+         (il, lui, elle, le, la, ça). Réponds par la requête seule : pas de phrase, pas de guillemets, \
+         pas de ponctuation finale, pas d'explication.";
+    let user = format!("Messages récents de l'utilisateur :\n{convo}\n\nRequête de recherche :");
+    let out = LlamaServer::chat_with_options(
+        None,
+        vec![
+            ChatMessage {
+                role: "system".into(),
+                content: system.into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: user,
+            },
+        ],
+        0.2,
+        32,
+    )
+    .ok()?;
+    let q = out
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '`' || c == '.' || c == '?' || c == '!')
+        .trim()
+        .to_string();
+    if q.len() < 2 || q.split_whitespace().count() > 10 {
+        None
+    } else {
+        Some(q)
+    }
+}
+
+/// Repli sans modèle : premier message de contexte porteur de contenu.
+fn heuristic_subject(prior_user_messages: &[&str]) -> Option<String> {
+    for m in prior_user_messages {
+        if m.split_whitespace().count() >= 2 {
+            return Some(m.trim().to_string());
+        }
+    }
+    prior_user_messages.last().map(|s| s.trim().to_string())
+}
+
+/// Construit la requête web. Si le message courant contient un sujet explicite
+/// (« cherche X sur internet »), on l'utilise. Sinon (« cherche sur internet »
+/// seul), on déduit le sujet des messages précédents de la conversation.
+///
+/// `history` = (rôle, contenu) en ordre chronologique ; le message courant peut
+/// y figurer en dernier (il est alors ignoré pour le contexte).
+pub fn build_contextual_query(
+    history: &[(String, String)],
+    current_core: &str,
+) -> Option<String> {
+    if let Some(q) = extract_web_search_query(current_core) {
+        return Some(q);
+    }
+
+    let mut prior: Vec<&str> = history
+        .iter()
+        .filter(|(role, _)| role == "user")
+        .map(|(_, content)| content.trim())
+        .filter(|content| !content.is_empty())
+        .collect();
+    // Retire le message courant s'il clôt l'historique.
+    if prior
+        .last()
+        .map(|m| m.eq_ignore_ascii_case(current_core.trim()))
+        .unwrap_or(false)
+    {
+        prior.pop();
+    }
+    if prior.is_empty() {
+        return None;
+    }
+
+    llm_query_from_context(&prior).or_else(|| heuristic_subject(&prior))
+}

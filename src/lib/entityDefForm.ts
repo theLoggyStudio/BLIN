@@ -18,10 +18,55 @@ export const ENTITY_ATTR_TYPES: { value: string; label: string }[] = [
   { value: "time", label: "Heure" },
 ];
 
+/** Libellé affiché dérivé du nom technique (underscores → espaces, 1re lettre majuscule). */
+export function labelFromNom(nom: string): string {
+  const t = nom.trim().replace(/_/g, " ");
+  if (!t) return "";
+  return t.charAt(0).toLocaleUpperCase("fr-FR") + t.slice(1);
+}
+
+export function normalizeAttributeNom(nom: string): string {
+  return nom.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+export function normalizeEntityNom(nom: string): string {
+  return normalizeAttributeNom(nom);
+}
+
+/** Vérifie l'unicité des noms d'attributs au sein d'une entité. */
+export function findDuplicateAttributeNom(attributs: EntityAttribute[]): string | null {
+  const seen = new Set<string>();
+  for (const a of attributs) {
+    const key = normalizeAttributeNom(a.nom);
+    if (!key) continue;
+    if (seen.has(key)) return key;
+    seen.add(key);
+  }
+  return null;
+}
+
+export function applyLabelsFromNoms(entity: EntityDef): EntityDef {
+  const nom = normalizeEntityNom(entity.nom);
+  return {
+    ...entity,
+    nom,
+    label: labelFromNom(nom),
+    attributs: entity.attributs
+      .filter((a) => a.nom.trim())
+      .map((a) => {
+        const attrNom = normalizeAttributeNom(a.nom);
+        return {
+          ...a,
+          nom: attrNom,
+          label: labelFromNom(attrNom),
+        };
+      }),
+  };
+}
+
 export function emptyEntityDef(): EntityDef {
   return {
     nom: "",
-    label: "",
     description: "",
     ai_suggestions: true,
     requires_signature: false,
@@ -35,7 +80,6 @@ export function emptyEntityAttribute(): EntityAttribute {
   return {
     nom: "",
     type: "string",
-    label: "",
     required: false,
     relation_multiple: false,
     relation_exclusive_parent: true,
@@ -44,33 +88,31 @@ export function emptyEntityAttribute(): EntityAttribute {
 }
 
 export function normalizeEntityDefForSave(entity: EntityDef): EntityDef {
-  const nom = entity.nom.trim().toLowerCase().replace(/\s+/g, "_");
+  const withLabels = applyLabelsFromNoms(entity);
+  const nom = withLabels.nom;
   return {
     nom,
-    label: entity.label?.trim() || nom,
-    description: entity.description?.trim() || undefined,
-    ai_suggestions: Boolean(entity.ai_suggestions),
-    requires_signature: Boolean(entity.requires_signature),
-    signatory_role_ids: entity.requires_signature
-      ? [...(entity.signatory_role_ids ?? [])]
+    label: withLabels.label,
+    description: withLabels.description?.trim() || undefined,
+    ai_suggestions: Boolean(withLabels.ai_suggestions),
+    requires_signature: Boolean(withLabels.requires_signature),
+    signatory_role_ids: withLabels.requires_signature
+      ? [...(withLabels.signatory_role_ids ?? [])]
       : [],
     is_session: true,
-    attributs: entity.attributs
-      .filter((a) => a.nom.trim())
-      .map((a) => ({
-        ...a,
-        nom: a.nom.trim().toLowerCase().replace(/\s+/g, "_"),
-        required: Boolean(a.required),
-        type:
-          String(a.type).startsWith("enum[") || a.type === "enum"
-            ? "enum"
-            : a.type,
-        ref: a.type === "entity" ? (a.ref?.trim().toLowerCase().replace(/\s+/g, "_") ?? undefined) : undefined,
-        relation_multiple: a.type === "entity" ? Boolean(a.relation_multiple) : undefined,
-        enum_options:
-          a.type === "enum" || String(a.type).startsWith("enum")
-            ? (a.enum_options ?? []).filter(Boolean)
-            : undefined,
-      })),
+    attributs: withLabels.attributs.map((a) => ({
+      ...a,
+      required: Boolean(a.required),
+      type:
+        String(a.type).startsWith("enum[") || a.type === "enum"
+          ? "enum"
+          : a.type,
+      ref: a.type === "entity" ? (a.ref?.trim().toLowerCase().replace(/\s+/g, "_") ?? undefined) : undefined,
+      relation_multiple: a.type === "entity" ? Boolean(a.relation_multiple) : undefined,
+      enum_options:
+        a.type === "enum" || String(a.type).startsWith("enum")
+          ? (a.enum_options ?? []).filter(Boolean)
+          : undefined,
+    })),
   };
 }

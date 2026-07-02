@@ -167,48 +167,55 @@ export function EntityDefFormTable({
       {value.attributs.length === 0 ? (
         <p className="text-sm text-muted">Ajoutez au moins un attribut métier (en plus de id si besoin).</p>
       ) : (
-        value.attributs.map((attr, idx) => (
-          <div key={idx} className="rounded-lg border border-border p-3">
-            <div className="w-full">
-                <FormRow label="Nom du champ">
-                  <Input
-                    value={attr.nom}
-                    onChange={(e) => {
-                      const attributs = [...value.attributs];
-                      attributs[idx] = { ...attr, nom: e.target.value };
-                      onChange({ ...value, attributs });
-                    }}
-                  />
-                </FormRow>
-                <FormRow label="Libellé">
-                  <Input
-                    value={attr.label ?? ""}
-                    onChange={(e) => {
-                      const attributs = [...value.attributs];
-                      attributs[idx] = { ...attr, label: e.target.value };
-                      onChange({ ...value, attributs });
-                    }}
-                  />
-                </FormRow>
-                <FormRow label="Type">
-                  <Select
-                    value={String(attr.type).startsWith("enum[") ? "enum" : String(attr.type)}
-                    onChange={(e) => {
-                      const type = e.target.value;
-                      const attributs = [...value.attributs];
-                      attributs[idx] = {
-                        ...attr,
-                        type,
-                        ref: type === "entity" ? (attr.ref ?? "") : undefined,
-                        enum_options: type === "enum" ? (attr.enum_options ?? []) : undefined,
-                      };
-                      onChange({ ...value, attributs });
-                    }}
-                    options={ENTITY_ATTR_TYPES.map((t) => ({ value: t.value, label: t.label }))}
-                  />
-                </FormRow>
-                <FormRow label="Obligatoire">
-                  <label className="flex cursor-pointer items-center gap-3">
+        <div className="space-y-2">
+          <div className="hidden gap-2 px-1 text-xs font-medium text-muted md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-center">
+            <span>Nom</span>
+            <span>Libellé</span>
+            <span>Type</span>
+            <span className="text-center">Obligatoire</span>
+            <span className="w-9" />
+          </div>
+          {value.attributs.map((attr, idx) => (
+            <div
+              key={idx}
+              className="space-y-2 rounded-lg border border-border p-3 md:space-y-0 md:border-0 md:p-0"
+            >
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-center md:gap-2 md:rounded-lg md:border md:border-border md:p-2">
+                <Input
+                  value={attr.nom}
+                  onChange={(e) => {
+                    const attributs = [...value.attributs];
+                    attributs[idx] = { ...attr, nom: e.target.value };
+                    onChange({ ...value, attributs });
+                  }}
+                  placeholder="nom_champ"
+                />
+                <Input
+                  value={attr.label ?? ""}
+                  onChange={(e) => {
+                    const attributs = [...value.attributs];
+                    attributs[idx] = { ...attr, label: e.target.value };
+                    onChange({ ...value, attributs });
+                  }}
+                  placeholder="Libellé"
+                />
+                <Select
+                  value={String(attr.type).startsWith("enum[") ? "enum" : String(attr.type)}
+                  onChange={(e) => {
+                    const type = e.target.value;
+                    const attributs = [...value.attributs];
+                    attributs[idx] = {
+                      ...attr,
+                      type,
+                      ref: type === "entity" ? (attr.ref ?? "") : undefined,
+                      enum_options: type === "enum" ? (attr.enum_options ?? []) : undefined,
+                    };
+                    onChange({ ...value, attributs });
+                  }}
+                  options={ENTITY_ATTR_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+                />
+                {attr.type !== "compteur" && attr.type !== "matricule" ? (
+                  <label className="flex cursor-pointer items-center justify-center gap-2 px-1">
                     <input
                       type="checkbox"
                       checked={Boolean(attr.required)}
@@ -219,78 +226,79 @@ export function EntityDefFormTable({
                       }}
                       className="h-4 w-4 rounded border-border accent-secondary"
                     />
-                    <span className="text-sm">À remplir obligatoirement</span>
+                    <span className="text-sm md:sr-only">Obligatoire</span>
                   </label>
+                ) : (
+                  <span className="text-center text-xs text-muted md:px-2">—</span>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-9 shrink-0 px-0 md:justify-self-end"
+                  onClick={() => {
+                    const attributs = value.attributs.filter((_, i) => i !== idx);
+                    onChange({ ...value, attributs });
+                  }}
+                  aria-label="Retirer l'attribut"
+                >
+                  <Trash2 className="h-4 w-4 text-primary" />
+                </Button>
+              </div>
+              {(attr.type === "enum" || String(attr.type).startsWith("enum")) && (
+                <FormRow label="Options (enum)" hint="Séparées par des virgules">
+                  <Input
+                    value={(attr.enum_options ?? []).join(", ")}
+                    onChange={(e) => {
+                      const attributs = [...value.attributs];
+                      attributs[idx] = {
+                        ...attr,
+                        type: "enum",
+                        enum_options: e.target.value
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      };
+                      onChange({ ...value, attributs });
+                    }}
+                  />
                 </FormRow>
-                {(attr.type === "enum" || String(attr.type).startsWith("enum")) && (
-                  <FormRow label="Options (enum)" hint="Séparées par des virgules">
-                    <Input
-                      value={(attr.enum_options ?? []).join(", ")}
+              )}
+              {attr.type === "entity" && (
+                <div className="space-y-2 md:pl-2">
+                  <FormRow label="Entité liée (ref)">
+                    <Select
+                      value={attr.ref ?? ""}
                       onChange={(e) => {
                         const attributs = [...value.attributs];
-                        attributs[idx] = {
-                          ...attr,
-                          type: "enum",
-                          enum_options: e.target.value
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean),
-                        };
+                        attributs[idx] = { ...attr, ref: e.target.value };
                         onChange({ ...value, attributs });
                       }}
+                      options={[{ value: "", label: "— Choisir —" }, ...entityRefOptions]}
                     />
                   </FormRow>
-                )}
-                {attr.type === "entity" && (
-                  <>
-                    <FormRow label="Entité liée (ref)">
-                      <Select
-                        value={attr.ref ?? ""}
+                  <FormRow label="Liste multiple">
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(attr.relation_multiple)}
                         onChange={(e) => {
                           const attributs = [...value.attributs];
-                          attributs[idx] = { ...attr, ref: e.target.value };
+                          attributs[idx] = {
+                            ...attr,
+                            relation_multiple: e.target.checked,
+                          };
                           onChange({ ...value, attributs });
                         }}
-                        options={[{ value: "", label: "— Choisir —" }, ...entityRefOptions]}
+                        className="h-4 w-4 rounded border-border accent-secondary"
                       />
-                    </FormRow>
-                    <FormRow label="Liste multiple">
-                      <label className="flex cursor-pointer items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(attr.relation_multiple)}
-                          onChange={(e) => {
-                            const attributs = [...value.attributs];
-                            attributs[idx] = {
-                              ...attr,
-                              relation_multiple: e.target.checked,
-                            };
-                            onChange({ ...value, attributs });
-                          }}
-                          className="h-4 w-4 rounded border-border accent-secondary"
-                        />
-                        <span className="text-sm">Plusieurs enregistrements liés</span>
-                      </label>
-                    </FormRow>
-                  </>
-                )}
+                      <span className="text-sm">Plusieurs enregistrements liés</span>
+                    </label>
+                  </FormRow>
+                </div>
+              )}
             </div>
-            <div className="mt-2 flex justify-stretch sm:justify-end">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="w-full sm:w-auto"
-                onClick={() => {
-                  const attributs = value.attributs.filter((_, i) => i !== idx);
-                  onChange({ ...value, attributs });
-                }}
-              >
-                <Trash2 className="mr-1 h-3.5 w-3.5 text-primary" />
-                Retirer
-              </Button>
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
     </div>
   );

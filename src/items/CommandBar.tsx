@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Mic, Send } from "lucide-react";
+import { ImagePlus, Mic, Send, X } from "lucide-react";
 import { sortEntitySuggestionsByPhrase } from "@/lib/entitySuggestions";
+import { readImageAttachment, type CommandBarImageAttachment } from "@/lib/readImageAttachment";
 import { useSpeechInput } from "@/lib/useSpeechInput";
 import { cn } from "@/lib/utils";
 import type { EntitySuggestion } from "@/types/entity";
@@ -27,6 +28,9 @@ interface CommandBarProps {
   inputHistory?: string[];
   /** Réponses Loggy (ordre chronologique) — Ctrl+↑/↓. */
   responseHistory?: string[];
+  /** Image jointe pour analyse vision (tableau de bord). */
+  attachedImage?: CommandBarImageAttachment | null;
+  onAttachedImageChange?: (image: CommandBarImageAttachment | null) => void;
 }
 
 type HistoryLane = "user" | "assistant";
@@ -53,10 +57,14 @@ export function CommandBar({
   suggestionsAbove = false,
   inputHistory = [],
   responseHistory = [],
+  attachedImage = null,
+  onAttachedImageChange,
 }: CommandBarProps) {
   const [suggestions, setSuggestions] = useState<EntitySuggestion[]>([]);
   const [listOpen, setListOpen] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   /** -1 = pas encore parcouru dans cette voie ; 0 = le plus récent… */
   const [userHistIndex, setUserHistIndex] = useState(-1);
   const [assistantHistIndex, setAssistantHistIndex] = useState(-1);
@@ -101,6 +109,7 @@ export function CommandBar({
 
   const blockInput = disabled || inputDisabled;
   const blockSend = disabled || sendDisabled;
+  const canSubmit = Boolean(value.trim() || attachedImage);
   const showList = listOpen && filtered.length > 0 && !blockInput;
 
   const speech = useSpeechInput(value, onChange);
@@ -224,17 +233,86 @@ export function CommandBar({
     onSuggestionSelect?.(item.key, item.phrase);
   };
 
+  const pickImage = async (file: File | undefined) => {
+    if (!file || !onAttachedImageChange) return;
+    setImageError(null);
+    try {
+      const attachment = await readImageAttachment(file);
+      onAttachedImageChange(attachment);
+    } catch (e) {
+      setImageError(String(e));
+    }
+  };
+
   return (
     <div ref={wrapRef} className={cn("command-bar-wrap", className)}>
+      {attachedImage && (
+        <div className="command-bar-attachment">
+          <img
+            src={attachedImage.previewUrl}
+            alt=""
+            className="command-bar-attachment-thumb"
+          />
+          <span className="command-bar-attachment-name">{attachedImage.fileName}</span>
+          {onAttachedImageChange && (
+            <button
+              type="button"
+              className="command-bar-attachment-remove"
+              aria-label="Retirer l'image"
+              onClick={() => onAttachedImageChange(null)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+      {imageError && (
+        <p className="command-bar-image-error" role="alert">
+          {imageError}
+        </p>
+      )}
       <form
         className="command-bar"
         onSubmit={(e) => {
           e.preventDefault();
           setListOpen(false);
           if (speech.listening) speech.stop();
-          if (value.trim()) onSubmit();
+          if (canSubmit) onSubmit();
         }}
       >
+        {onAttachedImageChange && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              aria-hidden
+              onChange={(e) => {
+                void pickImage(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              disabled={blockInput}
+              className={cn(
+                "command-bar-image",
+                attachedImage && "command-bar-image--active",
+                blockInput && "cursor-not-allowed opacity-50",
+              )}
+              aria-label="Joindre une image"
+              title="Analyser une image (entités ou modèle d'impression)"
+              onClick={() => {
+                if (blockInput) return;
+                setListOpen(false);
+                fileInputRef.current?.click();
+              }}
+            >
+              <ImagePlus className="h-4 w-4" />
+            </button>
+          </>
+        )}
         <input
           type="text"
           value={value}
@@ -251,7 +329,11 @@ export function CommandBar({
           }}
           onKeyDown={handleInputKeyDown}
           onFocus={() => setListOpen(true)}
-          placeholder={placeholder}
+          placeholder={
+            attachedImage
+              ? "Ex. : extraire les entités · modèle d'impression HTML…"
+              : placeholder
+          }
           className={cn("command-bar-input", blockInput && "cursor-not-allowed opacity-50")}
           aria-label={placeholder}
           aria-expanded={showList}
@@ -281,7 +363,7 @@ export function CommandBar({
         )}
         <button
           type="submit"
-          disabled={blockSend || !value.trim()}
+          disabled={blockSend || !canSubmit}
           className="command-bar-send"
           aria-label="Envoyer"
         >
